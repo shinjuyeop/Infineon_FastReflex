@@ -52,9 +52,26 @@ TERRAIN_PROFILES = {
     ),
 }
 
-SINK_PATTERNS = ("uniform", "asymmetric_left", "asymmetric_right")
+SINK_PATTERNS = (
+    "uniform",
+    "asymmetric_left",
+    "asymmetric_right",
+    "transition_left",
+    "transition_right",
+)
 SINK_SEVERITIES = ("mild", "moderate", "severe")
 SINK_PATCH_GEOM_NAMES = ("terrain_left", "terrain_right")
+SINK_TRANSITION_PATCH_GEOM_NAMES = (
+    "terrain_transition_left",
+    "terrain_transition_right",
+)
+SINK_TRANSITION_GROUND_GEOM_NAMES = (
+    "terrain_transition_pre",
+    *SINK_TRANSITION_PATCH_GEOM_NAMES,
+    "terrain_transition_post",
+)
+SINK_PATCH_START_X_M = 0.35
+SINK_PATCH_END_X_M = 1.10
 
 # Synthetic severity ladder for one compliant lane. These are engineering
 # contact-response parameters derived from the uniform sand control, not soil
@@ -111,7 +128,7 @@ def validate_sink_scenario(terrain: str, pattern: str, severity: str) -> None:
         raise ValueError(f"unknown sink pattern {pattern!r}; choose from {SINK_PATTERNS}")
     get_sink_severity_profile(severity)
     if pattern != "uniform" and terrain != "sand":
-        raise ValueError("asymmetric sink patterns require terrain='sand'")
+        raise ValueError("non-uniform sink patterns require terrain='sand'")
 
 
 def apply_terrain_profile(
@@ -155,20 +172,71 @@ def apply_sink_patch_profiles(
     pattern: str,
     severity: str,
 ) -> frozenset[int]:
-    """Apply uniform-sand and one softer lane profile to the sink scene."""
+    """Configure the canonical sink scene for a full-lane or finite patch."""
     validate_sink_scenario("sand", pattern, severity)
     if pattern == "uniform":
         raise ValueError("the uniform control must use the canonical baseline scene")
 
-    base_profile = get_terrain_profile("sand")
-    ground_ids = {
-        side: apply_terrain_profile(model, base_profile, f"terrain_{side}")
-        for side in ("left", "right")
+    def set_enabled(name: str, enabled: bool, rgba: tuple[float, ...]) -> int:
+        geom_id = model.geom(name).id
+        model.geom_contype[geom_id] = 1 if enabled else 0
+        model.geom_conaffinity[geom_id] = 1 if enabled else 0
+        model.geom_rgba[geom_id] = (*rgba[:3], 1.0 if enabled else 0.0)
+        return int(geom_id)
+
+    full_lane_colors = {
+        "terrain_left": (0.25, 0.45, 0.75, 1.0),
+        "terrain_right": (0.75, 0.45, 0.20, 1.0),
     }
-    soft_side = pattern.removeprefix("asymmetric_")
+    transition_colors = {
+        "terrain_transition_pre": (0.35, 0.35, 0.35, 1.0),
+        "terrain_transition_left": (0.25, 0.45, 0.75, 1.0),
+        "terrain_transition_right": (0.75, 0.45, 0.20, 1.0),
+        "terrain_transition_post": (0.35, 0.35, 0.35, 1.0),
+    }
+    is_transition = pattern.startswith("transition_")
+    for name, rgba in full_lane_colors.items():
+        set_enabled(name, not is_transition, rgba)
+    for name, rgba in transition_colors.items():
+        set_enabled(name, is_transition, rgba)
+
+    if not is_transition:
+        base_profile = get_terrain_profile("sand")
+        ground_ids = {
+            side: apply_terrain_profile(model, base_profile, f"terrain_{side}")
+            for side in ("left", "right")
+        }
+        soft_side = pattern.removeprefix("asymmetric_")
+        apply_terrain_profile(
+            model,
+            get_sink_severity_profile(severity),
+            f"terrain_{soft_side}",
+        )
+        return frozenset(ground_ids.values())
+
+    stable_profile = get_terrain_profile("concrete")
+    ground_ids = {
+        name: apply_terrain_profile(model, stable_profile, name)
+        for name in SINK_TRANSITION_GROUND_GEOM_NAMES
+    }
+    soft_side = pattern.removeprefix("transition_")
     apply_terrain_profile(
         model,
         get_sink_severity_profile(severity),
-        f"terrain_{soft_side}",
+        f"terrain_transition_{soft_side}",
     )
     return frozenset(ground_ids.values())
+
+
+def soft_sink_geom_ids(
+    model: mujoco.MjModel,
+    pattern: str,
+) -> frozenset[int]:
+    """Return the finite soft-patch ids used by transition event timing."""
+    if pattern == "uniform" or pattern.startswith("asymmetric_"):
+        return frozenset()
+    if pattern.startswith("transition_"):
+        name = f"terrain_transition_{pattern.removeprefix('transition_')}"
+    else:
+        raise ValueError(f"unknown sink pattern {pattern!r}; choose from {SINK_PATTERNS}")
+    return frozenset((int(model.geom(name).id),))

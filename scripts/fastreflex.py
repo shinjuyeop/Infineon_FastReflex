@@ -36,8 +36,14 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--duration", type=float)
     simulate.add_argument(
         "--sink-pattern",
-        choices=("uniform", "asymmetric_left", "asymmetric_right"),
-        help="select uniform ground or a same-height asymmetric compliance lane",
+        choices=(
+            "uniform",
+            "asymmetric_left",
+            "asymmetric_right",
+            "transition_left",
+            "transition_right",
+        ),
+        help="select uniform ground, a full lane, or a finite compliance patch",
     )
     simulate.add_argument(
         "--sink-severity",

@@ -1,0 +1,75 @@
+experiment:
+  id: SINK_HAZARD_TRANSITION_AND_CRITERIA
+  date: 2026-08-26
+  status: completed_criteria_review
+  purpose: observe cause-to-effect timing after entering a finite compliant patch
+
+geometry:
+  scene: scene_sink.xml
+  walking_direction: +x
+  nominal_top_z_m: 0.0
+  patch_start_x_m: 0.35
+  patch_end_x_m: 1.10
+  pre_patch_profile: concrete
+  post_patch_profile: concrete
+  soft_patch_side: selected_by_sink_pattern
+  opposite_patch_side_profile: concrete
+
+common:
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  command_speed_mps: 0.15
+  duration_s: 8.0
+  initial_condition: canonical_fixed_stand
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  headless: true
+  pre_event_baseline_ms: 1000
+
+runs:
+  - id: concrete_control
+    terrain: concrete
+    sink_pattern: uniform
+    sink_severity: moderate
+  - id: uniform_sand_control
+    terrain: sand
+    sink_pattern: uniform
+    sink_severity: moderate
+  - id: transition_left_mild
+    terrain: sand
+    sink_pattern: transition_left
+    sink_severity: mild
+  - id: transition_left_moderate
+    terrain: sand
+    sink_pattern: transition_left
+    sink_severity: moderate
+  - id: transition_left_severe
+    terrain: sand
+    sink_pattern: transition_left
+    sink_severity: severe
+  - id: transition_right_mild
+    terrain: sand
+    sink_pattern: transition_right
+    sink_severity: mild
+  - id: transition_right_moderate
+    terrain: sand
+    sink_pattern: transition_right
+    sink_severity: moderate
+  - id: transition_right_severe
+    terrain: sand
+    sink_pattern: transition_right
+    sink_severity: severe
+
+timeline:
+  t0_patch_contact: first_named_sole_contact_with_soft_patch
+  t1_sink_physical: first_same_contact_episode_sink_physical_onset
+  t2_degradation:
+    metric: pelvis_tilt_rad
+    threshold_rad: 0.04454633221030235
+    threshold_source: maximum_benign_control_envelope
+    persistence_ms: 20
+  t3_censor: first_fall_or_nonfoot_surface_contact
+
+interpretation:
+  sink_physical: precursor_diagnostic_only
+  sink_hazard_status: SINK_HAZARD_CRITERIA_FROZEN
+  primary_sink_labels_generated: false

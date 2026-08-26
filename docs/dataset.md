@@ -14,7 +14,7 @@ Primary task는 하나의 3-class classification이다.
 
 Terrain, scenario, contact, exact simulator state와 physical oracle은 label/diagnostic/metadata 전용이다. Runtime model input에는 넣지 않는다.
 
-현재 `SINK`의 최종 numeric hazard gate는 `SINK_HAZARD_CRITERIA_NOT_YET_FROZEN`이다. Contact penetration만 존재하고 자세와 보행이 안정적인 상태는 primary `SINK`가 아니다. 아래 `sink_physical_active`는 원인 측 precursor diagnostic이며 class label과 동치가 아니다.
+Transition study에서 `SINK_HAZARD_CRITERIA_FROZEN`을 확정했다. Contact penetration만 존재하고 자세와 보행이 안정적인 상태는 primary `SINK`가 아니다. 아래 `sink_physical_active`는 원인 측 precursor diagnostic이며 class label과 동치가 아니다. Frozen effect gate는 patch-linked physical sink 뒤 pelvis tilt가 benign-control envelope를 넘는지를 사용한다.
 
 ## Runtime sensor contract
 
@@ -87,9 +87,12 @@ Dataset의 authoritative source는 미리 잘린 window가 아니라 simulation 
 - `established_slip_active`, `established_slip_onset`
 - Slip continuous diagnostics: foot-ground tangential relative velocity, touchdown anchor-relative x/y displacement와 그 norm
 - `sink_physical_active`, `sink_physical_onset`, `sink_physical_episode_id`
+- `soft_patch_contact`, 그 onset과 patch-linked `sink_physical_after_patch_onset`
 - Sink continuous diagnostics: contact-foot world z/vertical velocity, touchdown-relative downward displacement, surface-relative sole depth, raw contact penetration, first-loaded-reference penetration과 그 변화량
 - 좌/우 loaded penetration asymmetry와 loaded/contact state
 - Effect diagnostics: pelvis/root world z, orientation/roll/pitch/tilt, angular/linear velocity, commanded-forward velocity tracking error
+- t0 전 1,000 ms baseline mask와 pelvis z/tilt/forward velocity/angular-speed event-relative change
+- `sink_degradation_active`/onset과 patch-linked `sink_hazard_active`/onset
 - `dual_hazard_active`
 - `pre_fall_valid`와 first-fall/censor marker
 - 필요 시 exact root/foot pose와 velocity. 이는 항상 diagnostic-only로 표시한다.
@@ -168,24 +171,38 @@ Legacy의 후반 walking physical oracle은 삭제하지 않고 `sink_physical_a
 
 ### Primary `SINK` hazard
 
-Primary `SINK`는 `sink_physical_active`와 함께 locomotion 또는 posture stability의 meaningful degradation이 있는 hazard state다. 단순 penetration, terrain 이름 또는 compliance profile만으로 class를 만들지 않는다.
+Primary `SINK`는 patch-linked `sink_physical_active`와 locomotion/posture degradation이 하나의 시간 사건으로 연결된 hazard state다. 단순 penetration, terrain 이름 또는 compliance profile만으로 class를 만들지 않는다.
 
-현재 simulator-only candidate effect metric은 pelvis tilt/roll/pitch, pelvis z range/drop, angular motion, forward-velocity tracking degradation, loaded-contact disturbance와 fall/censor다. Cause-side physical onset/episode, continuous effect metric과 fall onset은 각각 보존한다. 어떤 effect 조합과 threshold가 final label gate가 될지는 sanity study 이후 별도 review에서 결정한다. 그 전에는 영향이 불명확한 physical-sink interval을 `NORMAL`이나 `SINK`로 강제하지 않고 `training_eligible=false`로 둘 수 있다.
+Transition event의 simulator-only timeline은 다음과 같다.
 
-`SINK_HAZARD_CRITERIA_NOT_YET_FROZEN`
+1. `t0_patch_contact`: named sole geom과 지정 soft patch geom의 첫 physical contact
+2. `t1_sink_physical`: 같은 raw contact episode에서 처음 발생한 `sink_physical_active` onset
+3. `t2_degradation`: t1 뒤 pelvis tilt가 `0.04454633221030235 rad`보다 큰 상태가 1 kHz에서 20 consecutive samples 지속된 첫 active sample
+4. `t3_censor`: first fall 또는 non-foot surface contact onset
+
+Tilt threshold는 concrete, uniform sand, left/right mild transition의 8초 benign controls에서 관측한 최대 tilt `2.5523168°`의 upper envelope다. 이 값은 terrain이나 Slip 여부를 사용하지 않으며 fall 자체를 effect gate로 쓰지 않는다. Transition severe는 좌/우 모두 t2 뒤 약 1.5초 이상의 pre-censor interval을 보였고 mild/moderate와 uniform sand는 gate를 넘지 않았다. 근거와 한계는 [`20260826_sink_transition_criteria.md`](../reports/20260826_sink_transition_criteria.md)에 기록한다.
+
+- `BENIGN_SINK_EPISODE`: t0와 t1은 있지만 관찰 가능한 pre-censor run에서 t2가 없음
+- `HAZARDOUS_SINK_EPISODE`: t0 → t1 뒤 t2가 발생
+- `DUAL_PHENOMENON`: established Slip onset이 t2보다 먼저 발생한 hazardous episode. Raw run은 보존하되 V1 train/evaluation에서는 제외
+- Censor가 먼저 와 qualification할 수 없으면 `INCONCLUSIVE`이며 `training_eligible=false`
+
+Hazardous episode의 future early-detection reference 후보는 결과가 이미 드러난 t2가 아니라 원인 onset t1이다. `[t1,t2)` sample/window eligibility와 latency gate는 Pilot/Time-to-Separation에서 검증하기 전까지 `training_eligible=false`로 유지한다. Frozen criterion은 episode qualification을 고정한 것이며 아직 dataset을 생성했다는 뜻은 아니다.
+
+`SINK_HAZARD_CRITERIA_FROZEN`
 
 ### Terrain shortcut과 dual hazard
 
 - Ice는 곧 `SLIP`이 아니며 Sand는 곧 `SINK`가 아니다.
 - Terrain/scenario/exact state는 model input으로 사용하지 않는다.
-- Established SLIP과 향후 frozen SINK hazard가 동시에 active인 raw trace는 보존하고 `dual_hazard_active=true`로 표시한다. `sink_physical_active`만으로 dual hazard를 선언하지 않는다.
+- Established SLIP onset이 frozen SINK degradation onset보다 먼저인 raw trace는 보존하고 `dual_hazard_active=true`로 표시한다. `sink_physical_active`만으로 dual hazard를 선언하지 않는다.
 - Dual-hazard sample/event/run은 V1 primary training과 evaluation에서 제외한다. 어느 class를 우선할지 규칙을 만들지 않는다.
 
 ### Sample과 window label의 경계
 
 Raw run은 stable established states, onset pulses, validity와 continuous diagnostics를 sample level로 보존한다. Established onset 전 interval의 label이나 training window endpoint label 정책은 이번 milestone에서 확정하지 않는다.
 
-Phase 4 이후 별도 config revision에서 다음을 결정한다.
+Pilot과 Phase 4 이후 별도 config revision에서 다음을 결정한다.
 
 - early interval의 검증된 시작과 제외 범위
 - window endpoint/within-window label rule

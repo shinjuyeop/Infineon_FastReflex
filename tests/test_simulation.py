@@ -23,10 +23,14 @@ from fastreflex.simulation.g1 import (
     load_simulation_config,
     read_pelvis_imu,
     run_simulation,
+    summarize_result,
 )
 from fastreflex.simulation.hazards import (
     LOAD_OFF_N,
     LOAD_ON_N,
+    PRE_EVENT_BASELINE_SAMPLES,
+    SINK_HAZARD_TILT_PERSISTENCE_SAMPLES,
+    SINK_HAZARD_TILT_THRESHOLD_RAD,
     SINK_PHYSICAL_PERSISTENCE_SAMPLES,
     SINK_PHYSICAL_THRESHOLD_M,
     SLIP_PERSISTENCE_SAMPLES,
@@ -35,10 +39,13 @@ from fastreflex.simulation.hazards import (
     derive_physical_diagnostics,
 )
 from fastreflex.simulation.terrain import (
+    SINK_PATCH_END_X_M,
     SINK_PATCH_GEOM_NAMES,
+    SINK_PATCH_START_X_M,
     SINK_PATTERNS,
     SINK_SEVERITIES,
     SINK_SEVERITY_PROFILES,
+    SINK_TRANSITION_GROUND_GEOM_NAMES,
     TERRAIN_PROFILES,
 )
 from scripts.fastreflex import build_parser
@@ -49,6 +56,9 @@ SIMULATOR_CONFIG = ROOT / "configs" / "simulator" / "g1.yaml"
 DATASET_CONFIG = ROOT / "configs" / "dataset" / "hazard.yaml"
 SINK_EXPERIMENT_CONFIG = (
     ROOT / "configs" / "experiment" / "20260826_sink_scenario_sanity.yaml"
+)
+SINK_TRANSITION_EXPERIMENT_CONFIG = (
+    ROOT / "configs" / "experiment" / "20260826_sink_transition_criteria.yaml"
 )
 
 
@@ -149,7 +159,7 @@ class SimulationTest(unittest.TestCase):
         self.assertEqual(baseline.geom_type[baseline_id], mujoco.mjtGeom.mjGEOM_PLANE)
         self.assertEqual(float(baseline.geom_pos[baseline_id, 2]), 0.0)
 
-        for pattern in SINK_PATTERNS[1:]:
+        for pattern in ("asymmetric_left", "asymmetric_right"):
             soft_side = pattern.removeprefix("asymmetric_")
             for severity in SINK_SEVERITIES:
                 with self.subTest(pattern=pattern, severity=severity):
@@ -205,6 +215,73 @@ class SimulationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "require terrain='sand'"):
             replace(config, sink_pattern="asymmetric_left").validate()
 
+    def test_transition_patch_geometry_profiles_and_side_mapping(self) -> None:
+        self.assertEqual(SINK_PATCH_START_X_M, 0.35)
+        self.assertEqual(SINK_PATCH_END_X_M, 1.10)
+        for pattern in ("transition_left", "transition_right"):
+            soft_side = pattern.removeprefix("transition_")
+            for severity in SINK_SEVERITIES:
+                with self.subTest(pattern=pattern, severity=severity):
+                    model, ground_ids = load_g1_model("sand", pattern, severity)
+                    self.assertEqual(
+                        {model.geom(geom_id).name for geom_id in ground_ids},
+                        set(SINK_TRANSITION_GROUND_GEOM_NAMES),
+                    )
+                    self.assertEqual(model.geom_contype[model.geom("terrain_left").id], 0)
+                    self.assertEqual(model.geom_contype[model.geom("terrain_right").id], 0)
+                    for name in SINK_TRANSITION_GROUND_GEOM_NAMES:
+                        geom_id = model.geom(name).id
+                        self.assertEqual(model.geom_contype[geom_id], 1)
+                        self.assertEqual(
+                            float(model.geom_pos[geom_id, 2] + model.geom_size[geom_id, 2]),
+                            0.0,
+                        )
+
+                    pre_id = model.geom("terrain_transition_pre").id
+                    left_id = model.geom("terrain_transition_left").id
+                    right_id = model.geom("terrain_transition_right").id
+                    post_id = model.geom("terrain_transition_post").id
+                    self.assertAlmostEqual(
+                        float(model.geom_pos[pre_id, 0] + model.geom_size[pre_id, 0]),
+                        SINK_PATCH_START_X_M,
+                    )
+                    for patch_id in (left_id, right_id):
+                        self.assertAlmostEqual(
+                            float(model.geom_pos[patch_id, 0] - model.geom_size[patch_id, 0]),
+                            SINK_PATCH_START_X_M,
+                        )
+                        self.assertAlmostEqual(
+                            float(model.geom_pos[patch_id, 0] + model.geom_size[patch_id, 0]),
+                            SINK_PATCH_END_X_M,
+                        )
+                    self.assertAlmostEqual(
+                        float(model.geom_pos[post_id, 0] - model.geom_size[post_id, 0]),
+                        SINK_PATCH_END_X_M,
+                    )
+                    self.assertEqual(float(model.qpos0[0]), 0.0)
+                    self.assertGreater(SINK_PATCH_START_X_M, float(model.qpos0[0]))
+                    self.assertEqual(
+                        float(model.geom_pos[left_id, 1] - model.geom_size[left_id, 1]),
+                        0.0,
+                    )
+                    self.assertEqual(
+                        float(model.geom_pos[right_id, 1] + model.geom_size[right_id, 1]),
+                        0.0,
+                    )
+                    for side in ("left", "right"):
+                        geom_id = model.geom(f"terrain_transition_{side}").id
+                        expected = (
+                            SINK_SEVERITY_PROFILES[severity]
+                            if side == soft_side
+                            else TERRAIN_PROFILES["concrete"]
+                        )
+                        np.testing.assert_allclose(
+                            model.geom_solref[geom_id], expected.solref
+                        )
+                        np.testing.assert_allclose(
+                            model.geom_solimp[geom_id], expected.solimp
+                        )
+
     def test_viewer_cli_rates_and_availability_contract(self) -> None:
         parser = build_parser()
         viewer_args = parser.parse_args(["simulate", "--viewer"])
@@ -223,6 +300,10 @@ class SimulationTest(unittest.TestCase):
         )
         self.assertEqual(sink_args.sink_pattern, "asymmetric_right")
         self.assertEqual(sink_args.sink_severity, "severe")
+        transition_args = parser.parse_args(
+            ["simulate", "--terrain", "sand", "--sink-pattern", "transition_left"]
+        )
+        self.assertEqual(transition_args.sink_pattern, "transition_left")
         with redirect_stderr(io.StringIO()) as error:
             with self.assertRaises(SystemExit) as conflict:
                 parser.parse_args(["simulate", "--headless", "--viewer"])
@@ -270,7 +351,15 @@ class SimulationTest(unittest.TestCase):
         )
         self.assertEqual(
             contract["sink_hazard"]["criteria_status"],
-            "SINK_HAZARD_CRITERIA_NOT_YET_FROZEN",
+            "SINK_HAZARD_CRITERIA_FROZEN",
+        )
+        self.assertEqual(
+            contract["sink_hazard"]["pelvis_tilt_threshold_rad"],
+            SINK_HAZARD_TILT_THRESHOLD_RAD,
+        )
+        self.assertEqual(
+            contract["sink_hazard"]["persistence_ms"],
+            SINK_HAZARD_TILT_PERSISTENCE_SAMPLES,
         )
 
         samples = 50
@@ -288,6 +377,8 @@ class SimulationTest(unittest.TestCase):
         linear_velocity = np.zeros((samples, 3))
         linear_velocity[:, 0] = 0.1
         fall_active = np.zeros(samples, dtype=bool)
+        soft_patch_contact = np.zeros((samples, 2), dtype=bool)
+        soft_patch_contact[10:45, 1] = True
 
         diagnostics = derive_physical_diagnostics(
             contact,
@@ -302,6 +393,7 @@ class SimulationTest(unittest.TestCase):
             linear_velocity,
             0.15,
             fall_active,
+            soft_patch_contact=soft_patch_contact,
         )
         self.assertEqual(diagnostics.touchdown[0].tolist(), [True, True])
         self.assertFalse(diagnostics.established_slip[:14, 0].any())
@@ -309,10 +401,22 @@ class SimulationTest(unittest.TestCase):
         self.assertFalse(diagnostics.sink_physical_active[:39, 1].any())
         self.assertTrue(diagnostics.sink_physical_active[39, 1])
         self.assertTrue(diagnostics.sink_physical_onset[39, 1])
+        self.assertTrue(diagnostics.soft_patch_contact_onset[10, 1])
+        self.assertTrue(diagnostics.sink_physical_after_patch_onset[39, 1])
         self.assertEqual(diagnostics.sink_physical_episode_id[39, 1], 0)
         np.testing.assert_allclose(diagnostics.pelvis_tilt_rad, 0.0)
         np.testing.assert_allclose(diagnostics.pelvis_forward_velocity_m_s, 0.1)
         np.testing.assert_allclose(diagnostics.forward_velocity_error_m_s, 0.05)
+        self.assertEqual(
+            np.count_nonzero(diagnostics.pre_event_baseline_valid), 10
+        )
+        self.assertEqual(PRE_EVENT_BASELINE_SAMPLES, 1000)
+        np.testing.assert_allclose(
+            diagnostics.pelvis_z_drop_from_pre_event_m[10:], 0.0
+        )
+        np.testing.assert_allclose(
+            diagnostics.forward_velocity_drop_from_pre_event_m_s[10:], 0.0
+        )
         self.assertTrue(np.all(np.isfinite(diagnostics.foot_world_xyz)))
         self.assertTrue(np.all(np.isfinite(diagnostics.foot_world_velocity_xyz)))
         self.assertTrue(np.all(np.isfinite(diagnostics.contact_penetration_m)))
@@ -320,6 +424,30 @@ class SimulationTest(unittest.TestCase):
             tuple(RuntimeTrace.__dataclass_fields__),
             ("sequence", "timestamp_us", "pelvis_imu"),
         )
+
+        tilted_orientation = orientation.copy()
+        tilt = SINK_HAZARD_TILT_THRESHOLD_RAD + 0.01
+        tilted_orientation[20:, 0] = np.cos(tilt / 2.0)
+        tilted_orientation[20:, 1] = np.sin(tilt / 2.0)
+        tilted = derive_physical_diagnostics(
+            contact,
+            force,
+            xyz,
+            velocity,
+            penetration,
+            pre_fall,
+            pelvis_z,
+            tilted_orientation,
+            angular_velocity,
+            linear_velocity,
+            0.15,
+            fall_active,
+            soft_patch_contact=soft_patch_contact,
+        )
+        expected_t2 = 20 + SINK_HAZARD_TILT_PERSISTENCE_SAMPLES - 1
+        self.assertTrue(tilted.sink_degradation_onset[expected_t2])
+        self.assertTrue(tilted.sink_hazard_onset[expected_t2])
+        self.assertFalse(tilted.sink_hazard_active[:expected_t2].any())
 
     def test_sink_sanity_experiment_config_is_bounded_and_symmetric(self) -> None:
         with SINK_EXPERIMENT_CONFIG.open("r", encoding="utf-8") as stream:
@@ -348,6 +476,44 @@ class SimulationTest(unittest.TestCase):
         )
         self.assertFalse(
             experiment["interpretation"]["primary_sink_labels_generated"]
+        )
+
+    def test_sink_transition_experiment_config_is_finite_and_bounded(self) -> None:
+        with SINK_TRANSITION_EXPERIMENT_CONFIG.open("r", encoding="utf-8") as stream:
+            experiment = yaml.safe_load(stream)
+        self.assertEqual(
+            experiment["experiment"]["id"], "SINK_HAZARD_TRANSITION_AND_CRITERIA"
+        )
+        self.assertEqual(experiment["common"]["duration_s"], 8.0)
+        self.assertEqual(
+            experiment["geometry"]["patch_start_x_m"], SINK_PATCH_START_X_M
+        )
+        self.assertEqual(
+            experiment["geometry"]["patch_end_x_m"], SINK_PATCH_END_X_M
+        )
+        self.assertEqual(
+            experiment["timeline"]["t2_degradation"]["threshold_rad"],
+            SINK_HAZARD_TILT_THRESHOLD_RAD,
+        )
+        runs = experiment["runs"]
+        self.assertEqual(len(runs), 8)
+        self.assertEqual(
+            {
+                (run["sink_pattern"], run["sink_severity"])
+                for run in runs[2:]
+            },
+            {
+                (f"transition_{side}", severity)
+                for side in ("left", "right")
+                for severity in SINK_SEVERITIES
+            },
+        )
+        self.assertFalse(
+            experiment["interpretation"]["primary_sink_labels_generated"]
+        )
+        self.assertEqual(
+            experiment["interpretation"]["sink_hazard_status"],
+            "SINK_HAZARD_CRITERIA_FROZEN",
         )
 
     @unittest.skipUnless(
@@ -392,6 +558,42 @@ class SimulationTest(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(diagnostics.foot_world_xyz)))
         self.assertTrue(np.all(np.isfinite(diagnostics.foot_world_velocity_xyz)))
         self.assertTrue(np.all(np.isfinite(diagnostics.contact_penetration_m)))
+
+        transition_result = run_simulation(
+            replace(
+                config,
+                terrain="sand",
+                sink_pattern="transition_left",
+                sink_severity="severe",
+                duration_s=4.0,
+            )
+        )
+        transition_summary = summarize_result(transition_result)
+        t0 = transition_summary["first_soft_patch_contact_sample_per_foot"][0]
+        t1 = transition_summary[
+            "first_sink_physical_after_patch_sample_per_foot"
+        ][0]
+        t2 = transition_summary["first_sink_hazard_sample"]
+        t3 = transition_summary["first_fall_sample"]
+        self.assertIsNotNone(t0)
+        self.assertIsNotNone(t1)
+        self.assertIsNotNone(t2)
+        self.assertIsNotNone(t3)
+        self.assertGreaterEqual(t0, 1500)
+        self.assertLessEqual(t0, 3000)
+        self.assertLess(t0, t1)
+        self.assertLess(t1, t2)
+        self.assertLess(t2, t3)
+        self.assertIn(
+            "nonfoot_surface_contact", transition_summary["first_fall_reasons"]
+        )
+        self.assertTrue(
+            np.all(
+                np.isfinite(
+                    transition_result.diagnostics.pelvis_z_drop_from_pre_event_m[t0:]
+                )
+            )
+        )
 
         fake_viewer = FakeViewer()
         viewer_config = replace(config, headless=False)

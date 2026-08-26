@@ -24,6 +24,7 @@ from .terrain import (
     apply_sink_patch_profiles,
     apply_terrain_profile,
     get_terrain_profile,
+    soft_sink_geom_ids,
     validate_sink_scenario,
 )
 
@@ -509,6 +510,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         for names in FOOT_CONTACT_GEOM_NAMES.values()
         for name in names
     )
+    soft_patch_geom_ids = soft_sink_geom_ids(model, config.sink_pattern)
 
     timestamp_us: list[int] = []
     imu: list[np.ndarray] = []
@@ -517,6 +519,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
     foot_xyz: list[np.ndarray] = []
     foot_velocity: list[np.ndarray] = []
     penetration: list[np.ndarray] = []
+    soft_patch_contact: list[np.ndarray] = []
     pre_fall: list[bool] = []
     pelvis_world_z: list[float] = []
     pelvis_orientation: list[np.ndarray] = []
@@ -579,7 +582,12 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             if reasons and first_fall_sample is None:
                 first_fall_sample = len(timestamp_us)
                 first_fall_reasons = reasons
-            exact = read_exact_foot_sample(model, data, ground_geom_ids)
+            exact = read_exact_foot_sample(
+                model,
+                data,
+                ground_geom_ids,
+                soft_patch_geom_ids,
+            )
             pelvis_velocity = np.zeros(6, dtype=np.float64)
             mujoco.mj_objectVelocity(
                 model,
@@ -596,6 +604,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             foot_xyz.append(exact.world_xyz)
             foot_velocity.append(exact.world_velocity_xyz)
             penetration.append(exact.contact_penetration_m)
+            soft_patch_contact.append(exact.soft_patch_contact)
             pre_fall.append(first_fall_sample is None)
             pelvis_world_z.append(float(data.qpos[2]))
             pelvis_orientation.append(data.qpos[3:7].copy())
@@ -629,6 +638,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         np.asarray(pelvis_linear_velocity, dtype=np.float64).reshape(-1, 3),
         config.command_speed_mps,
         np.asarray(fall_active, dtype=bool),
+        soft_patch_contact=np.asarray(soft_patch_contact, dtype=bool).reshape(-1, 2),
     )
     metadata: dict[str, object] = {
         "terrain": config.terrain,
@@ -671,6 +681,11 @@ def _first_true_per_foot(values: np.ndarray) -> list[int | None]:
     return first
 
 
+def _first_true(values: np.ndarray) -> int | None:
+    indices = np.flatnonzero(np.asarray(values))
+    return None if indices.size == 0 else int(indices[0])
+
+
 def _degrees_or_none(value_rad: float | None) -> float | None:
     return None if value_rad is None else float(np.degrees(value_rad))
 
@@ -688,6 +703,25 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
     max_abs_roll = _finite_max(np.abs(diagnostics.pelvis_roll_rad))
     max_abs_pitch = _finite_max(np.abs(diagnostics.pelvis_pitch_rad))
     max_tilt = _finite_max(diagnostics.pelvis_tilt_rad)
+    first_degradation = _first_true(diagnostics.sink_degradation_onset)
+    first_sink_hazard = _first_true(diagnostics.sink_hazard_onset)
+    first_patch_sink = _first_true(diagnostics.sink_physical_after_patch_onset)
+    first_slip = _first_true(diagnostics.established_slip)
+    dual_phenomenon = bool(
+        first_slip is not None
+        and first_sink_hazard is not None
+        and first_slip < first_sink_hazard
+    )
+    if dual_phenomenon:
+        sink_episode_qualification = "DUAL_PHENOMENON"
+    elif first_sink_hazard is not None:
+        sink_episode_qualification = "HAZARDOUS_SINK_EPISODE"
+    elif first_patch_sink is not None and result.metadata["first_fall_sample"] is None:
+        sink_episode_qualification = "BENIGN_SINK_EPISODE"
+    elif first_patch_sink is not None:
+        sink_episode_qualification = "INCONCLUSIVE_SINK_EPISODE"
+    else:
+        sink_episode_qualification = None
     pelvis_z_range = (
         None
         if pelvis_z.size == 0
@@ -738,6 +772,19 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
             "first_sink_physical_sample_per_foot": _first_true_per_foot(
                 diagnostics.sink_physical_onset
             ),
+            "first_soft_patch_contact_sample_per_foot": _first_true_per_foot(
+                diagnostics.soft_patch_contact_onset
+            ),
+            "first_sink_physical_after_patch_sample_per_foot": _first_true_per_foot(
+                diagnostics.sink_physical_after_patch_onset
+            ),
+            "first_sink_degradation_sample": first_degradation,
+            "first_sink_hazard_sample": first_sink_hazard,
+            "sink_episode_qualification": sink_episode_qualification,
+            "dual_phenomenon": dual_phenomenon,
+            "first_established_slip_sample_per_foot": _first_true_per_foot(
+                diagnostics.established_slip
+            ),
             "max_abs_pelvis_roll_deg": _degrees_or_none(max_abs_roll),
             "max_abs_pelvis_pitch_deg": _degrees_or_none(max_abs_pitch),
             "max_pelvis_tilt_deg": _degrees_or_none(max_tilt),
@@ -753,6 +800,85 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
                 None
                 if forward_error.size == 0
                 else float(np.sqrt(np.mean(np.square(forward_error))))
+            ),
+            "pre_event_baseline_sample_range": (
+                None
+                if not np.any(diagnostics.pre_event_baseline_valid)
+                else [
+                    int(np.flatnonzero(diagnostics.pre_event_baseline_valid)[0]),
+                    int(np.flatnonzero(diagnostics.pre_event_baseline_valid)[-1] + 1),
+                ]
+            ),
+            "pre_event_mean_pelvis_z_m": (
+                None
+                if not np.any(diagnostics.pre_event_baseline_valid)
+                else float(
+                    np.mean(
+                        diagnostics.pelvis_world_z_m[
+                            diagnostics.pre_event_baseline_valid
+                        ]
+                    )
+                )
+            ),
+            "pre_event_mean_pelvis_tilt_deg": (
+                None
+                if not np.any(diagnostics.pre_event_baseline_valid)
+                else float(
+                    np.degrees(
+                        np.mean(
+                            diagnostics.pelvis_tilt_rad[
+                                diagnostics.pre_event_baseline_valid
+                            ]
+                        )
+                    )
+                )
+            ),
+            "pre_event_mean_forward_velocity_m_s": (
+                None
+                if not np.any(diagnostics.pre_event_baseline_valid)
+                else float(
+                    np.mean(
+                        diagnostics.pelvis_forward_velocity_m_s[
+                            diagnostics.pre_event_baseline_valid
+                        ]
+                    )
+                )
+            ),
+            "pre_event_mean_angular_speed_rad_s": (
+                None
+                if not np.any(diagnostics.pre_event_baseline_valid)
+                else float(
+                    np.mean(
+                        np.linalg.norm(
+                            diagnostics.pelvis_angular_velocity_rad_s[
+                                diagnostics.pre_event_baseline_valid
+                            ],
+                            axis=1,
+                        )
+                    )
+                )
+            ),
+            "max_pelvis_z_drop_from_pre_event_m": _finite_max(
+                diagnostics.pelvis_z_drop_from_pre_event_m[
+                    diagnostics.pre_fall_valid
+                ]
+            ),
+            "max_tilt_change_from_pre_event_deg": _degrees_or_none(
+                _finite_max(
+                    diagnostics.pelvis_tilt_change_from_pre_event_rad[
+                        diagnostics.pre_fall_valid
+                    ]
+                )
+            ),
+            "max_forward_velocity_drop_from_pre_event_m_s": _finite_max(
+                diagnostics.forward_velocity_drop_from_pre_event_m_s[
+                    diagnostics.pre_fall_valid
+                ]
+            ),
+            "max_angular_speed_change_from_pre_event_rad_s": _finite_max(
+                diagnostics.pelvis_angular_speed_change_from_pre_event_rad_s[
+                    diagnostics.pre_fall_valid
+                ]
             ),
             "loaded_contact_samples_per_foot": np.count_nonzero(
                 diagnostics.loaded_contact, axis=0

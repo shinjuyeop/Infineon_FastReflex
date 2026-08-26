@@ -21,6 +21,9 @@ SLIP_THRESHOLD_M = 0.050
 SLIP_PERSISTENCE_SAMPLES = 3
 SINK_PHYSICAL_THRESHOLD_M = 0.0055
 SINK_PHYSICAL_PERSISTENCE_SAMPLES = 20
+PRE_EVENT_BASELINE_SAMPLES = 1000
+SINK_HAZARD_TILT_THRESHOLD_RAD = 0.04454633221030235
+SINK_HAZARD_TILT_PERSISTENCE_SAMPLES = 20
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,7 @@ class ExactFootSample:
     world_xyz: np.ndarray
     world_velocity_xyz: np.ndarray
     contact_penetration_m: np.ndarray
+    soft_patch_contact: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -39,6 +43,8 @@ class PhysicalDiagnostics:
     """Full-run exact state separated from runtime model inputs."""
 
     physical_contact: np.ndarray
+    soft_patch_contact: np.ndarray
+    soft_patch_contact_onset: np.ndarray
     touchdown: np.ndarray
     loaded_contact: np.ndarray
     contact_episode_id: np.ndarray
@@ -55,6 +61,11 @@ class PhysicalDiagnostics:
     sink_physical_active: np.ndarray
     sink_physical_onset: np.ndarray
     sink_physical_episode_id: np.ndarray
+    sink_physical_after_patch_onset: np.ndarray
+    sink_degradation_active: np.ndarray
+    sink_degradation_onset: np.ndarray
+    sink_hazard_active: np.ndarray
+    sink_hazard_onset: np.ndarray
     pelvis_world_z_m: np.ndarray
     pelvis_orientation_wxyz: np.ndarray
     pelvis_roll_rad: np.ndarray
@@ -64,6 +75,11 @@ class PhysicalDiagnostics:
     pelvis_linear_velocity_m_s: np.ndarray
     pelvis_forward_velocity_m_s: np.ndarray
     forward_velocity_error_m_s: np.ndarray
+    pre_event_baseline_valid: np.ndarray
+    pelvis_z_drop_from_pre_event_m: np.ndarray
+    pelvis_tilt_change_from_pre_event_rad: np.ndarray
+    forward_velocity_drop_from_pre_event_m_s: np.ndarray
+    pelvis_angular_speed_change_from_pre_event_rad_s: np.ndarray
     fall_active: np.ndarray
 
 
@@ -89,10 +105,12 @@ def read_exact_foot_sample(
     model: mujoco.MjModel,
     data: mujoco.MjData,
     ground_geom_ids: frozenset[int],
+    soft_patch_geom_ids: frozenset[int] = frozenset(),
 ) -> ExactFootSample:
     """Read label-only contact, kinematics, force, and penetration."""
     body_ids, geom_ids = _foot_ids(model)
     contact = np.zeros(2, dtype=bool)
+    soft_patch_contact = np.zeros(2, dtype=bool)
     normal_force = np.zeros(2, dtype=np.float64)
     penetration = np.zeros(2, dtype=np.float64)
     wrench = np.zeros(6, dtype=np.float64)
@@ -106,6 +124,8 @@ def read_exact_foot_sample(
             if foot_geom not in ids:
                 continue
             contact[side_index] = True
+            if geom1 in soft_patch_geom_ids or geom2 in soft_patch_geom_ids:
+                soft_patch_contact[side_index] = True
             penetration[side_index] = max(
                 penetration[side_index], max(0.0, -float(item.dist))
             )
@@ -131,6 +151,7 @@ def read_exact_foot_sample(
         world_xyz=np.stack(tuple(data.xpos[body_id].copy() for body_id in body_ids)),
         world_velocity_xyz=np.asarray(world_velocity, dtype=np.float64),
         contact_penetration_m=penetration,
+        soft_patch_contact=soft_patch_contact,
     )
 
 
@@ -275,6 +296,7 @@ def derive_physical_diagnostics(
     pelvis_linear_velocity_m_s: np.ndarray,
     command_speed_mps: float,
     fall_active: np.ndarray,
+    soft_patch_contact: np.ndarray | None = None,
 ) -> PhysicalDiagnostics:
     """Derive simulator-only cause/effect diagnostics, never terrain labels."""
     contact = np.asarray(physical_contact, dtype=bool)
@@ -289,8 +311,14 @@ def derive_physical_diagnostics(
     linear_velocity = np.asarray(pelvis_linear_velocity_m_s, dtype=np.float64)
     fallen = np.asarray(fall_active, dtype=bool)
     sample_count = len(contact)
+    patch_contact = (
+        np.zeros((sample_count, 2), dtype=bool)
+        if soft_patch_contact is None
+        else np.asarray(soft_patch_contact, dtype=bool)
+    )
     if (
         contact.shape != (sample_count, 2)
+        or patch_contact.shape != (sample_count, 2)
         or force.shape != (sample_count, 2)
         or xyz.shape != (sample_count, 2, 3)
         or velocity.shape != (sample_count, 2, 3)
@@ -357,12 +385,79 @@ def derive_physical_diagnostics(
     forward_velocity = np.einsum(
         "ij,ij->i", linear_velocity, body_forward_world
     )
+    angular_speed = np.linalg.norm(angular_velocity, axis=1)
+
+    patch_onset = patch_contact & ~np.vstack(
+        (np.zeros((1, 2), dtype=bool), patch_contact[:-1])
+    )
+    contact_episode_id = stack("episode_id").astype(np.int32)
+    sink_physical_onset = stack("sink_physical_onset")
+    sink_after_patch_onset = np.zeros((sample_count, 2), dtype=bool)
+    for side in range(2):
+        patch_seen_episodes: set[int] = set()
+        for sample in range(sample_count):
+            episode = int(contact_episode_id[sample, side])
+            if patch_contact[sample, side] and episode >= 0:
+                patch_seen_episodes.add(episode)
+            sink_after_patch_onset[sample, side] = bool(
+                sink_physical_onset[sample, side]
+                and episode in patch_seen_episodes
+            )
+
+    baseline_valid = np.zeros(sample_count, dtype=bool)
+    z_drop = np.full(sample_count, np.nan, dtype=np.float64)
+    tilt_change = np.full(sample_count, np.nan, dtype=np.float64)
+    forward_drop = np.full(sample_count, np.nan, dtype=np.float64)
+    angular_speed_change = np.full(sample_count, np.nan, dtype=np.float64)
+    event_samples = np.flatnonzero(np.any(patch_onset, axis=1))
+    if event_samples.size:
+        t0 = int(event_samples[0])
+        baseline_start = max(0, t0 - PRE_EVENT_BASELINE_SAMPLES)
+        baseline_valid[baseline_start:t0] = pre_fall[baseline_start:t0]
+        baseline_indices = np.flatnonzero(baseline_valid)
+        if baseline_indices.size:
+            z_reference = float(np.mean(pelvis_z[baseline_indices]))
+            tilt_reference = float(np.mean(pelvis_tilt[baseline_indices]))
+            forward_reference = float(np.mean(forward_velocity[baseline_indices]))
+            angular_speed_reference = float(np.mean(angular_speed[baseline_indices]))
+            z_drop[t0:] = z_reference - pelvis_z[t0:]
+            tilt_change[t0:] = pelvis_tilt[t0:] - tilt_reference
+            forward_drop[t0:] = forward_reference - forward_velocity[t0:]
+            angular_speed_change[t0:] = (
+                angular_speed[t0:] - angular_speed_reference
+            )
+
+    degradation_active = np.zeros(sample_count, dtype=bool)
+    consecutive = 0
+    for sample in range(sample_count):
+        if (
+            pre_fall[sample]
+            and pelvis_tilt[sample] > SINK_HAZARD_TILT_THRESHOLD_RAD
+        ):
+            consecutive += 1
+        else:
+            consecutive = 0
+        degradation_active[sample] = (
+            consecutive >= SINK_HAZARD_TILT_PERSISTENCE_SAMPLES
+        )
+    degradation_onset = degradation_active & ~np.r_[
+        False, degradation_active[:-1]
+    ]
+    physical_sink_seen = np.logical_or.accumulate(
+        np.any(sink_after_patch_onset, axis=1)
+    )
+    sink_hazard_active = degradation_active & physical_sink_seen
+    sink_hazard_onset = sink_hazard_active & ~np.r_[
+        False, sink_hazard_active[:-1]
+    ]
 
     return PhysicalDiagnostics(
         physical_contact=contact,
+        soft_patch_contact=patch_contact,
+        soft_patch_contact_onset=patch_onset,
         touchdown=stack("touchdown"),
         loaded_contact=loaded,
-        contact_episode_id=stack("episode_id").astype(np.int32),
+        contact_episode_id=contact_episode_id,
         foot_world_xyz=xyz.astype(np.float32),
         foot_world_velocity_xyz=velocity.astype(np.float32),
         tangential_anchor_drift_m=stack("drift").astype(np.float32),
@@ -376,8 +471,13 @@ def derive_physical_diagnostics(
         pre_fall_valid=pre_fall,
         established_slip=stack("slip"),
         sink_physical_active=stack("sink_physical_active"),
-        sink_physical_onset=stack("sink_physical_onset"),
+        sink_physical_onset=sink_physical_onset,
         sink_physical_episode_id=stack("sink_physical_episode_id").astype(np.int32),
+        sink_physical_after_patch_onset=sink_after_patch_onset,
+        sink_degradation_active=degradation_active,
+        sink_degradation_onset=degradation_onset,
+        sink_hazard_active=sink_hazard_active,
+        sink_hazard_onset=sink_hazard_onset,
         pelvis_world_z_m=pelvis_z.astype(np.float32),
         pelvis_orientation_wxyz=orientation.astype(np.float32),
         pelvis_roll_rad=pelvis_roll.astype(np.float32),
@@ -389,5 +489,12 @@ def derive_physical_diagnostics(
         forward_velocity_error_m_s=(
             float(command_speed_mps) - forward_velocity
         ).astype(np.float32),
+        pre_event_baseline_valid=baseline_valid,
+        pelvis_z_drop_from_pre_event_m=z_drop.astype(np.float32),
+        pelvis_tilt_change_from_pre_event_rad=tilt_change.astype(np.float32),
+        forward_velocity_drop_from_pre_event_m_s=forward_drop.astype(np.float32),
+        pelvis_angular_speed_change_from_pre_event_rad_s=(
+            angular_speed_change.astype(np.float32)
+        ),
         fall_active=fallen,
     )

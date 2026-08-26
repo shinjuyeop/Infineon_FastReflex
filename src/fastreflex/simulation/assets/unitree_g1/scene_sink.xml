@@ -13,10 +13,28 @@
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <!-- Both lane tops are exactly z=0. Colors identify side only, not physics. -->
+    <!-- Full-lane slots preserve the 2026-08-26 sanity-study topology. -->
     <geom name="terrain_left" type="box" pos="0 5 -1" size="10 5 1"
       rgba="0.25 0.45 0.75 1"/>
     <geom name="terrain_right" type="box" pos="0 -5 -1" size="10 5 1"
       rgba="0.75 0.45 0.20 1"/>
+
+    <!--
+      terrain.py selects transition or full-lane slots before MjData exists.
+      Every top is z=0; transition boxes meet at x=0.35 and x=1.10 without
+      a hole, step, or overlap.
+    -->
+    <geom name="terrain_transition_pre" type="box"
+      pos="-4.825 0 -1" size="5.175 10 1"
+      rgba="0.35 0.35 0.35 0"/>
+    <geom name="terrain_transition_left" type="box"
+      pos="0.725 5 -1" size="0.375 5 1"
+      rgba="0.25 0.45 0.75 0"/>
+    <geom name="terrain_transition_right" type="box"
+      pos="0.725 -5 -1" size="0.375 5 1"
+      rgba="0.75 0.45 0.20 0"/>
+    <geom name="terrain_transition_post" type="box"
+      pos="5.55 0 -1" size="4.45 10 1"
+      rgba="0.35 0.35 0.35 0"/>
   </worldbody>
 </mujoco>

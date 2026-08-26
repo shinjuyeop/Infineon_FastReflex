@@ -158,6 +158,18 @@ python scripts/fastreflex.py simulate \
   --viewer
 ```
 
+정상 concrete 보행 뒤 finite left soft patch에 진입하는 transition Sink:
+
+```bash
+python scripts/fastreflex.py simulate \
+  --terrain sand \
+  --sink-pattern transition_left \
+  --sink-severity severe \
+  --speed 0.15 \
+  --duration 8 \
+  --viewer
+```
+
 환경 변수를 설정하지 않았다면 각 명령 끝에 `--policy artifacts/external/unitree_g1/g1_velocity_policy.onnx`를 추가한다. Viewer를 사용할 수 없는 환경에서는 display 확인 방법과 `--headless` 대안을 포함한 명확한 error를 출력한다.
 
 ## Terrain 설명
@@ -171,7 +183,7 @@ python scripts/fastreflex.py simulate \
 
 이 profile은 실제 재료 측정값이나 deformable-material model이 아니다. Relative behavior와 signal-separation을 보기 위한 engineering approximation이며 viewer를 위해 friction, `solref`, `solimp`를 바꾸지 않는다.
 
-`uniform`은 기존 scene/profile을 그대로 사용한다. `asymmetric_left`와 `asymmetric_right`는 전용 scene의 같은 높이(`z=0`)인 left/right lane 중 지정된 lane에만 더 낮은 contact impedance를 적용한다. Patch는 hole이나 step이 아니며 지면 mesh가 변형되지 않는다. Viewer의 blue/orange는 lane side를 구분하는 visual-only 색이고 severity를 뜻하지 않는다. Asymmetric pattern은 `--terrain sand`에서만 허용된다.
+`uniform`은 기존 scene/profile을 그대로 사용한다. `asymmetric_left`와 `asymmetric_right`는 `scene_sink.xml`의 같은 높이(`z=0`)인 full left/right lane 중 지정 lane에 더 낮은 contact impedance를 적용한다. `transition_left`와 `transition_right`도 같은 canonical scene을 사용하며 `x=[0.35,1.10] m`의 지정 side만 soft profile, 그 전후와 반대 side는 concrete profile이다. 모든 경계의 nominal top은 `z=0`이고 box가 맞닿을 뿐 겹치지 않는다. Hole, step, lowered surface 또는 deformable mesh는 없다. Viewer의 blue/orange는 lane side를 구분하는 visual-only 색이고 severity를 뜻하지 않는다. Non-uniform pattern은 `--terrain sand`에서만 허용된다.
 
 ## Hazard label 설명
 
@@ -180,7 +192,7 @@ Terrain 이름과 Hazard label은 독립적이다. `concrete = NORMAL`, `ice = S
 - Established Slip: valid loaded contact에서 touchdown 뒤 10 ms를 제외하고, touchdown anchor 기준 tangential drift가 50 mm 이상인 상태가 3 ms 지속
 - `sink_physical_active`: 같은 validity에서 first-loaded contact penetration보다 5.5 mm 이상 증가한 상태가 20 ms 지속
 
-`sink_physical_active`는 물리적 침하 precursor diagnostic이며 primary `SINK` class가 아니다. Primary `SINK`는 physical sink와 meaningful locomotion/posture degradation이 함께 있는 hazard지만 최종 numeric gate는 아직 `SINK_HAZARD_CRITERIA_NOT_YET_FROZEN`이다. Uniform sand처럼 penetration이 있어도 안정적으로 걷는 상태는 그 자체만으로 `SINK`가 아니다.
+`sink_physical_active`는 물리적 침하 precursor diagnostic이며 primary `SINK` class가 아니다. Frozen primary effect gate는 patch-linked physical sink 뒤 pelvis tilt가 benign-control upper envelope `0.04454633221030235 rad`를 초과한 상태가 20 ms 지속되는 것이다. Uniform sand처럼 penetration이 있어도 안정적으로 걷는 상태는 그 자체만으로 `SINK`가 아니다. Hazardous episode의 early-detection reference 후보는 effect가 명확해진 t2가 아니라 physical onset t1이며 실제 IMU label/window timing은 Pilot/Time-to-Separation 전까지 미확정이다.
 
 ## 출력 해석
 
@@ -190,12 +202,16 @@ Simulation 종료 후 JSON summary를 stdout에 출력하며 파일이나 datase
 - `dropped_samples`, `timestamp_delta_us`: 1 kHz 연속 sampling 확인
 - `established_slip_samples`: 좌우 foot에서 frozen Slip oracle이 active였던 표본 수의 합
 - `sink_physical_samples_per_foot`, `first_sink_physical_sample_per_foot`: 좌우 physical precursor의 active count와 onset
+- `first_soft_patch_contact_sample_per_foot`, `first_sink_physical_after_patch_sample_per_foot`: transition t0와 같은 contact episode의 t1
+- `first_sink_degradation_sample`, `first_sink_hazard_sample`: frozen tilt persistence와 patch-linked t2 onset
+- `sink_episode_qualification`, `dual_phenomenon`: benign/hazardous/inconclusive episode와 Slip 선행 여부
 - `max_anchor_drift_m`: contact episode의 touchdown anchor 기준 최대 수평 이동
 - `max_contact_penetration_m_per_foot`, `max_loaded_penetration_change_m_per_foot`: 좌우 침투와 first-loaded reference 대비 증가
 - `max_bilateral_loaded_penetration_asymmetry_m`: 양발이 loaded인 구간의 최대 좌우 침투 차이
 - `max_pelvis_tilt_deg`, `pelvis_z_range_m`, `peak_pelvis_angular_speed_rad_s`: posture disturbance candidate
 - `mean_pelvis_forward_velocity_m_s`, `forward_velocity_rmse_m_s`: commanded forward speed 대비 gait effect candidate
 - `loaded_contact_samples_per_foot`, `loaded_contact_imbalance_samples`: contact-duration disturbance candidate
+- `pre_event_*`, `max_*_from_pre_event`: t0 전 최대 1,000 ms baseline과 event-relative pelvis z/tilt/velocity/angular-speed 변화
 - `first_fall_sample`, `first_fall_reasons`: 최초 fall censor 위치와 원인; 없으면 `null`과 빈 목록
 - `viewer`, `terminated_by_viewer`: viewer mode 여부와 window가 duration 전에 닫혔는지 여부
 

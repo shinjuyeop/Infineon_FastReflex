@@ -47,9 +47,14 @@ labels:
     persistence_ms: 20
     role: precursor_diagnostic_only
   sink_hazard:
-    criteria_status: SINK_HAZARD_CRITERIA_NOT_YET_FROZEN
+    criteria_status: SINK_HAZARD_CRITERIA_FROZEN
     requires_physical_sink: true
     requires_meaningful_locomotion_or_posture_degradation: true
+    pelvis_tilt_threshold_rad: 0.04454633221030235
+    persistence_ms: 20
+    effect_onset: first_persistent_threshold_sample
+    hazardous_episode_early_detection_reference: sink_physical_onset_t1
+    t1_to_t2_interval_training_eligible: false
 
 provenance:
   required_fields:

@@ -22,6 +22,8 @@ Unitree G1 MJCF/meshes + user-supplied walking ONNX + terrain profile
 
 Runtime trace는 `[sequence, timestamp_us, pelvis_imu]`만 갖는다. Exact contact, force/load, foot state, fall censor와 oracle은 별도 diagnostics object에만 존재한다. Smoke command는 dataset이나 report artifact를 저장하지 않는다.
 
+Optional viewer는 canonical physics state를 별도 MuJoCo render model/data에 복사해 약 60 Hz로 sync한다. GUI input은 render copy에만 머물고 physics loop에는 돌아오지 않으며, wall-clock pacing도 viewer mode에만 적용한다. 사용법은 [`simulation.md`](simulation.md)에 둔다.
+
 Physics는 0.5 ms(2 kHz)이고 두 step마다 raw MuJoCo pelvis accelerometer/gyro를 읽어 1 ms(1 kHz), `float32`, `[accel_x/y/z, gyro_x/y/z]`로 제공한다. `imu` site는 pelvis 원점에 무회전으로 결합되어 local +x/+y/+z가 전방/좌측/위쪽이다. Timestamp는 run-local monotonic `int64` µs다.
 
 ### Terrain profiles

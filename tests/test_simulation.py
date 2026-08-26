@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import redirect_stderr
 from dataclasses import replace
+import io
 import os
 from pathlib import Path
 import unittest
+from unittest import mock
 
 import mujoco
 import numpy as np
@@ -15,6 +18,7 @@ from fastreflex.simulation.g1 import (
     ACTUATOR_NAMES,
     IMU_CHANNELS,
     RuntimeTrace,
+    launch_passive_viewer,
     load_g1_model,
     load_simulation_config,
     read_pelvis_imu,
@@ -31,11 +35,35 @@ from fastreflex.simulation.hazards import (
     derive_physical_diagnostics,
 )
 from fastreflex.simulation.terrain import TERRAIN_PROFILES
+from scripts.fastreflex import build_parser
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SIMULATOR_CONFIG = ROOT / "configs" / "simulator" / "g1.yaml"
 DATASET_CONFIG = ROOT / "configs" / "dataset" / "hazard.yaml"
+
+
+class FakeViewer:
+    def __init__(self, running_checks: int | None = None) -> None:
+        self.sync_count = 0
+        self.running_checks = running_checks
+        self.is_running_count = 0
+
+    def __enter__(self) -> "FakeViewer":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def is_running(self) -> bool:
+        self.is_running_count += 1
+        return (
+            self.running_checks is None
+            or self.is_running_count <= self.running_checks
+        )
+
+    def sync(self, state_only: bool = False) -> None:
+        self.sync_count += 1
 
 
 class SimulationTest(unittest.TestCase):
@@ -100,6 +128,31 @@ class SimulationTest(unittest.TestCase):
                 np.testing.assert_allclose(model.geom_solref[terrain_id], profile.solref)
                 np.testing.assert_allclose(model.geom_solimp[terrain_id], profile.solimp)
 
+    def test_viewer_cli_rates_and_availability_contract(self) -> None:
+        parser = build_parser()
+        viewer_args = parser.parse_args(["simulate", "--viewer"])
+        self.assertTrue(viewer_args.viewer)
+        self.assertFalse(viewer_args.headless)
+        with redirect_stderr(io.StringIO()) as error:
+            with self.assertRaises(SystemExit) as conflict:
+                parser.parse_args(["simulate", "--headless", "--viewer"])
+        self.assertEqual(conflict.exception.code, 2)
+        self.assertIn("not allowed with argument --headless", error.getvalue())
+
+        viewer_config = replace(
+            load_simulation_config(SIMULATOR_CONFIG), headless=False
+        )
+        viewer_config.validate()
+        model, _ = load_g1_model(viewer_config.terrain)
+        self.assertEqual(model.opt.timestep, 0.0005)
+        self.assertEqual(viewer_config.sensor_rate_hz, 1000)
+        with mock.patch(
+            "fastreflex.simulation.g1.importlib.import_module",
+            side_effect=ImportError("viewer unavailable"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "viewer is unavailable"):
+                launch_passive_viewer(model, mujoco.MjData(model))
+
     def test_physical_diagnostics_and_dataset_threshold_parity(self) -> None:
         with DATASET_CONFIG.open("r", encoding="utf-8") as stream:
             contract = yaml.safe_load(stream)["labels"]
@@ -162,7 +215,11 @@ class SimulationTest(unittest.TestCase):
             duration_s=0.2,
             policy_path=Path(os.environ["FASTREFLEX_G1_POLICY"]),
         )
-        result = run_simulation(config)
+        with mock.patch(
+            "fastreflex.simulation.g1.importlib.import_module",
+            side_effect=ImportError("display-free regression"),
+        ):
+            result = run_simulation(config)
         self.assertEqual(result.runtime.pelvis_imu.shape, (200, 6))
         self.assertEqual(result.runtime.pelvis_imu.dtype, np.float32)
         self.assertEqual(result.runtime.timestamp_us.dtype, np.int64)
@@ -184,6 +241,40 @@ class SimulationTest(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(diagnostics.foot_world_xyz)))
         self.assertTrue(np.all(np.isfinite(diagnostics.foot_world_velocity_xyz)))
         self.assertTrue(np.all(np.isfinite(diagnostics.contact_penetration_m)))
+
+        fake_viewer = FakeViewer()
+        viewer_config = replace(config, headless=False)
+        with mock.patch(
+            "fastreflex.simulation.g1.launch_passive_viewer",
+            return_value=fake_viewer,
+        ), mock.patch("fastreflex.simulation.g1._pace_viewer"):
+            viewer_result = run_simulation(viewer_config)
+        self.assertGreater(fake_viewer.sync_count, 1)
+        self.assertEqual(viewer_result.metadata["physics_timestep_s"], 0.0005)
+        self.assertEqual(viewer_result.metadata["sensor_rate_hz"], 1000)
+        self.assertTrue(viewer_result.metadata["viewer"])
+        self.assertFalse(viewer_result.metadata["terminated_by_viewer"])
+        for field in RuntimeTrace.__dataclass_fields__:
+            np.testing.assert_equal(
+                getattr(result.runtime, field), getattr(viewer_result.runtime, field)
+            )
+        for field in type(diagnostics).__dataclass_fields__:
+            np.testing.assert_equal(
+                getattr(diagnostics, field), getattr(viewer_result.diagnostics, field)
+            )
+
+        closing_viewer = FakeViewer(running_checks=20)
+        with mock.patch(
+            "fastreflex.simulation.g1.launch_passive_viewer",
+            return_value=closing_viewer,
+        ), mock.patch("fastreflex.simulation.g1._pace_viewer"):
+            partial_result = run_simulation(viewer_config)
+        self.assertTrue(partial_result.metadata["terminated_by_viewer"])
+        self.assertLess(
+            partial_result.metadata["actual_samples"],
+            partial_result.metadata["expected_samples"],
+        )
+        self.assertEqual(partial_result.metadata["dropped_samples"], 0)
 
 
 if __name__ == "__main__":

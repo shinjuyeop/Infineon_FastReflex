@@ -42,10 +42,16 @@ def build_parser() -> argparse.ArgumentParser:
             "FASTREFLEX_G1_POLICY"
         ),
     )
-    simulate.add_argument(
+    mode = simulate.add_mutually_exclusive_group()
+    mode.add_argument(
         "--headless",
         action="store_true",
-        help="explicitly select the only supported smoke mode",
+        help="run at maximum speed without opening a window (default)",
+    )
+    mode.add_argument(
+        "--viewer",
+        action="store_true",
+        help="open the official MuJoCo viewer and pace simulation near real time",
     )
     for command in PLACEHOLDER_COMMANDS:
         subparsers.add_parser(command, help="reserved for a later milestone")
@@ -71,6 +77,11 @@ def main() -> int:
         policy_path = args.policy
         if policy_path is None and environment_policy:
             policy_path = Path(environment_policy)
+        headless = config.headless
+        if args.viewer:
+            headless = False
+        elif args.headless:
+            headless = True
         config = replace(
             config,
             terrain=config.terrain if args.terrain is None else args.terrain,
@@ -79,7 +90,7 @@ def main() -> int:
             ),
             duration_s=config.duration_s if args.duration is None else args.duration,
             policy_path=config.policy_path if policy_path is None else policy_path,
-            headless=config.headless or args.headless,
+            headless=headless,
         )
         result = run_simulation(config)
         print(json.dumps(summarize_result(result), indent=2, sort_keys=True))

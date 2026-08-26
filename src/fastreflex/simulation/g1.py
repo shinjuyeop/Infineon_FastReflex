@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 import hashlib
+import importlib
 from pathlib import Path
+import time
+from typing import Any, ContextManager
 
 import mujoco
 import numpy as np
@@ -111,6 +115,7 @@ ACTION_SCALE = np.asarray(
 )
 POLICY_PERIOD_S = 0.6
 CONTROL_PERIOD_S = 0.02
+VIEWER_SYNC_PERIOD_S = 1.0 / 60.0
 
 
 @dataclass(frozen=True)
@@ -157,8 +162,6 @@ class SimulationConfig:
         if not 0.1 <= self.command_speed_mps <= 0.5:
             raise ValueError("walking command speed must be in [0.1, 0.5] m/s")
         get_terrain_profile(self.terrain)
-        if not self.headless:
-            raise ValueError("only headless smoke simulation is implemented")
 
 
 @dataclass(frozen=True)
@@ -260,6 +263,62 @@ def load_g1_model(terrain_name: str) -> tuple[mujoco.MjModel, int]:
     validate_model_contract(model)
     terrain_id = apply_terrain_profile(model, get_terrain_profile(terrain_name))
     return model, terrain_id
+
+
+def launch_passive_viewer(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+) -> ContextManager[Any]:
+    """Launch MuJoCo's optional GUI with a clear availability error."""
+    try:
+        viewer_module = importlib.import_module("mujoco.viewer")
+    except (ImportError, OSError) as exc:
+        raise RuntimeError(
+            "MuJoCo viewer is unavailable; install the official mujoco package "
+            "with GUI support and use --headless on display-free systems"
+        ) from exc
+    viewer = None
+    try:
+        viewer = viewer_module.launch_passive(
+            model,
+            data,
+            show_left_ui=False,
+            show_right_ui=False,
+        )
+        with viewer.lock():
+            viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+            viewer.cam.trackbodyid = model.body("pelvis").id
+            viewer.cam.distance = 2.5
+            viewer.cam.azimuth = -130.0
+            viewer.cam.elevation = -20.0
+        return viewer
+    except Exception as exc:
+        if viewer is not None:
+            viewer.close()
+        raise RuntimeError(
+            "MuJoCo viewer failed to launch; verify DISPLAY/Wayland access "
+            "(and use mjpython on macOS), or run with --headless"
+        ) from exc
+
+
+def _copy_integration_state(
+    source_model: mujoco.MjModel,
+    source_data: mujoco.MjData,
+    viewer_model: mujoco.MjModel,
+    viewer_data: mujoco.MjData,
+) -> None:
+    """Copy render state without exposing canonical physics to GUI inputs."""
+    state_spec = mujoco.mjtState.mjSTATE_INTEGRATION
+    state = np.empty(mujoco.mj_stateSize(source_model, state_spec), dtype=np.float64)
+    mujoco.mj_getState(source_model, source_data, state, state_spec)
+    mujoco.mj_setState(viewer_model, viewer_data, state, state_spec)
+
+
+def _pace_viewer(simulation_time_s: float, wall_start_s: float) -> None:
+    target_wall_time = wall_start_s + simulation_time_s
+    remaining_s = target_wall_time - time.monotonic()
+    if remaining_s > 0.0:
+        time.sleep(remaining_s)
 
 
 def read_pelvis_imu(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
@@ -434,52 +493,85 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
     pre_fall: list[bool] = []
     first_fall_sample: int | None = None
     first_fall_reasons: tuple[str, ...] = ()
-    minimum_pelvis_height_m = float("inf")
-    minimum_pelvis_up = float("inf")
+    pelvis_id = model.body("pelvis").id
+    minimum_pelvis_height_m = float(data.qpos[2])
+    minimum_pelvis_up = float(data.xmat[pelvis_id, 8])
+    terminated_by_viewer = False
 
-    for physics_step in range(config.total_physics_steps):
-        controller.apply()
-        mujoco.mj_step(model, data)
-        controller.update_after_step()
-        if (physics_step + 1) % config.physics_steps_per_sample:
-            continue
+    viewer_model: mujoco.MjModel | None = None
+    viewer_data: mujoco.MjData | None = None
+    viewer_context: ContextManager[Any] = nullcontext(None)
+    if not config.headless:
+        viewer_model, _ = load_g1_model(config.terrain)
+        viewer_data = mujoco.MjData(viewer_model)
+        _copy_integration_state(model, data, viewer_model, viewer_data)
+        viewer_context = launch_passive_viewer(viewer_model, viewer_data)
 
-        pelvis_id = model.body("pelvis").id
-        minimum_pelvis_height_m = min(minimum_pelvis_height_m, float(data.qpos[2]))
-        minimum_pelvis_up = min(minimum_pelvis_up, float(data.xmat[pelvis_id, 8]))
-        reasons = _fall_reasons(model, data, terrain_id, foot_geom_ids)
-        if reasons and first_fall_sample is None:
-            first_fall_sample = len(timestamp_us)
-            first_fall_reasons = reasons
-        exact = read_exact_foot_sample(model, data, terrain_id)
-        timestamp_us.append(int(round(float(data.time) * 1_000_000.0)))
-        imu.append(read_pelvis_imu(model, data))
-        contact.append(exact.physical_contact)
-        normal_force.append(exact.normal_force_n)
-        foot_xyz.append(exact.world_xyz)
-        foot_velocity.append(exact.world_velocity_xyz)
-        penetration.append(exact.contact_penetration_m)
-        pre_fall.append(first_fall_sample is None)
+    with viewer_context as viewer:
+        wall_start_s = time.monotonic()
+        next_viewer_sync_s = 0.0
+        if viewer is not None:
+            viewer.sync(state_only=True)
+            next_viewer_sync_s = VIEWER_SYNC_PERIOD_S
+
+        for physics_step in range(config.total_physics_steps):
+            if viewer is not None and not viewer.is_running():
+                terminated_by_viewer = True
+                break
+            controller.apply()
+            mujoco.mj_step(model, data)
+            controller.update_after_step()
+
+            if viewer is not None:
+                if float(data.time) + 1e-12 >= next_viewer_sync_s:
+                    assert viewer_model is not None and viewer_data is not None
+                    _copy_integration_state(model, data, viewer_model, viewer_data)
+                    viewer.sync(state_only=True)
+                    next_viewer_sync_s += VIEWER_SYNC_PERIOD_S
+                _pace_viewer(float(data.time), wall_start_s)
+
+            if (physics_step + 1) % config.physics_steps_per_sample:
+                continue
+
+            minimum_pelvis_height_m = min(
+                minimum_pelvis_height_m, float(data.qpos[2])
+            )
+            minimum_pelvis_up = min(
+                minimum_pelvis_up, float(data.xmat[pelvis_id, 8])
+            )
+            reasons = _fall_reasons(model, data, terrain_id, foot_geom_ids)
+            if reasons and first_fall_sample is None:
+                first_fall_sample = len(timestamp_us)
+                first_fall_reasons = reasons
+            exact = read_exact_foot_sample(model, data, terrain_id)
+            timestamp_us.append(int(round(float(data.time) * 1_000_000.0)))
+            imu.append(read_pelvis_imu(model, data))
+            contact.append(exact.physical_contact)
+            normal_force.append(exact.normal_force_n)
+            foot_xyz.append(exact.world_xyz)
+            foot_velocity.append(exact.world_velocity_xyz)
+            penetration.append(exact.contact_penetration_m)
+            pre_fall.append(first_fall_sample is None)
 
     timestamps = np.asarray(timestamp_us, dtype=np.int64)
     sequence = np.arange(len(timestamps), dtype=np.int64)
     runtime = RuntimeTrace(
         sequence=sequence,
         timestamp_us=timestamps,
-        pelvis_imu=np.asarray(imu, dtype=np.float32),
+        pelvis_imu=np.asarray(imu, dtype=np.float32).reshape(-1, 6),
     )
-    if runtime.pelvis_imu.shape != (config.expected_samples, 6):
-        raise RuntimeError("unexpected pelvis IMU sample count or shape")
+    if runtime.pelvis_imu.shape != (len(timestamps), 6):
+        raise RuntimeError("unexpected pelvis IMU shape")
     expected_timestamps = (sequence + 1) * (1_000_000 // config.sensor_rate_hz)
     if not np.array_equal(timestamps, expected_timestamps):
         raise RuntimeError("1 kHz timestamp sequence contains a drop or jitter")
 
     diagnostics = derive_physical_diagnostics(
-        np.asarray(contact),
-        np.asarray(normal_force),
-        np.asarray(foot_xyz),
-        np.asarray(foot_velocity),
-        np.asarray(penetration),
+        np.asarray(contact, dtype=bool).reshape(-1, 2),
+        np.asarray(normal_force, dtype=np.float64).reshape(-1, 2),
+        np.asarray(foot_xyz, dtype=np.float64).reshape(-1, 2, 3),
+        np.asarray(foot_velocity, dtype=np.float64).reshape(-1, 2, 3),
+        np.asarray(penetration, dtype=np.float64).reshape(-1, 2),
         np.asarray(pre_fall),
     )
     metadata: dict[str, object] = {
@@ -489,8 +581,10 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         "sensor_rate_hz": config.sensor_rate_hz,
         "expected_samples": config.expected_samples,
         "actual_samples": len(timestamps),
-        "dropped_samples": config.expected_samples - len(timestamps),
+        "dropped_samples": 0,
         "timestamp_delta_us": 1000,
+        "viewer": not config.headless,
+        "terminated_by_viewer": terminated_by_viewer,
         "command_speed_mps": config.command_speed_mps,
         "policy_sha256": controller.policy_sha256,
         "policy_upstream_revision": UPSTREAM_REVISION,

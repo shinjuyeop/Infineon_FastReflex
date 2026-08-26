@@ -76,7 +76,7 @@ tests/                simulator와 이후 pipeline의 contract test
 
 ## CLI
 
-Policy path는 CLI 또는 `FASTREFLEX_G1_POLICY` 환경 변수로 제공한다. 다음 명령은 trace를 파일로 저장하지 않는 2초 headless smoke다.
+Canonical `simulate` command는 display 없는 headless 실행과 visual-only MuJoCo viewer를 모두 지원한다. Policy path는 CLI 또는 `FASTREFLEX_G1_POLICY` 환경 변수로 제공한다. 다음 명령은 trace를 파일로 저장하지 않는 2초 headless smoke다.
 
 ```bash
 python scripts/fastreflex.py simulate \
@@ -88,6 +88,8 @@ python scripts/fastreflex.py simulate \
 ```
 
 `collect`, `train`, `evaluate`, `export`는 같은 entry point의 placeholder로 유지한다.
+
+Viewer, 네 terrain 예제, policy 준비와 summary 해석은 [`docs/simulation.md`](docs/simulation.md)를 참고한다.
 
 ## Dependency
 

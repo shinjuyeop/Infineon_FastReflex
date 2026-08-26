@@ -4,32 +4,39 @@
 
 ## 준비
 
-Repository root에서 실행한다.
+### 최초 1회 설치
+
+사용할 Python environment를 활성화한 뒤 아래 block 전체를 붙여 넣는다.
 
 ```bash
 cd /d/shin/Infineon_FastReflex
-```
-
-Python 3.10 이상 환경에 project dependency를 설치한다.
-
-```bash
 python -m pip install -e .
 ```
 
 필수 dependency는 `numpy`, `mujoco`, `onnxruntime`, `PyYAML`이다. Viewer는 공식 `mujoco` Python package의 GUI를 사용하므로 별도 GUI framework가 필요하지 않지만, viewer mode에는 사용 가능한 X11/Wayland display가 필요하다. macOS의 passive viewer는 일반 `python` 대신 `mjpython scripts/fastreflex.py ...`로 실행해야 한다.
 
-Walking policy ONNX는 third-party binary provenance 경계를 지키기 위해 repository에 포함하지 않는다. 검증된 Unitree G1 velocity policy 파일을 준비하고 다음 두 방법 중 하나로 경로를 제공한다.
+Walking policy ONNX는 third-party binary provenance 경계를 지키기 위해 repository에 포함하지 않는다. 검증된 Unitree G1 velocity policy 파일을 별도로 준비해야 한다. Local development의 권장 위치는 `artifacts/external/unitree_g1/g1_velocity_policy.onnx`이며, 기존 `*.onnx` ignore rule에 따라 Git에는 포함되지 않는다.
 
-환경 변수:
+### 새 terminal에서 실행 전
+
+권장 local 위치에 policy를 준비했다면 아래 block 전체를 붙여 넣는다. 이 absolute path는 local documentation example이며 source code나 committed YAML의 default가 아니다. 마지막 명령이 파일 정보를 출력하면 준비가 끝난 것이다.
 
 ```bash
-export FASTREFLEX_G1_POLICY=/path/to/policy.onnx
+cd /d/shin/Infineon_FastReflex
+export FASTREFLEX_G1_POLICY=/d/shin/Infineon_FastReflex/artifacts/external/unitree_g1/g1_velocity_policy.onnx
+ls -lh "$FASTREFLEX_G1_POLICY"
 ```
 
-또는 각 명령에 CLI option을 붙인다.
+환경 변수를 사용하지 않으려면 `--policy`를 포함한 전체 명령을 실행한다.
 
 ```bash
---policy /path/to/policy.onnx
+cd /d/shin/Infineon_FastReflex
+python scripts/fastreflex.py simulate \
+  --terrain concrete \
+  --speed 0.15 \
+  --duration 2 \
+  --headless \
+  --policy artifacts/external/unitree_g1/g1_velocity_policy.onnx
 ```
 
 Baseline은 policy SHA-256과 `[1,98]` input, `[1,29]` output을 실행 전에 검증한다.
@@ -48,20 +55,53 @@ Runtime trace는 `sequence`, `timestamp_us`, raw `pelvis_imu`만 갖는다. Foot
 
 ## Headless 실행
 
-Headless mode는 display가 없어도 동작하며 wall-clock sleep 없이 가능한 한 빠르게 실행한다.
+Headless mode는 display가 없어도 동작하며 wall-clock sleep 없이 가능한 한 빠르게 실행한다. 아래 예시는 앞에서 `FASTREFLEX_G1_POLICY`를 설정한 terminal에서 실행한다.
+
+Concrete:
 
 ```bash
-python scripts/fastreflex.py simulate --terrain concrete --speed 0.15 --duration 2 --headless
-python scripts/fastreflex.py simulate --terrain marble   --speed 0.15 --duration 2 --headless
-python scripts/fastreflex.py simulate --terrain ice      --speed 0.15 --duration 2 --headless
-python scripts/fastreflex.py simulate --terrain sand     --speed 0.15 --duration 2 --headless
+python scripts/fastreflex.py simulate \
+  --terrain concrete \
+  --speed 0.15 \
+  --duration 2 \
+  --headless
+```
+
+Marble:
+
+```bash
+python scripts/fastreflex.py simulate \
+  --terrain marble \
+  --speed 0.15 \
+  --duration 2 \
+  --headless
+```
+
+Ice:
+
+```bash
+python scripts/fastreflex.py simulate \
+  --terrain ice \
+  --speed 0.15 \
+  --duration 2 \
+  --headless
+```
+
+Sand:
+
+```bash
+python scripts/fastreflex.py simulate \
+  --terrain sand \
+  --speed 0.15 \
+  --duration 2 \
+  --headless
 ```
 
 아무 mode option도 지정하지 않으면 canonical config의 기본값인 headless를 사용한다. `--headless`와 `--viewer`를 동시에 지정하면 CLI error로 종료한다.
 
 ## Viewer 실행
 
-Viewer는 공식 `mujoco.viewer.launch_passive`를 사용하고 pelvis tracking camera로 보행을 따라가며, simulation time이 wall clock과 대략 1x로 진행되도록 pacing한다. Window를 닫으면 현재까지의 trace summary를 출력하고 clean exit한다. Custom HUD나 live label overlay는 제공하지 않는다.
+Viewer는 공식 `mujoco.viewer.launch_passive`를 사용하고 pelvis tracking camera로 보행을 따라가며, simulation time이 wall clock과 대략 1x로 진행되도록 pacing한다. Window를 닫으면 현재까지의 trace summary를 출력하고 clean exit한다. Custom HUD나 live label overlay는 제공하지 않는다. 아래 예시도 앞에서 `FASTREFLEX_G1_POLICY`를 설정한 terminal에서 실행한다.
 
 NORMAL-like motion 관찰 예시:
 
@@ -93,7 +133,7 @@ python scripts/fastreflex.py simulate \
   --viewer
 ```
 
-환경 변수를 설정하지 않았다면 각 명령 끝에 `--policy /path/to/policy.onnx`를 추가한다. Viewer를 사용할 수 없는 환경에서는 display 확인 방법과 `--headless` 대안을 포함한 명확한 error를 출력한다.
+환경 변수를 설정하지 않았다면 각 명령 끝에 `--policy artifacts/external/unitree_g1/g1_velocity_policy.onnx`를 추가한다. Viewer를 사용할 수 없는 환경에서는 display 확인 방법과 `--headless` 대안을 포함한 명확한 error를 출력한다.
 
 ## Terrain 설명
 

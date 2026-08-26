@@ -10,7 +10,7 @@ Unitree G1 simulation 기반 센서 데이터를 이용하여 로봇 보행 중 
 - `SLIP`
 - `SINK`
 
-입력 후보는 Waist/Pelvis IMU 6-axis 신호다.
+Runtime 입력은 Waist/Pelvis IMU 6-axis 신호다.
 
 - accelerometer: x/y/z
 - gyroscope: x/y/z
@@ -55,9 +55,9 @@ MuJoCo
 
 ## Current Status
 
-`PROJECT_SCAFFOLD_ONLY`
+`HAZARD_DATASET_CONTRACT_V1`
 
-현재는 repository 골격과 문서, canonical CLI placeholder만 존재한다. dataset, simulator integration, model, training pipeline은 아직 구현되지 않았다.
+Hazard Dataset V1의 sensor, physical label, authoritative raw-run, window, preprocessing과 split 계약을 문서와 configuration으로 확정했다. Dataset은 아직 생성되지 않았으며 simulator integration, model과 training pipeline도 구현되지 않았다.
 
 ## 구조
 

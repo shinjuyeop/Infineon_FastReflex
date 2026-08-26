@@ -1,6 +1,6 @@
 # Architecture
 
-현재 milestone은 architecture 계획만 정의하며 simulator, dataset, model은 구현하지 않는다.
+현재 repository는 Hazard Dataset Contract 단계이며 simulator, dataset, model은 아직 구현하지 않았다.
 
 ## Existing Frozen Terrain
 

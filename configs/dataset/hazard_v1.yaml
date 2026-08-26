@@ -1,0 +1,47 @@
+dataset:
+  name: hazard_v1
+  schema_version: hazard_dataset_contract_v1
+
+sensor:
+  type: pelvis_imu_6axis
+  sample_rate_hz: 1000
+  frame: pelvis_imu_site_local
+  dtype: float32
+  timestamp_unit: us
+  channels:
+    - accel_x
+    - accel_y
+    - accel_z
+    - gyro_x
+    - gyro_y
+    - gyro_z
+
+task:
+  classes:
+    - {id: 0, name: NORMAL}
+    - {id: 1, name: SLIP}
+    - {id: 2, name: SINK}
+
+windows:
+  candidate_ms: [20, 30, 50, 100]
+
+preprocessing:
+  type: raw
+  optional_normalization: per_channel_mean_std_from_train_split_only
+
+splitting:
+  strategy: run_disjoint_group_aware
+
+labels:
+  dual_hazard_policy: preserve_raw_exclude_from_v1_train_and_evaluation
+  early_interval_policy: preserve_diagnostics_exclude_until_validated
+
+provenance:
+  required_fields:
+    - dataset_id
+    - schema_version
+    - generator_version
+    - source_commit
+    - created_at
+    - sample_rate_hz
+    - channel_order

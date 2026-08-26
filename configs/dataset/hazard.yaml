@@ -1,5 +1,5 @@
 dataset:
-  name: hazard_v1
+  name: hazard
   schema_version: hazard_dataset_contract_v1
 
 sensor:

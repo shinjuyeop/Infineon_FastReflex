@@ -23,7 +23,7 @@
 - IMU6 schema, frame, units, timestamp와 missing-sample 정책 고정
 - NORMAL/SLIP/SINK physical label과 dual/early interval 정책 고정
 - authoritative raw-run storage, provenance, window 후보와 split 원칙 고정
-- Deliverable: `docs/dataset.md`, `configs/dataset/hazard_v1.yaml`
+- Deliverable: `docs/dataset.md`, `configs/dataset/hazard.yaml`
 
 이 문서 milestone이 현재 Phase 1의 결과다.
 

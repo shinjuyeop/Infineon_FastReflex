@@ -156,6 +156,8 @@ V1은 새 incipient threshold를 만들지 않고 legacy의 `ESTABLISHED_SLIP`�
 
 `ESTABLISHED_SLIP` onset은 이미 50 mm 이동과 3 ms persistence 뒤의 reference이며 최초 물리 motion onset이 아니다. Legacy의 incipient-onset 후보들은 established-event coverage와 clean-normal false-onset validation을 통과하지 못했다. 따라서 V1은 incipient label을 invent하지 않는다. Raw continuous metrics와 stable established onset을 함께 보존하고 Phase 4 Time-to-Separation에서 early reference를 별도로 검증한다.
 
+Pilot의 canonical Slip scenario 후보는 정상 concrete 보행 뒤 full-width finite low-friction patch에 진입하는 transition이다. `t0_patch_contact`는 named sole과 patch의 첫 physical contact, `t1_established_slip`은 기존 criterion의 첫 ANY-foot onset이다. Left/right onset은 diagnostic으로 보존하지만 한 발이라도 established Slip이면 primary 의미는 `SLIP`이다. Terrain identity나 affected-foot ownership으로 class를 만들지 않으며 first fall/non-foot censor 이후는 training-valid evidence에서 제외한다. 검증 결과는 [`20260826_slip_transition_sanity.md`](../reports/20260826_slip_transition_sanity.md)에 기록한다.
+
 ### `sink_physical`: physical precursor diagnostic
 
 Legacy의 후반 walking physical oracle은 삭제하지 않고 `sink_physical_active`라는 simulator-only precursor diagnostic으로 보존한다.

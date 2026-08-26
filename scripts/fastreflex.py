@@ -35,6 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--speed", type=float)
     simulate.add_argument("--duration", type=float)
     simulate.add_argument(
+        "--slip-pattern",
+        choices=("uniform", "transition"),
+        help="select uniform terrain or a finite full-width low-friction patch",
+    )
+    simulate.add_argument(
         "--sink-pattern",
         choices=(
             "uniform",
@@ -106,6 +111,11 @@ def main() -> int:
             ),
             duration_s=config.duration_s if args.duration is None else args.duration,
             policy_path=config.policy_path if policy_path is None else policy_path,
+            slip_pattern=(
+                config.slip_pattern
+                if args.slip_pattern is None
+                else args.slip_pattern
+            ),
             sink_pattern=(
                 config.sink_pattern
                 if args.sink_pattern is None

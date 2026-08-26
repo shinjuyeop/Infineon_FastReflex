@@ -36,6 +36,7 @@ class ExactFootSample:
     world_velocity_xyz: np.ndarray
     contact_penetration_m: np.ndarray
     soft_patch_contact: np.ndarray
+    low_friction_patch_contact: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,8 @@ class PhysicalDiagnostics:
     physical_contact: np.ndarray
     soft_patch_contact: np.ndarray
     soft_patch_contact_onset: np.ndarray
+    low_friction_patch_contact: np.ndarray
+    low_friction_patch_contact_onset: np.ndarray
     touchdown: np.ndarray
     loaded_contact: np.ndarray
     contact_episode_id: np.ndarray
@@ -58,6 +61,11 @@ class PhysicalDiagnostics:
     bilateral_loaded_penetration_asymmetry_m: np.ndarray
     pre_fall_valid: np.ndarray
     established_slip: np.ndarray
+    established_slip_onset: np.ndarray
+    established_slip_after_patch_onset: np.ndarray
+    any_established_slip: np.ndarray
+    any_established_slip_onset: np.ndarray
+    any_established_slip_after_patch_onset: np.ndarray
     sink_physical_active: np.ndarray
     sink_physical_onset: np.ndarray
     sink_physical_episode_id: np.ndarray
@@ -106,11 +114,13 @@ def read_exact_foot_sample(
     data: mujoco.MjData,
     ground_geom_ids: frozenset[int],
     soft_patch_geom_ids: frozenset[int] = frozenset(),
+    low_friction_patch_geom_ids: frozenset[int] = frozenset(),
 ) -> ExactFootSample:
     """Read label-only contact, kinematics, force, and penetration."""
     body_ids, geom_ids = _foot_ids(model)
     contact = np.zeros(2, dtype=bool)
     soft_patch_contact = np.zeros(2, dtype=bool)
+    low_friction_patch_contact = np.zeros(2, dtype=bool)
     normal_force = np.zeros(2, dtype=np.float64)
     penetration = np.zeros(2, dtype=np.float64)
     wrench = np.zeros(6, dtype=np.float64)
@@ -126,6 +136,11 @@ def read_exact_foot_sample(
             contact[side_index] = True
             if geom1 in soft_patch_geom_ids or geom2 in soft_patch_geom_ids:
                 soft_patch_contact[side_index] = True
+            if (
+                geom1 in low_friction_patch_geom_ids
+                or geom2 in low_friction_patch_geom_ids
+            ):
+                low_friction_patch_contact[side_index] = True
             penetration[side_index] = max(
                 penetration[side_index], max(0.0, -float(item.dist))
             )
@@ -152,6 +167,7 @@ def read_exact_foot_sample(
         world_velocity_xyz=np.asarray(world_velocity, dtype=np.float64),
         contact_penetration_m=penetration,
         soft_patch_contact=soft_patch_contact,
+        low_friction_patch_contact=low_friction_patch_contact,
     )
 
 
@@ -297,6 +313,7 @@ def derive_physical_diagnostics(
     command_speed_mps: float,
     fall_active: np.ndarray,
     soft_patch_contact: np.ndarray | None = None,
+    low_friction_patch_contact: np.ndarray | None = None,
 ) -> PhysicalDiagnostics:
     """Derive simulator-only cause/effect diagnostics, never terrain labels."""
     contact = np.asarray(physical_contact, dtype=bool)
@@ -316,9 +333,15 @@ def derive_physical_diagnostics(
         if soft_patch_contact is None
         else np.asarray(soft_patch_contact, dtype=bool)
     )
+    friction_patch_contact = (
+        np.zeros((sample_count, 2), dtype=bool)
+        if low_friction_patch_contact is None
+        else np.asarray(low_friction_patch_contact, dtype=bool)
+    )
     if (
         contact.shape != (sample_count, 2)
         or patch_contact.shape != (sample_count, 2)
+        or friction_patch_contact.shape != (sample_count, 2)
         or force.shape != (sample_count, 2)
         or xyz.shape != (sample_count, 2, 3)
         or velocity.shape != (sample_count, 2, 3)
@@ -390,26 +413,54 @@ def derive_physical_diagnostics(
     patch_onset = patch_contact & ~np.vstack(
         (np.zeros((1, 2), dtype=bool), patch_contact[:-1])
     )
+    friction_patch_onset = friction_patch_contact & ~np.vstack(
+        (np.zeros((1, 2), dtype=bool), friction_patch_contact[:-1])
+    )
     contact_episode_id = stack("episode_id").astype(np.int32)
+    established_slip = stack("slip")
+    established_slip_onset = established_slip & ~np.vstack(
+        (np.zeros((1, 2), dtype=bool), established_slip[:-1])
+    )
     sink_physical_onset = stack("sink_physical_onset")
-    sink_after_patch_onset = np.zeros((sample_count, 2), dtype=bool)
-    for side in range(2):
-        patch_seen_episodes: set[int] = set()
-        for sample in range(sample_count):
-            episode = int(contact_episode_id[sample, side])
-            if patch_contact[sample, side] and episode >= 0:
-                patch_seen_episodes.add(episode)
-            sink_after_patch_onset[sample, side] = bool(
-                sink_physical_onset[sample, side]
-                and episode in patch_seen_episodes
-            )
+
+    def link_onset_to_patch(
+        event_onset: np.ndarray,
+        event_patch_contact: np.ndarray,
+    ) -> np.ndarray:
+        linked = np.zeros((sample_count, 2), dtype=bool)
+        for side in range(2):
+            patch_seen_episodes: set[int] = set()
+            for sample in range(sample_count):
+                episode = int(contact_episode_id[sample, side])
+                if event_patch_contact[sample, side] and episode >= 0:
+                    patch_seen_episodes.add(episode)
+                linked[sample, side] = bool(
+                    event_onset[sample, side]
+                    and episode in patch_seen_episodes
+                )
+        return linked
+
+    sink_after_patch_onset = link_onset_to_patch(
+        sink_physical_onset,
+        patch_contact,
+    )
+    slip_after_patch_onset = link_onset_to_patch(
+        established_slip_onset,
+        friction_patch_contact,
+    )
+    any_established_slip = np.any(established_slip, axis=1)
+    any_established_slip_onset = any_established_slip & ~np.r_[
+        False, any_established_slip[:-1]
+    ]
+    any_slip_after_patch_onset = np.any(slip_after_patch_onset, axis=1)
 
     baseline_valid = np.zeros(sample_count, dtype=bool)
     z_drop = np.full(sample_count, np.nan, dtype=np.float64)
     tilt_change = np.full(sample_count, np.nan, dtype=np.float64)
     forward_drop = np.full(sample_count, np.nan, dtype=np.float64)
     angular_speed_change = np.full(sample_count, np.nan, dtype=np.float64)
-    event_samples = np.flatnonzero(np.any(patch_onset, axis=1))
+    event_patch_onset = patch_onset | friction_patch_onset
+    event_samples = np.flatnonzero(np.any(event_patch_onset, axis=1))
     if event_samples.size:
         t0 = int(event_samples[0])
         baseline_start = max(0, t0 - PRE_EVENT_BASELINE_SAMPLES)
@@ -455,6 +506,8 @@ def derive_physical_diagnostics(
         physical_contact=contact,
         soft_patch_contact=patch_contact,
         soft_patch_contact_onset=patch_onset,
+        low_friction_patch_contact=friction_patch_contact,
+        low_friction_patch_contact_onset=friction_patch_onset,
         touchdown=stack("touchdown"),
         loaded_contact=loaded,
         contact_episode_id=contact_episode_id,
@@ -469,7 +522,12 @@ def derive_physical_diagnostics(
             penetration_asymmetry.astype(np.float32)
         ),
         pre_fall_valid=pre_fall,
-        established_slip=stack("slip"),
+        established_slip=established_slip,
+        established_slip_onset=established_slip_onset,
+        established_slip_after_patch_onset=slip_after_patch_onset,
+        any_established_slip=any_established_slip,
+        any_established_slip_onset=any_established_slip_onset,
+        any_established_slip_after_patch_onset=any_slip_after_patch_onset,
         sink_physical_active=stack("sink_physical_active"),
         sink_physical_onset=sink_physical_onset,
         sink_physical_episode_id=stack("sink_physical_episode_id").astype(np.int32),

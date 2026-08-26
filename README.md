@@ -57,7 +57,7 @@ MuJoCo
 
 `MUJOCO_BASELINE_READY`
 
-Unitree G1 29-DOF MuJoCo 보행 baseline, raw pelvis IMU6 1 kHz 취득, concrete/marble/ice/sand engineering terrain과 simulator-only physical diagnostic 경로를 검증했다. Same-height finite transition patch의 Sink cause/effect timeline과 primary episode criterion은 frozen 상태다. Walking policy ONNX는 repository에 포함하지 않고 user-supplied artifact로 받는다. Hazard dataset은 아직 생성하지 않았고 ML model과 training pipeline도 구현하지 않았다.
+Unitree G1 29-DOF MuJoCo 보행 baseline, raw pelvis IMU6 1 kHz 취득, concrete/marble/ice/sand engineering terrain과 simulator-only physical diagnostic 경로를 검증했다. Same-height finite patch의 Sink criterion과 full-width Ice transition의 clean ANY-SLIP event foundation을 사용할 수 있다. Walking policy ONNX는 repository에 포함하지 않고 user-supplied artifact로 받는다. Hazard dataset은 아직 생성하지 않았고 ML model과 training pipeline도 구현하지 않았다.
 
 ## 구조
 

@@ -1,0 +1,60 @@
+experiment:
+  id: SLIP_HAZARD_TRANSITION_SANITY
+  date: 2026-08-26
+  status: completed_transition_sanity
+  purpose: validate actual established Slip after entering a finite Ice patch
+
+geometry:
+  scene: scene_sink.xml
+  walking_direction: +x
+  nominal_top_z_m: 0.0
+  patch_start_x_m: 0.35
+  patch_end_x_m: 1.10
+  patch_width: full
+  pre_patch_profile: concrete
+  patch_profile: ice
+  post_patch_profile: concrete
+
+common:
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  duration_s: 8.0
+  initial_condition: canonical_fixed_stand
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  headless: true
+  sink_pattern: uniform
+  sink_severity: moderate
+
+runs:
+  - id: concrete_control_015
+    terrain: concrete
+    slip_pattern: uniform
+    command_speed_mps: 0.15
+  - id: ice_transition_010
+    terrain: ice
+    slip_pattern: transition
+    command_speed_mps: 0.10
+  - id: ice_transition_015
+    terrain: ice
+    slip_pattern: transition
+    command_speed_mps: 0.15
+  - id: ice_transition_020
+    terrain: ice
+    slip_pattern: transition
+    command_speed_mps: 0.20
+  - id: ice_transition_025
+    terrain: ice
+    slip_pattern: transition
+    command_speed_mps: 0.25
+
+timeline:
+  t0_patch_contact: first_named_sole_contact_with_low_friction_patch
+  t1_established_slip: first_any_foot_established_slip_onset
+  t2_degradation: existing_pelvis_tilt_diagnostic_only
+  t3_censor: first_fall_or_nonfoot_surface_contact
+
+interpretation:
+  primary_slip_reference: t1_established_slip
+  affected_foot: diagnostic_only
+  terrain_identity_is_label: false
+  pilot_dataset_generated: false

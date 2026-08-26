@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`, bounded `SINK_HAZARD_SCENARIO_SANITY`와 finite-patch `SINK_HAZARD_TRANSITION_AND_CRITERIA`를 완료했으며 현재 상태는 `MUJOCO_BASELINE_READY`다. G1 보행, pelvis IMU6 1 kHz, physical diagnostic foundation, Sink cause/effect timeline과 primary episode criterion을 검증했다. Dataset, model, training과 evaluation pipeline은 아직 구현되지 않았다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
+`MINIMAL_G1_MUJOCO_MIGRATION`, Sink transition/criteria freeze와 finite Ice patch Slip transition sanity를 완료했으며 현재 상태는 `MUJOCO_BASELINE_READY`다. G1 보행, pelvis IMU6 1 kHz, physical diagnostic foundation과 두 hazard의 transition event foundation을 검증했다. Dataset, model, training과 evaluation pipeline은 아직 구현되지 않았다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
 
 ## 고정 연구 원칙
 
@@ -45,6 +45,15 @@
 - 미확정: `[t1,t2)` training label/window timing과 IMU-only observability
 
 현재 상태는 `SINK_HAZARD_CRITERIA_FROZEN`이다. `sink_physical_active`만으로 primary `SINK`를 만들지 않는다. Full-lane history는 [`20260826_sink_scenario_sanity.md`](../reports/20260826_sink_scenario_sanity.md), finite transition과 freeze 근거는 [`20260826_sink_transition_criteria.md`](../reports/20260826_sink_transition_criteria.md)에 기록한다.
+
+### Slip transition sanity — Pilot 이전 단계
+
+- 완료: concrete → full-width finite Ice patch → concrete topology
+- 완료: t0 patch contact와 per-foot/ANY-foot established Slip t1 분리
+- 완료: 0.10/0.15/0.20/0.25 m/s에서 clean bilateral Slip과 Viewer 확인
+- 유지: frozen 50 mm/3 ms oracle, pre-fall validity와 terrain-label 금지
+
+Slip transition 결과는 [`20260826_slip_transition_sanity.yaml`](../configs/experiment/20260826_slip_transition_sanity.yaml)과 [`20260826_slip_transition_sanity.md`](../reports/20260826_slip_transition_sanity.md)에 기록한다. 이 단계로 Pilot 이전 simulator condition 설계는 일단 종료한다.
 
 ### Phase 3 — Small pilot raw dataset generation
 
@@ -95,7 +104,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. Py
 - Research repository에는 검토된 Float contract artifact만 export
 - Quantization 이후 작업은 `Infineon_FastReflex_E84` repository로 넘김
 
-연구 순서는 `Sink transition/criteria → criteria freeze → Pilot Dataset → raw IMU sanity/Time-to-Separation → Full Dataset → PyTorch model comparison`이다. 앞의 두 단계까지 완료했다. 다음 단계는 별도 승인을 받은 Phase 3 Pilot Dataset이며 이 milestone에서 자동으로 시작하지 않는다. Pilot에서는 t1 이후 t2 이전에 pelvis IMU6만으로 hazardous episode를 분리할 수 있는지 먼저 확인한다.
+연구 순서는 `MuJoCo baseline → Sink transition/criteria freeze → Slip transition sanity → Pilot Dataset → raw IMU sanity → Time-to-Separation → Full Dataset → PyTorch model comparison`이다. 앞의 세 simulator 단계까지 완료했다. 다음 단계는 별도 승인을 받은 Phase 3 Pilot Dataset이며 이 milestone에서 자동으로 시작하지 않는다. Pilot에서는 Slip의 t1 주변 IMU 분리와 hazardous Sink의 t1 이후 t2 이전 IMU 분리를 먼저 확인한다.
 
 ## Split과 leakage protocol
 
@@ -140,4 +149,4 @@ E84 deployment repository 범위:
 - Vela, firmware integration
 - E84 runtime, HIL과 target validation
 
-현재 milestone은 smoke simulation, bounded Sink scenario sanity와 finite transition criteria study까지만 실행했다. Dataset 생성, PyTorch 설치, model 구현/training/evaluation, quantization, E84 또는 HIL은 수행하지 않았다.
+현재 milestone은 smoke simulation과 Sink/Slip finite transition condition 설계까지만 실행했다. Dataset 생성, PyTorch 설치, model 구현/training/evaluation, quantization, E84 또는 HIL은 수행하지 않았다.

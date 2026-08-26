@@ -123,6 +123,17 @@ python scripts/fastreflex.py simulate \
   --viewer
 ```
 
+정상 concrete 보행 뒤 full-width finite Ice patch에 진입하는 Slip transition:
+
+```bash
+python scripts/fastreflex.py simulate \
+  --terrain ice \
+  --slip-pattern transition \
+  --speed 0.15 \
+  --duration 8 \
+  --viewer
+```
+
 Uniform Sand control 관찰 예시:
 
 ```bash
@@ -183,7 +194,7 @@ python scripts/fastreflex.py simulate \
 
 이 profile은 실제 재료 측정값이나 deformable-material model이 아니다. Relative behavior와 signal-separation을 보기 위한 engineering approximation이며 viewer를 위해 friction, `solref`, `solimp`를 바꾸지 않는다.
 
-`uniform`은 기존 scene/profile을 그대로 사용한다. `asymmetric_left`와 `asymmetric_right`는 `scene_sink.xml`의 같은 높이(`z=0`)인 full left/right lane 중 지정 lane에 더 낮은 contact impedance를 적용한다. `transition_left`와 `transition_right`도 같은 canonical scene을 사용하며 `x=[0.35,1.10] m`의 지정 side만 soft profile, 그 전후와 반대 side는 concrete profile이다. 모든 경계의 nominal top은 `z=0`이고 box가 맞닿을 뿐 겹치지 않는다. Hole, step, lowered surface 또는 deformable mesh는 없다. Viewer의 blue/orange는 lane side를 구분하는 visual-only 색이고 severity를 뜻하지 않는다. Non-uniform pattern은 `--terrain sand`에서만 허용된다.
+`uniform`은 기존 scene/profile을 그대로 사용한다. Sink의 `asymmetric_left/right`와 `transition_left/right`는 `scene_sink.xml`에서 한쪽 compliance를 바꾼다. Slip의 `--slip-pattern transition`도 같은 finite topology를 재사용하되 `x=[0.35,1.10] m`의 left/right patch를 모두 기존 Ice profile로 설정하고 그 전후는 concrete로 둔다. 모든 경계의 nominal top은 `z=0`이고 box가 맞닿을 뿐 겹치지 않는다. Hole, step, lowered surface 또는 deformable mesh는 없다. Cyan Ice patch와 Sink의 blue/orange는 visual-only이며 physics/label selection에 사용하지 않는다. Sink non-uniform pattern은 `--terrain sand`, Slip transition은 `--terrain ice`에서만 허용되고 두 pattern을 결합할 수 없다.
 
 ## Hazard label 설명
 
@@ -201,6 +212,9 @@ Simulation 종료 후 JSON summary를 stdout에 출력하며 파일이나 datase
 - `expected_samples` / `actual_samples`: 요청 duration의 예상 표본과 실제 수집 표본
 - `dropped_samples`, `timestamp_delta_us`: 1 kHz 연속 sampling 확인
 - `established_slip_samples`: 좌우 foot에서 frozen Slip oracle이 active였던 표본 수의 합
+- `first_low_friction_patch_contact_sample_per_foot`: finite Ice patch의 per-foot t0
+- `first_established_slip_after_patch_sample_per_foot`, `first_any_established_slip_after_patch_sample`: per-foot과 ANY-SLIP t1
+- `slip_transition_qualification`: clean/no-slip/unusable transition classification
 - `sink_physical_samples_per_foot`, `first_sink_physical_sample_per_foot`: 좌우 physical precursor의 active count와 onset
 - `first_soft_patch_contact_sample_per_foot`, `first_sink_physical_after_patch_sample_per_foot`: transition t0와 같은 contact episode의 t1
 - `first_sink_degradation_sample`, `first_sink_hazard_sample`: frozen tilt persistence와 patch-linked t2 onset

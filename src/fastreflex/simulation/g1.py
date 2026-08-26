@@ -21,10 +21,13 @@ from .hazards import (
     read_exact_foot_sample,
 )
 from .terrain import (
+    apply_slip_patch_profiles,
     apply_sink_patch_profiles,
     apply_terrain_profile,
     get_terrain_profile,
+    low_friction_patch_geom_ids,
     soft_sink_geom_ids,
+    validate_slip_scenario,
     validate_sink_scenario,
 )
 
@@ -135,6 +138,7 @@ class SimulationConfig:
     command_speed_mps: float
     policy_path: Path | None
     terrain: str
+    slip_pattern: str
     sink_pattern: str
     sink_severity: str
     headless: bool
@@ -171,6 +175,7 @@ class SimulationConfig:
         if not 0.1 <= self.command_speed_mps <= 0.5:
             raise ValueError("walking command speed must be in [0.1, 0.5] m/s")
         get_terrain_profile(self.terrain)
+        validate_slip_scenario(self.terrain, self.slip_pattern, self.sink_pattern)
         validate_sink_scenario(self.terrain, self.sink_pattern, self.sink_severity)
 
 
@@ -202,6 +207,7 @@ def load_simulation_config(path: Path) -> SimulationConfig:
         simulation = document["simulation"]
         controller = document["controller"]
         terrain = document["terrain"]
+        slip = document.get("slip", {})
         sink = document.get("sink", {})
         output = document["output"]
         raw_policy = controller["policy_path"]
@@ -212,6 +218,7 @@ def load_simulation_config(path: Path) -> SimulationConfig:
             command_speed_mps=float(controller["command_speed_mps"]),
             policy_path=None if raw_policy in (None, "") else Path(raw_policy),
             terrain=str(terrain["type"]),
+            slip_pattern=str(slip.get("pattern", "uniform")),
             sink_pattern=str(sink.get("pattern", "uniform")),
             sink_severity=str(sink.get("severity", "moderate")),
             headless=bool(output["headless"]),
@@ -274,13 +281,18 @@ def load_g1_model(
     terrain_name: str,
     sink_pattern: str = "uniform",
     sink_severity: str = "moderate",
+    slip_pattern: str = "uniform",
 ) -> tuple[mujoco.MjModel, frozenset[int]]:
-    """Load the baseline or asymmetric sink scene with validated profiles."""
+    """Load the baseline or one validated finite/full-lane patch scene."""
+    validate_slip_scenario(terrain_name, slip_pattern, sink_pattern)
     validate_sink_scenario(terrain_name, sink_pattern, sink_severity)
-    scene_path = SCENE_PATH if sink_pattern == "uniform" else SINK_SCENE_PATH
+    use_patch_scene = sink_pattern != "uniform" or slip_pattern == "transition"
+    scene_path = SINK_SCENE_PATH if use_patch_scene else SCENE_PATH
     model = mujoco.MjModel.from_xml_path(str(scene_path))
     validate_model_contract(model)
-    if sink_pattern == "uniform":
+    if slip_pattern == "transition":
+        ground_ids = apply_slip_patch_profiles(model)
+    elif sink_pattern == "uniform":
         ground_ids = frozenset(
             (apply_terrain_profile(model, get_terrain_profile(terrain_name)),)
         )
@@ -497,6 +509,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         config.terrain,
         config.sink_pattern,
         config.sink_severity,
+        config.slip_pattern,
     )
     data = mujoco.MjData(model)
     controller = UnitreeG1Controller(
@@ -511,6 +524,10 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         for name in names
     )
     soft_patch_geom_ids = soft_sink_geom_ids(model, config.sink_pattern)
+    low_friction_geom_ids = low_friction_patch_geom_ids(
+        model,
+        config.slip_pattern,
+    )
 
     timestamp_us: list[int] = []
     imu: list[np.ndarray] = []
@@ -520,6 +537,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
     foot_velocity: list[np.ndarray] = []
     penetration: list[np.ndarray] = []
     soft_patch_contact: list[np.ndarray] = []
+    low_friction_patch_contact: list[np.ndarray] = []
     pre_fall: list[bool] = []
     pelvis_world_z: list[float] = []
     pelvis_orientation: list[np.ndarray] = []
@@ -541,6 +559,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             config.terrain,
             config.sink_pattern,
             config.sink_severity,
+            config.slip_pattern,
         )
         viewer_data = mujoco.MjData(viewer_model)
         _copy_integration_state(model, data, viewer_model, viewer_data)
@@ -587,6 +606,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                 data,
                 ground_geom_ids,
                 soft_patch_geom_ids,
+                low_friction_geom_ids,
             )
             pelvis_velocity = np.zeros(6, dtype=np.float64)
             mujoco.mj_objectVelocity(
@@ -605,6 +625,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             foot_velocity.append(exact.world_velocity_xyz)
             penetration.append(exact.contact_penetration_m)
             soft_patch_contact.append(exact.soft_patch_contact)
+            low_friction_patch_contact.append(exact.low_friction_patch_contact)
             pre_fall.append(first_fall_sample is None)
             pelvis_world_z.append(float(data.qpos[2]))
             pelvis_orientation.append(data.qpos[3:7].copy())
@@ -639,9 +660,14 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         config.command_speed_mps,
         np.asarray(fall_active, dtype=bool),
         soft_patch_contact=np.asarray(soft_patch_contact, dtype=bool).reshape(-1, 2),
+        low_friction_patch_contact=np.asarray(
+            low_friction_patch_contact,
+            dtype=bool,
+        ).reshape(-1, 2),
     )
     metadata: dict[str, object] = {
         "terrain": config.terrain,
+        "slip_pattern": config.slip_pattern,
         "sink_pattern": config.sink_pattern,
         "sink_severity": config.sink_severity,
         "physics_timestep_s": config.physics_timestep_s,
@@ -686,6 +712,13 @@ def _first_true(values: np.ndarray) -> int | None:
     return None if indices.size == 0 else int(indices[0])
 
 
+def _first_true_any_foot(values: np.ndarray) -> int | None:
+    array = np.asarray(values)
+    if array.ndim != 2 or array.shape[1] != 2:
+        raise ValueError("per-foot event arrays must have shape (samples, 2)")
+    return _first_true(np.any(array, axis=1))
+
+
 def _degrees_or_none(value_rad: float | None) -> float | None:
     return None if value_rad is None else float(np.degrees(value_rad))
 
@@ -705,8 +738,25 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
     max_tilt = _finite_max(diagnostics.pelvis_tilt_rad)
     first_degradation = _first_true(diagnostics.sink_degradation_onset)
     first_sink_hazard = _first_true(diagnostics.sink_hazard_onset)
-    first_patch_sink = _first_true(diagnostics.sink_physical_after_patch_onset)
-    first_slip = _first_true(diagnostics.established_slip)
+    first_patch_sink = _first_true_any_foot(
+        diagnostics.sink_physical_after_patch_onset
+    )
+    first_slip = _first_true_any_foot(diagnostics.established_slip)
+    first_low_friction_patch = _first_true_any_foot(
+        diagnostics.low_friction_patch_contact_onset
+    )
+    first_transition_slip = _first_true(
+        diagnostics.any_established_slip_after_patch_onset
+    )
+    first_post_slip_degradation = None
+    if first_transition_slip is not None:
+        sample_indices = np.arange(len(diagnostics.sink_degradation_onset))
+        later_degradation = np.flatnonzero(
+            diagnostics.sink_degradation_onset
+            & (sample_indices >= first_transition_slip)
+        )
+        if later_degradation.size:
+            first_post_slip_degradation = int(later_degradation[0])
     dual_phenomenon = bool(
         first_slip is not None
         and first_sink_hazard is not None
@@ -722,6 +772,24 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
         sink_episode_qualification = "INCONCLUSIVE_SINK_EPISODE"
     else:
         sink_episode_qualification = None
+    slip_transition_qualification = None
+    if result.metadata["slip_pattern"] == "transition":
+        if first_low_friction_patch is None:
+            slip_transition_qualification = "UNUSABLE_SLIP_SCENARIO"
+        elif (
+            first_sink_hazard is not None
+            and (
+                first_transition_slip is None
+                or first_sink_hazard < first_transition_slip
+            )
+        ):
+            slip_transition_qualification = "UNUSABLE_SLIP_SCENARIO"
+        elif first_transition_slip is not None:
+            slip_transition_qualification = "CLEAN_SLIP_EVENT"
+        elif result.metadata["first_fall_sample"] is not None:
+            slip_transition_qualification = "UNUSABLE_SLIP_SCENARIO"
+        else:
+            slip_transition_qualification = "NO_SLIP_TRANSITION"
     pelvis_z_range = (
         None
         if pelvis_z.size == 0
@@ -745,6 +813,9 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
             "max_anchor_drift_m": _finite_max(
                 diagnostics.tangential_anchor_drift_m
             ),
+            "max_anchor_drift_m_per_foot": _finite_max_per_foot(
+                diagnostics.tangential_anchor_drift_m
+            ),
             "max_contact_penetration_m": _finite_max(
                 diagnostics.contact_penetration_m
             ),
@@ -763,6 +834,10 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
             "established_slip_samples": int(
                 np.count_nonzero(diagnostics.established_slip)
             ),
+            "established_slip_samples_per_foot": np.count_nonzero(
+                diagnostics.established_slip,
+                axis=0,
+            ).tolist(),
             "sink_physical_samples": int(
                 np.count_nonzero(diagnostics.sink_physical_active)
             ),
@@ -775,6 +850,11 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
             "first_soft_patch_contact_sample_per_foot": _first_true_per_foot(
                 diagnostics.soft_patch_contact_onset
             ),
+            "first_low_friction_patch_contact_sample_per_foot": (
+                _first_true_per_foot(
+                    diagnostics.low_friction_patch_contact_onset
+                )
+            ),
             "first_sink_physical_after_patch_sample_per_foot": _first_true_per_foot(
                 diagnostics.sink_physical_after_patch_onset
             ),
@@ -783,8 +863,19 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
             "sink_episode_qualification": sink_episode_qualification,
             "dual_phenomenon": dual_phenomenon,
             "first_established_slip_sample_per_foot": _first_true_per_foot(
-                diagnostics.established_slip
+                diagnostics.established_slip_onset
             ),
+            "first_established_slip_after_patch_sample_per_foot": (
+                _first_true_per_foot(
+                    diagnostics.established_slip_after_patch_onset
+                )
+            ),
+            "first_any_established_slip_sample": _first_true(
+                diagnostics.any_established_slip_onset
+            ),
+            "first_any_established_slip_after_patch_sample": first_transition_slip,
+            "first_post_slip_degradation_sample": first_post_slip_degradation,
+            "slip_transition_qualification": slip_transition_qualification,
             "max_abs_pelvis_roll_deg": _degrees_or_none(max_abs_roll),
             "max_abs_pelvis_pitch_deg": _degrees_or_none(max_abs_pitch),
             "max_pelvis_tilt_deg": _degrees_or_none(max_tilt),

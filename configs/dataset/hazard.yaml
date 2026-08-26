@@ -42,6 +42,8 @@ labels:
   established_slip:
     touchdown_anchor_drift_m: 0.050
     persistence_ms: 3
+    primary_aggregation: any_foot
+    per_foot_onset_role: diagnostic_only
   sink_physical:
     first_loaded_penetration_change_m: 0.0055
     persistence_ms: 20

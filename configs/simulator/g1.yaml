@@ -10,6 +10,9 @@ controller:
 terrain:
   type: concrete
 
+slip:
+  pattern: uniform
+
 sink:
   pattern: uniform
   severity: moderate

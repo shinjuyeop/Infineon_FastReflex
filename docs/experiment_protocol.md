@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-현재 milestone은 `HAZARD_DATASET_CONTRACT_V1`이다. Dataset, simulator, model, training과 evaluation pipeline은 아직 구현되지 않았다. 구현 전에 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
+`MINIMAL_G1_MUJOCO_MIGRATION`을 완료하여 현재 상태는 `MUJOCO_BASELINE_READY`다. G1 보행, pelvis IMU6 1 kHz와 physical diagnostic foundation까지만 검증했다. Dataset, model, training과 evaluation pipeline은 아직 구현되지 않았다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
 
 ## 고정 연구 원칙
 
@@ -12,7 +12,7 @@
 - Runtime input은 pelvis IMU6뿐이며 terrain/scenario/exact state는 label/diagnostic/metadata 전용이다.
 - 기본 입력은 raw channels이고, 필요할 때 train split의 per-channel mean/std normalization만 허용한다.
 - Dataset 생성 시 window를 고정하지 않는다.
-- Legacy source와 과거 dataset을 복사하지 않는다. 필요한 migration은 다음 phase에서 범위와 provenance를 먼저 review한다.
+- Legacy source와 과거 dataset을 bulk copy하지 않는다. 완료된 G1 migration처럼 필요한 범위와 provenance를 먼저 review한다.
 - Random seed, code revision, dataset revision, config와 metric을 함께 기록한다.
 - Quantization, target conversion, firmware와 HIL은 Research 결과가 freeze된 뒤 E84 deployment repository가 담당한다.
 
@@ -29,10 +29,10 @@
 
 ### Phase 2 — Minimal G1 MuJoCo migration
 
-- Pelvis IMU6 취득에 필요한 최소 G1 model/sensor/controller 경로만 명시적으로 review 후 migration
-- IMU site/frame/axis/unit/channel parity test
-- Physical contact/touchdown과 locked Slip/Sink oracle parity test
-- Legacy source, training code, model, terrain classifier 또는 deployment logic의 bulk migration 금지
+- 완료: Pelvis IMU6 취득에 필요한 최소 G1 model/sensor/controller 경로만 명시적으로 review 후 migration
+- 완료: IMU site/frame/axis/unit/channel과 2 kHz physics/1 kHz timestamp test
+- 완료: bilateral physical contact/touchdown과 locked Slip/Sink threshold/persistence parity test
+- 준수: Legacy training/dataset/model, terrain classifier와 deployment logic은 migration하지 않음
 
 ### Phase 3 — Small pilot raw dataset generation
 
@@ -83,7 +83,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. Py
 - Research repository에는 검토된 Float contract artifact만 export
 - Quantization 이후 작업은 `Infineon_FastReflex_E84` repository로 넘김
 
-다음 phase는 별도 승인 없이 자동으로 시작하지 않는다.
+다음 단계는 Phase 3 pilot raw dataset generation이며 별도 승인 없이 자동으로 시작하지 않는다.
 
 ## Split과 leakage protocol
 
@@ -128,4 +128,4 @@ E84 deployment repository 범위:
 - Vela, firmware integration
 - E84 runtime, HIL과 target validation
 
-이 milestone에서는 simulation 실행, dataset 생성, PyTorch 설치, model 구현/training/evaluation, quantization, E84 또는 HIL을 수행하지 않는다.
+현재 milestone은 smoke simulation만 실행했다. Dataset 생성, PyTorch 설치, model 구현/training/evaluation, quantization, E84 또는 HIL은 수행하지 않았다.

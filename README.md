@@ -55,9 +55,9 @@ MuJoCo
 
 ## Current Status
 
-`HAZARD_DATASET_CONTRACT_V1`
+`MUJOCO_BASELINE_READY`
 
-Hazard Dataset V1의 sensor, physical label, authoritative raw-run, window, preprocessing과 split 계약을 문서와 configuration으로 확정했다. Dataset은 아직 생성되지 않았으며 simulator integration, model과 training pipeline도 구현되지 않았다.
+Unitree G1 29-DOF MuJoCo 보행 baseline, raw pelvis IMU6 1 kHz 취득, concrete/marble/ice/sand engineering terrain과 simulator-only physical diagnostic 경로를 검증했다. Walking policy ONNX는 repository에 포함하지 않고 user-supplied artifact로 받는다. Hazard dataset은 아직 생성하지 않았고 ML model과 training pipeline도 구현하지 않았다.
 
 ## 구조
 
@@ -69,21 +69,26 @@ docs/                 architecture와 연구 protocol
 data/                 local dataset 경계
 artifacts/            model 및 run artifact 경계
 reports/              생성된 분석 보고서 경계
-tests/                향후 test suite
+tests/                simulator와 이후 pipeline의 contract test
 ```
 
 설계 개요는 [`docs/architecture.md`](docs/architecture.md), dataset 원칙은 [`docs/dataset.md`](docs/dataset.md), 검증 원칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)를 참고한다.
 
-## CLI placeholder
+## CLI
 
-Python 3.10 이상에서 다음 도움말을 확인할 수 있다.
+Policy path는 CLI 또는 `FASTREFLEX_G1_POLICY` 환경 변수로 제공한다. 다음 명령은 trace를 파일로 저장하지 않는 2초 headless smoke다.
 
 ```bash
-python scripts/fastreflex.py --help
+python scripts/fastreflex.py simulate \
+  --terrain concrete \
+  --speed 0.15 \
+  --duration 2.0 \
+  --headless \
+  --policy /path/to/policy.onnx
 ```
 
-향후 `collect`, `train`, `evaluate`, `export`가 같은 entry point에 구현된다. 현재 각 command는 미구현 상태를 알리고 정상 종료한다.
+`collect`, `train`, `evaluate`, `export`는 같은 entry point의 placeholder로 유지한다.
 
-## 향후 dependency 후보
+## Dependency
 
-실제 구현이 시작될 때 필요한 것만 추가한다. 현재 후보는 `numpy`, `pandas`, `matplotlib`, `torch`, `scikit-learn`, `pyyaml`이다.
+현재 baseline은 `numpy`, `mujoco`, `onnxruntime`, `PyYAML`만 사용한다. PyTorch와 dataset/model 연구 dependency는 해당 milestone 전에는 추가하지 않는다.

@@ -35,6 +35,16 @@ splitting:
 labels:
   dual_hazard_policy: preserve_raw_exclude_from_v1_train_and_evaluation
   early_interval_policy: preserve_diagnostics_exclude_until_validated
+  physical_load:
+    on_threshold_n: 5.0
+    off_threshold_n: 2.5
+    touchdown_transient_ms: 10
+  established_slip:
+    touchdown_anchor_drift_m: 0.050
+    persistence_ms: 3
+  established_sink:
+    first_loaded_penetration_change_m: 0.0055
+    persistence_ms: 20
 
 provenance:
   required_fields:

@@ -1,1 +1,1 @@
-"""Simulation integration boundary (not implemented)."""
+"""Minimal Unitree G1 MuJoCo simulation boundary."""

@@ -1,0 +1,14 @@
+simulation:
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  duration_s: 2.0
+
+controller:
+  command_speed_mps: 0.15
+  policy_path: null
+
+terrain:
+  type: concrete
+
+output:
+  headless: true

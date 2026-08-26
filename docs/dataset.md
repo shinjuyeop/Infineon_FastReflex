@@ -2,7 +2,7 @@
 
 ## 상태와 범위
 
-`HAZARD_DATASET_CONTRACT_V1`은 새 Hazard dataset의 schema와 label 원칙을 정의한다. 아직 simulator migration, dataset 생성, window 생성, model 구현 또는 training은 수행하지 않았다.
+`HAZARD_DATASET_CONTRACT_V1`은 새 Hazard dataset의 schema와 label 원칙을 정의한다. 최소 simulator migration과 contract parity test는 완료했지만 dataset/window 생성, model 구현 또는 training은 수행하지 않았다.
 
 Primary task는 하나의 3-class classification이다.
 
@@ -38,7 +38,7 @@ Terrain, scenario, contact, exact simulator state와 physical oracle은 label/di
 
 축 방향의 legacy source 근거는 forward command가 command vector의 x 성분이고 base forward displacement를 `qpos[0]`으로 측정하며, left/right body가 각각 +y/-y에 배치되고 height/fall이 z 성분으로 정의된 G1 model/controller다.
 
-이 좌표계는 legacy MuJoCo contract다. 실제 G1 또는 target IMU의 mounting/orientation parity는 아직 검증되지 않았으므로 `TO_VERIFY_DURING_SIMULATOR_MIGRATION`이다. Migration 때 sensor site binding, 축 부호, 정지 상태 중력 방향과 단위 test를 통과해야 schema를 유지할 수 있다. 축을 바꿔야 한다면 기존 dataset과 같은 schema version으로 조용히 바꾸지 않는다.
+이 좌표계는 migrated MuJoCo G1 model에서 deterministic test로 검증했다. `imu` site의 pelvis binding, zero translation/identity rotation, neutral site frame, 좌우 body 위치와 accel-then-gyro channel order가 계약과 일치한다. 실제 G1 또는 target IMU mounting/orientation parity는 deployment 전 별도 검증 대상이다. 축을 바꿔야 한다면 기존 dataset과 같은 schema version으로 조용히 바꾸지 않는다.
 
 ### Missing, dropped, duplicate sample
 
@@ -76,7 +76,7 @@ Dataset의 authoritative source는 미리 잘린 window가 아니라 simulation 
 
 ### Simulator-only label and diagnostic arrays
 
-구체적인 NPZ key 이름과 좌/우 foot 배열 배치는 Phase 2 migration 때 확정하되 다음 정보는 손실 없이 저장한다.
+현재 in-memory baseline은 좌/우 배열 순서를 `[left, right]`로 고정한다. 구체적인 NPZ key와 storage layout은 pilot dataset milestone에서 확정하되 다음 정보는 손실 없이 저장한다.
 
 - `hazard_class_id`: `[N] int8`; eligible sample에서는 0/1/2
 - `training_eligible`: `[N] bool`
@@ -260,4 +260,4 @@ Dataset identity의 required fields는 다음과 같다.
 
 Legacy walking studies는 주로 0.10/0.15/0.20 m/s command, 좌/우와 여러 gait phase를 조합했고, low-friction target patch/control pair로 Slip을, contact-compliance profile과 hard controls로 Sink를 생성했다. 이후 연구는 arc/straight-dither, speed transition, contact/sensor variation을 추가했다. 이 값들은 migration 참고이며 새 dataset의 고정 coverage grid는 아니다. Scenario는 event를 유도할 뿐 class label은 항상 physical oracle이 결정한다.
 
-향후 migration 가치가 있는 부분은 G1 model/sensor binding, contact episode bookkeeping, frozen physical-oracle parity tests와 walking command/scenario configuration이다. 다음 milestone에서 필요한 최소 부분을 명시적으로 검토하고 재구현하며, legacy source 또는 과거 dataset을 통째로 복사하지 않는다.
+이번 migration에서 G1 model/sensor binding, contact episode bookkeeping, locked physical-oracle parity와 walking command adapter만 최소 재구현했다. 과거 detector/state machine, training/model, experiment runner와 dataset은 가져오지 않았다. 상세 provenance와 smoke 근거는 [`milestones/20260826_mujoco_migration.md`](milestones/20260826_mujoco_migration.md)에 기록한다.

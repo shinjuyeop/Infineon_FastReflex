@@ -1,0 +1,53 @@
+experiment:
+  id: SINK_HAZARD_SCENARIO_SANITY
+  date: 2026-08-26
+  status: bounded_sanity_study
+  purpose: compare uniform compliant ground with same-height asymmetric compliance
+
+common:
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  command_speed_mps: 0.15
+  duration_s: 10.0
+  initial_condition: canonical_fixed_stand
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  headless: true
+
+runs:
+  - id: concrete_control
+    terrain: concrete
+    sink_pattern: uniform
+    sink_severity: moderate
+  - id: uniform_sand_control
+    terrain: sand
+    sink_pattern: uniform
+    sink_severity: moderate
+  - id: asymmetric_left_mild
+    terrain: sand
+    sink_pattern: asymmetric_left
+    sink_severity: mild
+  - id: asymmetric_left_moderate
+    terrain: sand
+    sink_pattern: asymmetric_left
+    sink_severity: moderate
+  - id: asymmetric_left_severe
+    terrain: sand
+    sink_pattern: asymmetric_left
+    sink_severity: severe
+  - id: asymmetric_right_mild
+    terrain: sand
+    sink_pattern: asymmetric_right
+    sink_severity: mild
+  - id: asymmetric_right_moderate
+    terrain: sand
+    sink_pattern: asymmetric_right
+    sink_severity: moderate
+  - id: asymmetric_right_severe
+    terrain: sand
+    sink_pattern: asymmetric_right
+    sink_severity: severe
+
+interpretation:
+  sink_physical: precursor_diagnostic_only
+  sink_hazard_status: SINK_HAZARD_CRITERIA_NOT_YET_FROZEN
+  primary_sink_labels_generated: false

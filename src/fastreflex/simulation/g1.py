@@ -20,7 +20,12 @@ from .hazards import (
     derive_physical_diagnostics,
     read_exact_foot_sample,
 )
-from .terrain import apply_terrain_profile, get_terrain_profile
+from .terrain import (
+    apply_sink_patch_profiles,
+    apply_terrain_profile,
+    get_terrain_profile,
+    validate_sink_scenario,
+)
 
 
 PHYSICS_TIMESTEP_S = 0.0005
@@ -35,6 +40,7 @@ IMU_CHANNELS = (
 )
 ASSET_DIR = Path(__file__).resolve().parent / "assets" / "unitree_g1"
 SCENE_PATH = ASSET_DIR / "scene.xml"
+SINK_SCENE_PATH = ASSET_DIR / "scene_sink.xml"
 UPSTREAM_REVISION = "1425b15f73bd4095f0df53709d7c389c3eb9e790"
 TESTED_POLICY_SHA256 = (
     "2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28"
@@ -128,6 +134,8 @@ class SimulationConfig:
     command_speed_mps: float
     policy_path: Path | None
     terrain: str
+    sink_pattern: str
+    sink_severity: str
     headless: bool
 
     @property
@@ -162,6 +170,7 @@ class SimulationConfig:
         if not 0.1 <= self.command_speed_mps <= 0.5:
             raise ValueError("walking command speed must be in [0.1, 0.5] m/s")
         get_terrain_profile(self.terrain)
+        validate_sink_scenario(self.terrain, self.sink_pattern, self.sink_severity)
 
 
 @dataclass(frozen=True)
@@ -192,6 +201,7 @@ def load_simulation_config(path: Path) -> SimulationConfig:
         simulation = document["simulation"]
         controller = document["controller"]
         terrain = document["terrain"]
+        sink = document.get("sink", {})
         output = document["output"]
         raw_policy = controller["policy_path"]
         config = SimulationConfig(
@@ -201,6 +211,8 @@ def load_simulation_config(path: Path) -> SimulationConfig:
             command_speed_mps=float(controller["command_speed_mps"]),
             policy_path=None if raw_policy in (None, "") else Path(raw_policy),
             terrain=str(terrain["type"]),
+            sink_pattern=str(sink.get("pattern", "uniform")),
+            sink_severity=str(sink.get("severity", "moderate")),
             headless=bool(output["headless"]),
         )
     except (KeyError, TypeError, ValueError) as exc:
@@ -257,12 +269,23 @@ def validate_model_contract(model: mujoco.MjModel) -> None:
             raise ValueError(f"research-only sensor remains enabled: {removed_name}")
 
 
-def load_g1_model(terrain_name: str) -> tuple[mujoco.MjModel, int]:
-    """Load the migrated G1 model and apply one engineering terrain profile."""
-    model = mujoco.MjModel.from_xml_path(str(SCENE_PATH))
+def load_g1_model(
+    terrain_name: str,
+    sink_pattern: str = "uniform",
+    sink_severity: str = "moderate",
+) -> tuple[mujoco.MjModel, frozenset[int]]:
+    """Load the baseline or asymmetric sink scene with validated profiles."""
+    validate_sink_scenario(terrain_name, sink_pattern, sink_severity)
+    scene_path = SCENE_PATH if sink_pattern == "uniform" else SINK_SCENE_PATH
+    model = mujoco.MjModel.from_xml_path(str(scene_path))
     validate_model_contract(model)
-    terrain_id = apply_terrain_profile(model, get_terrain_profile(terrain_name))
-    return model, terrain_id
+    if sink_pattern == "uniform":
+        ground_ids = frozenset(
+            (apply_terrain_profile(model, get_terrain_profile(terrain_name)),)
+        )
+    else:
+        ground_ids = apply_sink_patch_profiles(model, sink_pattern, sink_severity)
+    return model, ground_ids
 
 
 def launch_passive_viewer(
@@ -442,7 +465,7 @@ class UnitreeG1Controller:
 def _fall_reasons(
     model: mujoco.MjModel,
     data: mujoco.MjData,
-    terrain_id: int,
+    ground_geom_ids: frozenset[int],
     foot_geom_ids: frozenset[int],
 ) -> tuple[str, ...]:
     reasons = []
@@ -454,8 +477,8 @@ def _fall_reasons(
     for contact_id in range(data.ncon):
         contact = data.contact[contact_id]
         geom1, geom2 = int(contact.geom1), int(contact.geom2)
-        if terrain_id in (geom1, geom2):
-            other = geom2 if geom1 == terrain_id else geom1
+        if geom1 in ground_geom_ids or geom2 in ground_geom_ids:
+            other = geom2 if geom1 in ground_geom_ids else geom1
             if other not in foot_geom_ids:
                 reasons.append("nonfoot_surface_contact")
                 break
@@ -469,7 +492,11 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
     config.validate()
     if config.policy_path is None:
         raise ValueError("policy path is required via --policy or FASTREFLEX_G1_POLICY")
-    model, terrain_id = load_g1_model(config.terrain)
+    model, ground_geom_ids = load_g1_model(
+        config.terrain,
+        config.sink_pattern,
+        config.sink_severity,
+    )
     data = mujoco.MjData(model)
     controller = UnitreeG1Controller(
         model,
@@ -491,6 +518,11 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
     foot_velocity: list[np.ndarray] = []
     penetration: list[np.ndarray] = []
     pre_fall: list[bool] = []
+    pelvis_world_z: list[float] = []
+    pelvis_orientation: list[np.ndarray] = []
+    pelvis_angular_velocity: list[np.ndarray] = []
+    pelvis_linear_velocity: list[np.ndarray] = []
+    fall_active: list[bool] = []
     first_fall_sample: int | None = None
     first_fall_reasons: tuple[str, ...] = ()
     pelvis_id = model.body("pelvis").id
@@ -502,7 +534,11 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
     viewer_data: mujoco.MjData | None = None
     viewer_context: ContextManager[Any] = nullcontext(None)
     if not config.headless:
-        viewer_model, _ = load_g1_model(config.terrain)
+        viewer_model, _ = load_g1_model(
+            config.terrain,
+            config.sink_pattern,
+            config.sink_severity,
+        )
         viewer_data = mujoco.MjData(viewer_model)
         _copy_integration_state(model, data, viewer_model, viewer_data)
         viewer_context = launch_passive_viewer(viewer_model, viewer_data)
@@ -539,11 +575,20 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             minimum_pelvis_up = min(
                 minimum_pelvis_up, float(data.xmat[pelvis_id, 8])
             )
-            reasons = _fall_reasons(model, data, terrain_id, foot_geom_ids)
+            reasons = _fall_reasons(model, data, ground_geom_ids, foot_geom_ids)
             if reasons and first_fall_sample is None:
                 first_fall_sample = len(timestamp_us)
                 first_fall_reasons = reasons
-            exact = read_exact_foot_sample(model, data, terrain_id)
+            exact = read_exact_foot_sample(model, data, ground_geom_ids)
+            pelvis_velocity = np.zeros(6, dtype=np.float64)
+            mujoco.mj_objectVelocity(
+                model,
+                data,
+                mujoco.mjtObj.mjOBJ_BODY,
+                pelvis_id,
+                pelvis_velocity,
+                0,
+            )
             timestamp_us.append(int(round(float(data.time) * 1_000_000.0)))
             imu.append(read_pelvis_imu(model, data))
             contact.append(exact.physical_contact)
@@ -552,6 +597,11 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             foot_velocity.append(exact.world_velocity_xyz)
             penetration.append(exact.contact_penetration_m)
             pre_fall.append(first_fall_sample is None)
+            pelvis_world_z.append(float(data.qpos[2]))
+            pelvis_orientation.append(data.qpos[3:7].copy())
+            pelvis_angular_velocity.append(pelvis_velocity[:3].copy())
+            pelvis_linear_velocity.append(pelvis_velocity[3:].copy())
+            fall_active.append(first_fall_sample is not None)
 
     timestamps = np.asarray(timestamp_us, dtype=np.int64)
     sequence = np.arange(len(timestamps), dtype=np.int64)
@@ -573,9 +623,17 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         np.asarray(foot_velocity, dtype=np.float64).reshape(-1, 2, 3),
         np.asarray(penetration, dtype=np.float64).reshape(-1, 2),
         np.asarray(pre_fall),
+        np.asarray(pelvis_world_z, dtype=np.float64),
+        np.asarray(pelvis_orientation, dtype=np.float64).reshape(-1, 4),
+        np.asarray(pelvis_angular_velocity, dtype=np.float64).reshape(-1, 3),
+        np.asarray(pelvis_linear_velocity, dtype=np.float64).reshape(-1, 3),
+        config.command_speed_mps,
+        np.asarray(fall_active, dtype=bool),
     )
     metadata: dict[str, object] = {
         "terrain": config.terrain,
+        "sink_pattern": config.sink_pattern,
+        "sink_severity": config.sink_severity,
         "physics_timestep_s": config.physics_timestep_s,
         "physics_rate_hz": int(round(1.0 / config.physics_timestep_s)),
         "sensor_rate_hz": config.sensor_rate_hz,
@@ -601,10 +659,45 @@ def _finite_max(values: np.ndarray) -> float | None:
     return None if finite.size == 0 else float(np.max(finite))
 
 
+def _finite_max_per_foot(values: np.ndarray) -> list[float | None]:
+    return [_finite_max(np.asarray(values)[:, side]) for side in range(2)]
+
+
+def _first_true_per_foot(values: np.ndarray) -> list[int | None]:
+    first: list[int | None] = []
+    for side in range(2):
+        indices = np.flatnonzero(np.asarray(values)[:, side])
+        first.append(None if indices.size == 0 else int(indices[0]))
+    return first
+
+
+def _degrees_or_none(value_rad: float | None) -> float | None:
+    return None if value_rad is None else float(np.degrees(value_rad))
+
+
 def summarize_result(result: SimulationResult) -> dict[str, object]:
     """Create a compact JSON-safe smoke summary without saving trace data."""
     diagnostics = result.diagnostics
     summary = dict(result.metadata)
+    pelvis_z = diagnostics.pelvis_world_z_m
+    angular_speed = np.linalg.norm(
+        diagnostics.pelvis_angular_velocity_rad_s,
+        axis=1,
+    )
+    forward_error = diagnostics.forward_velocity_error_m_s
+    max_abs_roll = _finite_max(np.abs(diagnostics.pelvis_roll_rad))
+    max_abs_pitch = _finite_max(np.abs(diagnostics.pelvis_pitch_rad))
+    max_tilt = _finite_max(diagnostics.pelvis_tilt_rad)
+    pelvis_z_range = (
+        None
+        if pelvis_z.size == 0
+        else float(np.max(pelvis_z) - np.min(pelvis_z))
+    )
+    pelvis_z_drop = (
+        None
+        if pelvis_z.size == 0
+        else float(max(0.0, float(pelvis_z[0] - np.min(pelvis_z))))
+    )
     summary.update(
         {
             "imu_finite": bool(np.all(np.isfinite(result.runtime.pelvis_imu))),
@@ -621,14 +714,54 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
             "max_contact_penetration_m": _finite_max(
                 diagnostics.contact_penetration_m
             ),
+            "max_contact_penetration_m_per_foot": _finite_max_per_foot(
+                diagnostics.contact_penetration_m
+            ),
             "max_loaded_penetration_change_m": _finite_max(
                 diagnostics.loaded_penetration_change_m
+            ),
+            "max_loaded_penetration_change_m_per_foot": _finite_max_per_foot(
+                diagnostics.loaded_penetration_change_m
+            ),
+            "max_bilateral_loaded_penetration_asymmetry_m": _finite_max(
+                diagnostics.bilateral_loaded_penetration_asymmetry_m
             ),
             "established_slip_samples": int(
                 np.count_nonzero(diagnostics.established_slip)
             ),
-            "established_sink_samples": int(
-                np.count_nonzero(diagnostics.established_sink)
+            "sink_physical_samples": int(
+                np.count_nonzero(diagnostics.sink_physical_active)
+            ),
+            "sink_physical_samples_per_foot": np.count_nonzero(
+                diagnostics.sink_physical_active, axis=0
+            ).tolist(),
+            "first_sink_physical_sample_per_foot": _first_true_per_foot(
+                diagnostics.sink_physical_onset
+            ),
+            "max_abs_pelvis_roll_deg": _degrees_or_none(max_abs_roll),
+            "max_abs_pelvis_pitch_deg": _degrees_or_none(max_abs_pitch),
+            "max_pelvis_tilt_deg": _degrees_or_none(max_tilt),
+            "pelvis_z_range_m": pelvis_z_range,
+            "pelvis_z_drop_from_initial_m": pelvis_z_drop,
+            "peak_pelvis_angular_speed_rad_s": _finite_max(angular_speed),
+            "mean_pelvis_forward_velocity_m_s": (
+                None
+                if diagnostics.pelvis_forward_velocity_m_s.size == 0
+                else float(np.mean(diagnostics.pelvis_forward_velocity_m_s))
+            ),
+            "forward_velocity_rmse_m_s": (
+                None
+                if forward_error.size == 0
+                else float(np.sqrt(np.mean(np.square(forward_error))))
+            ),
+            "loaded_contact_samples_per_foot": np.count_nonzero(
+                diagnostics.loaded_contact, axis=0
+            ).tolist(),
+            "loaded_contact_imbalance_samples": int(
+                abs(
+                    np.count_nonzero(diagnostics.loaded_contact[:, 0])
+                    - np.count_nonzero(diagnostics.loaded_contact[:, 1])
+                )
             ),
         }
     )

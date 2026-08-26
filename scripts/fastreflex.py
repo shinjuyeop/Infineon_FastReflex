@@ -35,6 +35,16 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--speed", type=float)
     simulate.add_argument("--duration", type=float)
     simulate.add_argument(
+        "--sink-pattern",
+        choices=("uniform", "asymmetric_left", "asymmetric_right"),
+        help="select uniform ground or a same-height asymmetric compliance lane",
+    )
+    simulate.add_argument(
+        "--sink-severity",
+        choices=("mild", "moderate", "severe"),
+        help="select the synthetic compliance of the asymmetric lane",
+    )
+    simulate.add_argument(
         "--policy",
         type=Path,
         help=(
@@ -90,6 +100,16 @@ def main() -> int:
             ),
             duration_s=config.duration_s if args.duration is None else args.duration,
             policy_path=config.policy_path if policy_path is None else policy_path,
+            sink_pattern=(
+                config.sink_pattern
+                if args.sink_pattern is None
+                else args.sink_pattern
+            ),
+            sink_severity=(
+                config.sink_severity
+                if args.sink_severity is None
+                else args.sink_severity
+            ),
             headless=headless,
         )
         result = run_simulation(config)

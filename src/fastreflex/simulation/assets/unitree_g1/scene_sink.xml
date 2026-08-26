@@ -1,0 +1,22 @@
+<mujoco model="g1_29dof sink scene">
+  <include file="g1.xml"/>
+
+  <option timestep="0.0005"/>
+
+  <statistic center="0 0 0.5" extent="2.0"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="-130" elevation="-20"/>
+  </visual>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <!-- Both lane tops are exactly z=0. Colors identify side only, not physics. -->
+    <geom name="terrain_left" type="box" pos="0 5 -1" size="10 5 1"
+      rgba="0.25 0.45 0.75 1"/>
+    <geom name="terrain_right" type="box" pos="0 -5 -1" size="10 5 1"
+      rgba="0.75 0.45 0.20 1"/>
+  </worldbody>
+</mujoco>

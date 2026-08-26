@@ -57,7 +57,7 @@ MuJoCo
 
 `MUJOCO_BASELINE_READY`
 
-Unitree G1 29-DOF MuJoCo 보행 baseline, raw pelvis IMU6 1 kHz 취득, concrete/marble/ice/sand engineering terrain과 simulator-only physical diagnostic 경로를 검증했다. Walking policy ONNX는 repository에 포함하지 않고 user-supplied artifact로 받는다. Hazard dataset은 아직 생성하지 않았고 ML model과 training pipeline도 구현하지 않았다.
+Unitree G1 29-DOF MuJoCo 보행 baseline, raw pelvis IMU6 1 kHz 취득, concrete/marble/ice/sand engineering terrain과 simulator-only physical diagnostic 경로를 검증했다. Same-height asymmetric compliance Sink hazard scenario sanity study도 사용할 수 있으며 final SINK hazard criterion은 아직 frozen되지 않았다. Walking policy ONNX는 repository에 포함하지 않고 user-supplied artifact로 받는다. Hazard dataset은 아직 생성하지 않았고 ML model과 training pipeline도 구현하지 않았다.
 
 ## 구조
 

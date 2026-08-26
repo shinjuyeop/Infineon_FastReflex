@@ -51,7 +51,7 @@ G1 model
   -> simulator-only physical diagnostics
 ```
 
-Runtime trace는 `sequence`, `timestamp_us`, raw `pelvis_imu`만 갖는다. Foot contact, pose/velocity, penetration과 Slip/Sink oracle은 model input이 아닌 exact diagnostics다. Viewer는 canonical physics state를 별도 render buffer에 복사하므로 GUI control이나 mouse perturbation이 physics/controller/sensor/label에 전달되지 않는다.
+Runtime trace는 `sequence`, `timestamp_us`, raw `pelvis_imu`만 갖는다. Foot contact, pose/velocity, penetration, `sink_physical`, pelvis posture/velocity와 fall state는 model input이 아닌 exact diagnostics다. Viewer는 canonical physics state를 별도 render buffer에 복사하므로 GUI control이나 mouse perturbation이 physics/controller/sensor/label에 전달되지 않는다.
 
 ## Headless 실행
 
@@ -123,11 +123,36 @@ python scripts/fastreflex.py simulate \
   --viewer
 ```
 
-Sink/contact-compliance motion 관찰 예시:
+Uniform Sand control 관찰 예시:
 
 ```bash
 python scripts/fastreflex.py simulate \
   --terrain sand \
+  --sink-pattern uniform \
+  --speed 0.15 \
+  --duration 10 \
+  --viewer
+```
+
+동일 높이의 left lane만 더 compliant한 Sink scenario:
+
+```bash
+python scripts/fastreflex.py simulate \
+  --terrain sand \
+  --sink-pattern asymmetric_left \
+  --sink-severity moderate \
+  --speed 0.15 \
+  --duration 10 \
+  --viewer
+```
+
+Right lane severe hazard candidate:
+
+```bash
+python scripts/fastreflex.py simulate \
+  --terrain sand \
+  --sink-pattern asymmetric_right \
+  --sink-severity severe \
   --speed 0.15 \
   --duration 10 \
   --viewer
@@ -146,14 +171,16 @@ python scripts/fastreflex.py simulate \
 
 이 profile은 실제 재료 측정값이나 deformable-material model이 아니다. Relative behavior와 signal-separation을 보기 위한 engineering approximation이며 viewer를 위해 friction, `solref`, `solimp`를 바꾸지 않는다.
 
+`uniform`은 기존 scene/profile을 그대로 사용한다. `asymmetric_left`와 `asymmetric_right`는 전용 scene의 같은 높이(`z=0`)인 left/right lane 중 지정된 lane에만 더 낮은 contact impedance를 적용한다. Patch는 hole이나 step이 아니며 지면 mesh가 변형되지 않는다. Viewer의 blue/orange는 lane side를 구분하는 visual-only 색이고 severity를 뜻하지 않는다. Asymmetric pattern은 `--terrain sand`에서만 허용된다.
+
 ## Hazard label 설명
 
-Terrain 이름과 Hazard label은 독립적이다. `concrete = NORMAL`, `ice = SLIP`, `sand = SINK` 규칙은 없다. Ice에서도 physical criterion 이전은 NORMAL candidate일 수 있고, sand에서도 criterion을 만족하지 않으면 SINK가 아니다.
+Terrain 이름과 Hazard label은 독립적이다. `concrete = NORMAL`, `ice = SLIP`, `sand = SINK` 규칙은 없다.
 
 - Established Slip: valid loaded contact에서 touchdown 뒤 10 ms를 제외하고, touchdown anchor 기준 tangential drift가 50 mm 이상인 상태가 3 ms 지속
-- Established Sink: 같은 validity에서 first-loaded contact penetration보다 5.5 mm 이상 증가한 상태가 20 ms 지속
+- `sink_physical_active`: 같은 validity에서 first-loaded contact penetration보다 5.5 mm 이상 증가한 상태가 20 ms 지속
 
-Sink penetration은 실제 모래 지면의 침하 깊이가 아니라 현재 MuJoCo contact-response 기반 diagnostic이다. Label은 terrain name이 아니라 [`hazards.py`](../src/fastreflex/simulation/hazards.py)의 bilateral physical metric으로 결정된다.
+`sink_physical_active`는 물리적 침하 precursor diagnostic이며 primary `SINK` class가 아니다. Primary `SINK`는 physical sink와 meaningful locomotion/posture degradation이 함께 있는 hazard지만 최종 numeric gate는 아직 `SINK_HAZARD_CRITERIA_NOT_YET_FROZEN`이다. Uniform sand처럼 penetration이 있어도 안정적으로 걷는 상태는 그 자체만으로 `SINK`가 아니다.
 
 ## 출력 해석
 
@@ -161,11 +188,15 @@ Simulation 종료 후 JSON summary를 stdout에 출력하며 파일이나 datase
 
 - `expected_samples` / `actual_samples`: 요청 duration의 예상 표본과 실제 수집 표본
 - `dropped_samples`, `timestamp_delta_us`: 1 kHz 연속 sampling 확인
-- `established_slip_samples`, `established_sink_samples`: 좌우 foot에서 oracle이 active였던 표본 수의 합
+- `established_slip_samples`: 좌우 foot에서 frozen Slip oracle이 active였던 표본 수의 합
+- `sink_physical_samples_per_foot`, `first_sink_physical_sample_per_foot`: 좌우 physical precursor의 active count와 onset
 - `max_anchor_drift_m`: contact episode의 touchdown anchor 기준 최대 수평 이동
-- `max_contact_penetration_m`: named sole contact의 최대 MuJoCo penetration
-- `max_loaded_penetration_change_m`: first-loaded reference 대비 최대 penetration 증가
+- `max_contact_penetration_m_per_foot`, `max_loaded_penetration_change_m_per_foot`: 좌우 침투와 first-loaded reference 대비 증가
+- `max_bilateral_loaded_penetration_asymmetry_m`: 양발이 loaded인 구간의 최대 좌우 침투 차이
+- `max_pelvis_tilt_deg`, `pelvis_z_range_m`, `peak_pelvis_angular_speed_rad_s`: posture disturbance candidate
+- `mean_pelvis_forward_velocity_m_s`, `forward_velocity_rmse_m_s`: commanded forward speed 대비 gait effect candidate
+- `loaded_contact_samples_per_foot`, `loaded_contact_imbalance_samples`: contact-duration disturbance candidate
 - `first_fall_sample`, `first_fall_reasons`: 최초 fall censor 위치와 원인; 없으면 `null`과 빈 목록
 - `viewer`, `terminated_by_viewer`: viewer mode 여부와 window가 duration 전에 닫혔는지 여부
 
-Slip/Sink count는 bilateral 합계이므로 하나의 timestamp에서 양쪽 foot이 모두 active하면 simulation의 `actual_samples`보다 커질 수 있다. Viewer를 일찍 닫은 경우 `actual_samples`는 요청값보다 작지만, 수집한 구간의 timestamp가 연속이면 `dropped_samples`는 0이다.
+Slip/physical-sink count를 양발 합계로 해석할 때는 하나의 timestamp에서 양쪽 foot이 모두 active하면 simulation의 `actual_samples`보다 커질 수 있다. Physical-sink sample count는 contact episode와 validity의 영향을 받으므로 severity score가 아니다. Viewer를 일찍 닫은 경우 `actual_samples`는 요청값보다 작지만, 수집한 구간의 timestamp가 연속이면 `dropped_samples`는 0이다.

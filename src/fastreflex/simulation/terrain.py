@@ -52,6 +52,38 @@ TERRAIN_PROFILES = {
     ),
 }
 
+SINK_PATTERNS = ("uniform", "asymmetric_left", "asymmetric_right")
+SINK_SEVERITIES = ("mild", "moderate", "severe")
+SINK_PATCH_GEOM_NAMES = ("terrain_left", "terrain_right")
+
+# Synthetic severity ladder for one compliant lane. These are engineering
+# contact-response parameters derived from the uniform sand control, not soil
+# measurements. Friction is intentionally unchanged so the study isolates
+# spatially asymmetric compliance.
+SINK_SEVERITY_PROFILES = {
+    "mild": TerrainProfile(
+        name="sink_mild",
+        friction=TERRAIN_PROFILES["sand"].friction,
+        solref=(0.055, 1.5),
+        solimp=(0.68, 0.89, 0.011, 0.5, 2.0),
+        description="mildly softer than the uniform sand control",
+    ),
+    "moderate": TerrainProfile(
+        name="sink_moderate",
+        friction=TERRAIN_PROFILES["sand"].friction,
+        solref=(0.060, 1.5),
+        solimp=(0.65, 0.87, 0.013, 0.5, 2.0),
+        description="moderately softer asymmetric support",
+    ),
+    "severe": TerrainProfile(
+        name="sink_severe",
+        friction=TERRAIN_PROFILES["sand"].friction,
+        solref=(0.070, 1.5),
+        solimp=(0.60, 0.84, 0.016, 0.5, 2.0),
+        description="severely softer bounded asymmetric support",
+    ),
+}
+
 
 def get_terrain_profile(name: str) -> TerrainProfile:
     """Return one of the four contract terrain profiles."""
@@ -61,6 +93,25 @@ def get_terrain_profile(name: str) -> TerrainProfile:
         raise ValueError(
             f"unknown terrain {name!r}; choose from {tuple(TERRAIN_PROFILES)}"
         ) from exc
+
+
+def get_sink_severity_profile(name: str) -> TerrainProfile:
+    """Return one bounded synthetic compliance severity profile."""
+    try:
+        return SINK_SEVERITY_PROFILES[name]
+    except KeyError as exc:
+        raise ValueError(
+            f"unknown sink severity {name!r}; choose from {SINK_SEVERITIES}"
+        ) from exc
+
+
+def validate_sink_scenario(terrain: str, pattern: str, severity: str) -> None:
+    """Validate the config-only sink scenario selection."""
+    if pattern not in SINK_PATTERNS:
+        raise ValueError(f"unknown sink pattern {pattern!r}; choose from {SINK_PATTERNS}")
+    get_sink_severity_profile(severity)
+    if pattern != "uniform" and terrain != "sand":
+        raise ValueError("asymmetric sink patterns require terrain='sand'")
 
 
 def apply_terrain_profile(
@@ -97,3 +148,27 @@ def apply_terrain_profile(
     model.geom_priority[geom_id] = profile.priority
     model.geom_condim[geom_id] = profile.condim
     return int(geom_id)
+
+
+def apply_sink_patch_profiles(
+    model: mujoco.MjModel,
+    pattern: str,
+    severity: str,
+) -> frozenset[int]:
+    """Apply uniform-sand and one softer lane profile to the sink scene."""
+    validate_sink_scenario("sand", pattern, severity)
+    if pattern == "uniform":
+        raise ValueError("the uniform control must use the canonical baseline scene")
+
+    base_profile = get_terrain_profile("sand")
+    ground_ids = {
+        side: apply_terrain_profile(model, base_profile, f"terrain_{side}")
+        for side in ("left", "right")
+    }
+    soft_side = pattern.removeprefix("asymmetric_")
+    apply_terrain_profile(
+        model,
+        get_sink_severity_profile(severity),
+        f"terrain_{soft_side}",
+    )
+    return frozenset(ground_ids.values())

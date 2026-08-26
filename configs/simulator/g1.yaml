@@ -10,5 +10,9 @@ controller:
 terrain:
   type: concrete
 
+sink:
+  pattern: uniform
+  severity: moderate
+
 output:
   headless: true

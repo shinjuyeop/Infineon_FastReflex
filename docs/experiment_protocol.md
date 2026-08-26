@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`을 완료하여 현재 상태는 `MUJOCO_BASELINE_READY`다. G1 보행, pelvis IMU6 1 kHz와 physical diagnostic foundation까지만 검증했다. Dataset, model, training과 evaluation pipeline은 아직 구현되지 않았다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
+`MINIMAL_G1_MUJOCO_MIGRATION`과 bounded `SINK_HAZARD_SCENARIO_SANITY`를 완료했으며 현재 상태는 `MUJOCO_BASELINE_READY`다. G1 보행, pelvis IMU6 1 kHz, physical diagnostic foundation과 spatially asymmetric compliant-contact scenario까지만 검증했다. Dataset, model, training과 evaluation pipeline은 아직 구현되지 않았다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
 
 ## 고정 연구 원칙
 
@@ -21,7 +21,7 @@
 ### Phase 1 — Dataset contract
 
 - IMU6 schema, frame, units, timestamp와 missing-sample 정책 고정
-- NORMAL/SLIP/SINK physical label과 dual/early interval 정책 고정
+- NORMAL/SLIP class 원칙, Sink cause/effect 분리와 dual/early interval 정책 정의
 - authoritative raw-run storage, provenance, window 후보와 split 원칙 고정
 - Deliverable: `docs/dataset.md`, `configs/dataset/hazard.yaml`
 
@@ -31,14 +31,24 @@
 
 - 완료: Pelvis IMU6 취득에 필요한 최소 G1 model/sensor/controller 경로만 명시적으로 review 후 migration
 - 완료: IMU site/frame/axis/unit/channel과 2 kHz physics/1 kHz timestamp test
-- 완료: bilateral physical contact/touchdown과 locked Slip/Sink threshold/persistence parity test
+- 완료: bilateral physical contact/touchdown, locked Slip과 `sink_physical` threshold/persistence parity test
 - 준수: Legacy training/dataset/model, terrain classifier와 deployment logic은 migration하지 않음
+
+### Sink scenario sanity — classifier 이전 단계
+
+- 완료: 기존 uniform sand를 benign control로 보존
+- 완료: 동일 nominal height의 left/right compliance lane과 mild/moderate/severe config selection
+- 완료: `sink_physical` cause와 pelvis posture/velocity/contact/fall effect diagnostic 분리
+- 완료: bounded 8-run sanity matrix와 Viewer 확인
+- 미확정: primary `SINK` effect metric 조합, numeric gate, training label timing
+
+현재 상태는 `SINK_HAZARD_CRITERIA_NOT_YET_FROZEN`이다. `sink_physical_active`만으로 primary `SINK`를 만들지 않는다. Scenario와 결과는 [`20260826_sink_scenario_sanity.yaml`](../configs/experiment/20260826_sink_scenario_sanity.yaml) 및 [`20260826_sink_scenario_sanity.md`](../reports/20260826_sink_scenario_sanity.md)에 기록한다.
 
 ### Phase 3 — Small pilot raw dataset generation
 
 - 소수 run으로 full-length 1 kHz raw trace 생성
 - Manifest/provenance, missing sample, run boundary와 label diagnostics 검증
-- 다양한 normal contact와 Slip/Sink established event가 실제로 포함되는지 확인
+- 다양한 normal contact, established Slip과 review 후 frozen된 SINK hazard event가 실제로 포함되는지 확인
 - 이 단계에서는 full dataset이나 model 성능을 주장하지 않음
 
 ### Phase 4 — Raw IMU visualization / Time-to-Separation
@@ -83,7 +93,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. Py
 - Research repository에는 검토된 Float contract artifact만 export
 - Quantization 이후 작업은 `Infineon_FastReflex_E84` repository로 넘김
 
-다음 단계는 Phase 3 pilot raw dataset generation이며 별도 승인 없이 자동으로 시작하지 않는다.
+다음 단계는 Sink effect gate와 timing에 대한 사람의 review다. 이를 freeze하기 전에는 Phase 3 pilot raw dataset generation을 시작하지 않으며, review 뒤에도 별도 승인 없이 자동으로 진행하지 않는다.
 
 ## Split과 leakage protocol
 
@@ -128,4 +138,4 @@ E84 deployment repository 범위:
 - Vela, firmware integration
 - E84 runtime, HIL과 target validation
 
-현재 milestone은 smoke simulation만 실행했다. Dataset 생성, PyTorch 설치, model 구현/training/evaluation, quantization, E84 또는 HIL은 수행하지 않았다.
+현재 milestone은 smoke simulation과 bounded Sink scenario sanity study만 실행했다. Dataset 생성, PyTorch 설치, model 구현/training/evaluation, quantization, E84 또는 HIL은 수행하지 않았다.

@@ -16,8 +16,8 @@ Unitree G1 MJCF/meshes + user-supplied walking ONNX + terrain profile
 ```
 
 - `simulation/g1.py`: 29-DOF model/actuator contract, fixed policy adapter, 0.5 ms physics step, 1 kHz raw pelvis IMU sampling과 in-memory smoke
-- `simulation/terrain.py`: concrete, marble, ice, sand의 최소 contact profile
-- `simulation/hazards.py`: bilateral physical contact/touchdown, foot pose/velocity, episode, anchor drift, penetration 변화와 established Slip/Sink 계산
+- `simulation/terrain.py`: concrete, marble, ice, sand와 same-height asymmetric compliance profile
+- `simulation/hazards.py`: bilateral contact/touchdown, foot cause metric, established Slip, `sink_physical` precursor와 pelvis effect diagnostic 계산
 - `configs/simulator/g1.yaml`: 하나의 canonical simulator config
 
 Runtime trace는 `[sequence, timestamp_us, pelvis_imu]`만 갖는다. Exact contact, force/load, foot state, fall censor와 oracle은 별도 diagnostics object에만 존재한다. Smoke command는 dataset이나 report artifact를 저장하지 않는다.
@@ -37,7 +37,7 @@ Physics는 0.5 ms(2 kHz)이고 두 step마다 raw MuJoCo pelvis accelerometer/gy
 | ice | 0.05 | hard, very low friction |
 | sand | 0.70 | softer, damped contact impedance |
 
-모든 label은 [`dataset.md`](dataset.md)의 actual physical metric과 persistence로만 계산한다. Ice가 자동으로 `SLIP`이거나 sand가 자동으로 `SINK`인 규칙은 없다.
+Ice가 자동으로 `SLIP`이거나 sand가 자동으로 `SINK`인 규칙은 없다. Established Slip은 frozen physical metric으로 계산하고, penetration persistence는 `sink_physical` precursor로만 사용한다. Primary `SINK`의 meaningful posture/gait degradation gate는 아직 frozen되지 않았다.
 
 ### Asset and policy boundary
 

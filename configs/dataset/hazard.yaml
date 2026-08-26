@@ -42,9 +42,14 @@ labels:
   established_slip:
     touchdown_anchor_drift_m: 0.050
     persistence_ms: 3
-  established_sink:
+  sink_physical:
     first_loaded_penetration_change_m: 0.0055
     persistence_ms: 20
+    role: precursor_diagnostic_only
+  sink_hazard:
+    criteria_status: SINK_HAZARD_CRITERIA_NOT_YET_FROZEN
+    requires_physical_sink: true
+    requires_meaningful_locomotion_or_posture_degradation: true
 
 provenance:
   required_fields:

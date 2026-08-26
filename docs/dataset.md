@@ -8,11 +8,13 @@ Primary task는 하나의 3-class classification이다.
 
 | ID | Class | 의미 |
 |---:|---|---|
-| 0 | `NORMAL` | 유효한 보행 중 established Slip과 established Sink가 모두 없음 |
+| 0 | `NORMAL` | 유효한 보행 중 frozen hazard criterion을 만족하지 않는 안정 상태 |
 | 1 | `SLIP` | terrain 이름과 무관하게 established Slip physical oracle이 active |
-| 2 | `SINK` | terrain 이름과 무관하게 established Sink physical oracle이 active |
+| 2 | `SINK` | foot-ground sinking/compliance로 locomotion 또는 posture stability가 meaningfully degraded된 hazard state |
 
 Terrain, scenario, contact, exact simulator state와 physical oracle은 label/diagnostic/metadata 전용이다. Runtime model input에는 넣지 않는다.
+
+현재 `SINK`의 최종 numeric hazard gate는 `SINK_HAZARD_CRITERIA_NOT_YET_FROZEN`이다. Contact penetration만 존재하고 자세와 보행이 안정적인 상태는 primary `SINK`가 아니다. 아래 `sink_physical_active`는 원인 측 precursor diagnostic이며 class label과 동치가 아니다.
 
 ## Runtime sensor contract
 
@@ -84,8 +86,10 @@ Dataset의 authoritative source는 미리 잘린 window가 아니라 simulation 
 - 좌/우 force-loaded state 및 raw contact episode ID
 - `established_slip_active`, `established_slip_onset`
 - Slip continuous diagnostics: foot-ground tangential relative velocity, touchdown anchor-relative x/y displacement와 그 norm
-- `established_sink_active`, `established_sink_onset`
+- `sink_physical_active`, `sink_physical_onset`, `sink_physical_episode_id`
 - Sink continuous diagnostics: contact-foot world z/vertical velocity, touchdown-relative downward displacement, surface-relative sole depth, raw contact penetration, first-loaded-reference penetration과 그 변화량
+- 좌/우 loaded penetration asymmetry와 loaded/contact state
+- Effect diagnostics: pelvis/root world z, orientation/roll/pitch/tilt, angular/linear velocity, commanded-forward velocity tracking error
 - `dual_hazard_active`
 - `pre_fall_valid`와 first-fall/censor marker
 - 필요 시 exact root/foot pose와 velocity. 이는 항상 diagnostic-only로 표시한다.
@@ -120,11 +124,12 @@ V1 migration은 이 구분을 보존해야 한다.
 2. `touchdown`: 새 physical-contact episode의 첫 sample, label-only
 3. `force_loaded`: contact load 조건, label/diagnostic-only
 4. `pre_fall_valid`: first fall 이전만 true
-5. `established_*`: continuous metric이 고정 threshold와 persistence를 만족한 안정 label
+5. `established_slip`: frozen Slip metric/persistence를 만족한 reference label
+6. `sink_physical_active`: 침투 metric/persistence를 만족한 precursor diagnostic이며 primary class가 아님
 
 ### `NORMAL`
 
-`NORMAL`은 Concrete 직진 보행이나 terrain identity를 뜻하지 않는다. Runtime sample이 유효하고 pre-fall이며 physical Slip과 Sink가 없는 정상 보행 상태다. 다음 variation을 충분히 포함해야 한다.
+`NORMAL`은 Concrete 직진 보행이나 terrain identity를 뜻하지 않는다. Runtime sample이 유효하고 pre-fall이며 frozen hazard criterion을 만족하지 않는 정상 보행 상태다. `sink_physical_active`만 있고 posture/gait가 안정적인 uniform compliant ground도 `NORMAL` candidate가 될 수 있다. 다음 variation을 충분히 포함해야 한다.
 
 - straight walking, gentle/wide turn
 - acceleration/deceleration과 여러 command speed
@@ -148,24 +153,32 @@ V1은 새 incipient threshold를 만들지 않고 legacy의 `ESTABLISHED_SLIP`�
 
 `ESTABLISHED_SLIP` onset은 이미 50 mm 이동과 3 ms persistence 뒤의 reference이며 최초 물리 motion onset이 아니다. Legacy의 incipient-onset 후보들은 established-event coverage와 clean-normal false-onset validation을 통과하지 못했다. 따라서 V1은 incipient label을 invent하지 않는다. Raw continuous metrics와 stable established onset을 함께 보존하고 Phase 4 Time-to-Separation에서 early reference를 별도로 검증한다.
 
-### `SINK`: legacy stable reference
+### `sink_physical`: physical precursor diagnostic
 
-V1은 legacy의 후반 walking physical oracle을 `ESTABLISHED_SINK` reference로 보존한다.
+Legacy의 후반 walking physical oracle은 삭제하지 않고 `sink_physical_active`라는 simulator-only precursor diagnostic으로 보존한다.
 
 - Physical quantity: named sole-ground contacts의 `max(0, -contact.dist)` contact penetration
 - Touchdown/load reference: 같은 raw contact episode에서 첫 force-loaded sample의 penetration
 - Continuous metric: 현재 penetration에서 first-loaded reference를 뺀 `loaded_penetration_change_m`
 - Eligibility: force loaded, touchdown transient 10 ms 이후, finite reference, pre-fall, 같은 contact episode
-- Established criterion: `loaded_penetration_change_m >= 0.0055 m`가 1 kHz에서 20 consecutive samples
+- Physical criterion: `loaded_penetration_change_m >= 0.0055 m`가 1 kHz에서 20 consecutive samples
 - Reset: invalid/load loss/contact episode 변경 또는 criterion 미충족 시 persistence reset
 
-Legacy는 foot world vertical motion, touchdown-relative foot drop, fixed surface top 대비 sole depth도 exact diagnostics로 다뤘다. 다만 locked established oracle은 이 exploratory quantity들의 조합이 아니라 contact-penetration 변화량이다. Legacy terrain은 deformable continuum/mesh depth state를 제공하지 않았고 compliance는 MuJoCo contact response와 penetration으로 표현되었다. 그러므로 `SINK`를 실제 재료 변형 깊이라고 과대해석하지 않는다. V1 raw run은 penetration뿐 아니라 foot z/vertical velocity, touchdown-relative drop, surface-relative depth를 모두 보존하여 simulator migration 때 한계와 parity를 재검증한다.
+이 criterion은 "발-지면 contact에서 의미 있는 추가 침투가 발생했다"는 뜻일 뿐 `SINK` class를 확정하지 않는다. Legacy terrain과 현재 scenario는 deformable continuum/mesh depth state를 제공하지 않고 compliance를 MuJoCo contact response와 penetration으로 근사한다. 그러므로 이를 실제 재료 변형 깊이라고 과대해석하지 않는다.
+
+### Primary `SINK` hazard
+
+Primary `SINK`는 `sink_physical_active`와 함께 locomotion 또는 posture stability의 meaningful degradation이 있는 hazard state다. 단순 penetration, terrain 이름 또는 compliance profile만으로 class를 만들지 않는다.
+
+현재 simulator-only candidate effect metric은 pelvis tilt/roll/pitch, pelvis z range/drop, angular motion, forward-velocity tracking degradation, loaded-contact disturbance와 fall/censor다. Cause-side physical onset/episode, continuous effect metric과 fall onset은 각각 보존한다. 어떤 effect 조합과 threshold가 final label gate가 될지는 sanity study 이후 별도 review에서 결정한다. 그 전에는 영향이 불명확한 physical-sink interval을 `NORMAL`이나 `SINK`로 강제하지 않고 `training_eligible=false`로 둘 수 있다.
+
+`SINK_HAZARD_CRITERIA_NOT_YET_FROZEN`
 
 ### Terrain shortcut과 dual hazard
 
 - Ice는 곧 `SLIP`이 아니며 Sand는 곧 `SINK`가 아니다.
 - Terrain/scenario/exact state는 model input으로 사용하지 않는다.
-- SLIP과 SINK가 동시에 active인 raw trace는 보존하고 `dual_hazard_active=true`로 표시한다.
+- Established SLIP과 향후 frozen SINK hazard가 동시에 active인 raw trace는 보존하고 `dual_hazard_active=true`로 표시한다. `sink_physical_active`만으로 dual hazard를 선언하지 않는다.
 - Dual-hazard sample/event/run은 V1 primary training과 evaluation에서 제외한다. 어느 class를 우선할지 규칙을 만들지 않는다.
 
 ### Sample과 window label의 경계

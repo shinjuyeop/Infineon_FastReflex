@@ -1,0 +1,41 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local dataset material
+data/raw/
+data/processed/
+data/cache/
+
+# Generated experiment artifacts
+artifacts/runs/
+artifacts/checkpoints/
+artifacts/tmp/
+*.pt
+*.pth
+*.onnx
+*.tflite
+
+# Deliberately reviewed release artifacts may be versioned.
+!artifacts/releases/
+!artifacts/releases/**
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~

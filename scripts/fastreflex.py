@@ -204,6 +204,30 @@ def main() -> int:
         return 0
 
     if args.command == "train":
+        import yaml
+
+        with args.config.open("r", encoding="utf-8") as stream:
+            experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "FSR_OBSERVABILITY_PILOT":
+            from fastreflex.training.sensor_ablation import (
+                run_fsr_observability_pilot,
+            )
+
+            output_path, metrics = run_fsr_observability_pilot(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "profiles": list(metrics["classification"]),
+                        "window_ms": 100,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         from fastreflex.training.trainer import run_first_classification_poc
 
         output_path, metrics = run_first_classification_poc(

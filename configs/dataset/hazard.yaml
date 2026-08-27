@@ -1,20 +1,36 @@
 dataset:
   name: hazard
-  schema_version: hazard_dataset_contract_v1
+  schema_version: hazard_dataset_contract_v2
+  compatible_historical_schema: hazard_dataset_contract_v1
 
 sensor:
-  type: pelvis_imu_6axis
+  type: candidate_runtime_sensor_profiles
   sample_rate_hz: 1000
   frame: pelvis_imu_site_local
   dtype: float32
   timestamp_unit: us
-  channels:
+  pelvis_imu_channels:
     - accel_x
     - accel_y
     - accel_z
     - gyro_x
     - gyro_y
     - gyro_z
+  foot_fsr_unit: N
+  foot_fsr_frame: ankle_roll_link_sole_local
+  foot_fsr_channels:
+    - left_front_left
+    - left_front_right
+    - left_rear_left
+    - left_rear_right
+    - right_front_left
+    - right_front_right
+    - right_rear_left
+    - right_rear_right
+  profiles:
+    imu6: [pelvis_imu]
+    fsr8: [foot_fsr]
+    fusion14: [pelvis_imu, foot_fsr]
 
 task:
   classes:
@@ -24,7 +40,8 @@ task:
 
 storage:
   layout: one_complete_run_per_npz
-  runtime_fields: [sequence, timestamp_us, pelvis_imu, sample_valid, channel_valid]
+  v1_runtime_fields: [sequence, timestamp_us, pelvis_imu, sample_valid, channel_valid]
+  v2_candidate_runtime_fields: [sequence, timestamp_us, pelvis_imu, foot_fsr, sample_valid, channel_valid, fsr_valid]
   diagnostic_role: simulator_only_not_runtime_input
   generated_root: data/raw
 

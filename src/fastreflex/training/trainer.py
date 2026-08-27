@@ -103,7 +103,12 @@ def train_model(
     """Train one seed, selecting epochs by validation macro F1."""
     set_deterministic(seed)
     torch.set_num_threads(1)
-    model = build_model(family, window_samples)
+    if train_windows.inputs.ndim != 3:
+        raise ValueError("training inputs must have shape [windows,time,channels]")
+    input_channels = int(train_windows.inputs.shape[2])
+    if validation_windows.inputs.shape[2] != input_channels:
+        raise ValueError("training and validation sensor channel counts differ")
+    model = build_model(family, window_samples, input_channels)
     counts = np.bincount(train_windows.targets, minlength=3).astype(np.float64)
     if np.any(counts == 0):
         raise ValueError("training windows must cover every class")
@@ -167,13 +172,21 @@ def save_checkpoint(
     window_samples: int,
     seed: int,
     result: TrainingResult,
+    input_channels: int | None = None,
 ) -> None:
+    if input_channels is None:
+        first_weight = next(model.parameters())
+        if family == "mlp":
+            input_channels = int(first_weight.shape[1] // window_samples)
+        else:
+            input_channels = int(first_weight.shape[1])
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
             "format": "fastreflex_raw_imu_baseline",
             "family": family,
             "window_samples": window_samples,
+            "input_channels": input_channels,
             "seed": seed,
             "best_epoch": result.best_epoch,
             "state_dict": model.state_dict(),
@@ -186,13 +199,18 @@ def load_checkpoint(path: Path) -> tuple[nn.Module, dict[str, object]]:
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     if checkpoint.get("format") != "fastreflex_raw_imu_baseline":
         raise ValueError("unsupported checkpoint format")
-    model = build_model(checkpoint["family"], int(checkpoint["window_samples"]))
+    model = build_model(
+        checkpoint["family"],
+        int(checkpoint["window_samples"]),
+        int(checkpoint.get("input_channels", 6)),
+    )
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
     metadata = {
         key: checkpoint[key]
         for key in ("family", "window_samples", "seed", "best_epoch")
     }
+    metadata["input_channels"] = int(checkpoint.get("input_channels", 6))
     return model, metadata
 
 

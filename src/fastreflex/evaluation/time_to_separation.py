@@ -79,8 +79,10 @@ def replay_causal(
 ) -> ReplayTrace:
     """Replay one full raw trace using only history available at each endpoint."""
     imu = np.asarray(imu, dtype=np.float32)
-    if imu.ndim != 2 or imu.shape[1] != 6 or not np.isfinite(imu).all():
-        raise ValueError("replay input must be finite [N,6] pelvis IMU")
+    if imu.ndim != 2 or not np.isfinite(imu).all():
+        raise ValueError("replay input must be finite [N,C] sensor data")
+    if normalizer.mean.shape != (imu.shape[1],):
+        raise ValueError("replay input and normalizer channel counts differ")
     endpoints, indices = causal_window_indices(
         len(imu), window_samples, stride_samples
     )

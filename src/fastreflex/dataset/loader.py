@@ -13,6 +13,7 @@ import numpy as np
 
 CLASS_NAMES = ("NORMAL", "SLIP", "SINK")
 VALID_OUTCOMES = ("BENIGN", "SLIP", "SINK")
+SENSOR_PROFILE_CHANNELS = {"imu6": 6, "fsr8": 8, "fusion14": 14}
 
 
 @dataclass(frozen=True)
@@ -175,6 +176,135 @@ def _load_runtime_arrays(record: ManifestRecord) -> tuple[np.ndarray, np.ndarray
     return imu, labels, eligible
 
 
+def extract_sensor_profile(
+    pelvis_imu: np.ndarray,
+    foot_fsr: np.ndarray,
+    profile: str,
+) -> np.ndarray:
+    """Select one frozen raw-channel sensor profile without derived features."""
+    imu = np.asarray(pelvis_imu, dtype=np.float32)
+    fsr = np.asarray(foot_fsr, dtype=np.float32)
+    if imu.ndim != 2 or imu.shape[1] != 6:
+        raise ValueError("pelvis_imu must have shape [N,6]")
+    if fsr.ndim != 2 or fsr.shape != (len(imu), 8):
+        raise ValueError("foot_fsr must have shape [N,8] aligned to pelvis_imu")
+    if profile == "imu6":
+        return imu
+    if profile == "fsr8":
+        return fsr
+    if profile == "fusion14":
+        return np.concatenate((imu, fsr), axis=1).astype(np.float32, copy=False)
+    raise ValueError(f"unsupported sensor profile: {profile}")
+
+
+def _first_nonnegative(values: np.ndarray) -> int | None:
+    valid = np.asarray(values, dtype=np.int64)
+    valid = valid[valid >= 0]
+    return None if not len(valid) else int(valid.min())
+
+
+def _early_target_annotations(
+    stored: Mapping[str, np.ndarray], observed_outcome: str
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build experiment-local early targets without altering raw annotations."""
+    valid = np.asarray(stored["sample_valid"], dtype=bool) & np.asarray(
+        stored["pre_fall_valid"], dtype=bool
+    )
+    labels = np.full(len(valid), -1, dtype=np.int8)
+    censor = int(stored["first_censor_sample"])
+    t3 = len(valid) if censor < 0 else censor
+    valid[t3:] = False
+    if observed_outcome == "BENIGN":
+        labels[valid] = 0
+        return labels, labels >= 0
+
+    t0 = _first_nonnegative(stored["first_patch_contact_sample_per_foot"])
+    if t0 is None:
+        raise ValueError("hazard-positive run has no physical patch contact")
+    labels[:t0][valid[:t0]] = 0
+    if observed_outcome == "SLIP":
+        t1 = int(stored["first_any_slip_onset_sample"])
+    elif observed_outcome == "SINK":
+        t1 = _first_nonnegative(
+            stored["first_sink_physical_onset_sample_per_foot"]
+        )
+        if not bool(stored["hazardous_sink_episode"]):
+            raise ValueError("SINK run lacks retrospective hazard qualification")
+    else:
+        raise ValueError(f"early targets do not support outcome: {observed_outcome}")
+    if t1 is None or t1 < t0 or t1 >= t3:
+        raise ValueError("invalid early-target t0/t1/t3 ordering")
+    class_id = 1 if observed_outcome == "SLIP" else 2
+    labels[t1:t3][valid[t1:t3]] = class_id
+    return labels, labels >= 0
+
+
+def load_profile_arrays(
+    record: ManifestRecord,
+    profile: str,
+    *,
+    early_targets: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Load aligned raw profile channels and either raw or early-target labels."""
+    if record.observed_outcome not in VALID_OUTCOMES:
+        raise ValueError(f"refusing excluded run: {record.run_id}")
+    with np.load(record.path, allow_pickle=False) as stored_file:
+        stored = {name: stored_file[name] for name in stored_file.files}
+    if "foot_fsr" not in stored:
+        raise ValueError(f"sensor field absent from run: {record.run_id}")
+    values = extract_sensor_profile(stored["pelvis_imu"], stored["foot_fsr"], profile)
+    if early_targets:
+        labels, eligible = _early_target_annotations(stored, record.observed_outcome)
+    else:
+        labels = np.asarray(stored["hazard_class_id"], dtype=np.int8)
+        eligible = np.asarray(stored["training_eligible"], dtype=bool)
+    if labels.shape != (len(values),) or eligible.shape != labels.shape:
+        raise ValueError(f"annotation shape mismatch in {record.run_id}")
+    if not np.isfinite(values[eligible]).all():
+        raise ValueError(f"non-finite eligible sensor input in {record.run_id}")
+    return values, labels, eligible
+
+
+def fit_profile_normalizer(
+    records: Mapping[str, ManifestRecord],
+    run_ids: Iterable[str],
+    profile: str,
+    *,
+    early_targets: bool,
+    epsilon: float = 1.0e-8,
+) -> Normalizer:
+    """Fit profile-specific per-channel moments on declared training runs only."""
+    identifiers = tuple(run_ids)
+    channel_count = SENSOR_PROFILE_CHANNELS.get(profile)
+    if channel_count is None:
+        raise ValueError(f"unsupported sensor profile: {profile}")
+    total = 0
+    channel_sum = np.zeros(channel_count, dtype=np.float64)
+    channel_square_sum = np.zeros(channel_count, dtype=np.float64)
+    for run_id in identifiers:
+        values, labels, eligible = load_profile_arrays(
+            records[run_id], profile, early_targets=early_targets
+        )
+        selected = values[eligible & (labels >= 0) & (labels <= 2)].astype(np.float64)
+        total += len(selected)
+        channel_sum += selected.sum(axis=0)
+        channel_square_sum += np.square(selected).sum(axis=0)
+    if total == 0:
+        raise ValueError("normalizer has no eligible training samples")
+    mean = channel_sum / total
+    variance = np.maximum(channel_square_sum / total - np.square(mean), 0.0)
+    raw_std = np.sqrt(variance)
+    if np.any(raw_std <= epsilon):
+        raise ValueError("near-constant sensor channel in training split")
+    return Normalizer(
+        mean=mean.astype(np.float32),
+        std=np.maximum(raw_std, epsilon).astype(np.float32),
+        sample_count=total,
+        fit_run_ids=identifiers,
+        epsilon=epsilon,
+    )
+
+
 def fit_normalizer(
     records: Mapping[str, ManifestRecord],
     run_ids: Iterable[str],
@@ -298,4 +428,65 @@ def build_windows(
         run_ids=source_run_ids[order],
         endpoint_samples=endpoint_samples[order],
         available_by_class=tuple(int(value) for value in available),
+    )
+
+
+def build_profile_windows(
+    records: Mapping[str, ManifestRecord],
+    run_ids: Iterable[str],
+    profile: str,
+    window_samples: int,
+    stride_samples: int,
+    normalizer: Normalizer | None,
+    *,
+    early_targets: bool,
+    cap_per_run_class: int | None = None,
+) -> WindowSet:
+    """Materialize like-for-like early-target windows for a sensor profile."""
+    if window_samples <= 0 or stride_samples <= 0:
+        raise ValueError("window and stride must be positive")
+    input_parts: list[np.ndarray] = []
+    target_parts: list[np.ndarray] = []
+    run_parts: list[np.ndarray] = []
+    endpoint_parts: list[np.ndarray] = []
+    available = np.zeros(3, dtype=np.int64)
+    for run_id in run_ids:
+        values, labels, eligible = load_profile_arrays(
+            records[run_id], profile, early_targets=early_targets
+        )
+        endpoints_by_class = _segment_endpoints(
+            labels, eligible, window_samples, stride_samples
+        )
+        for class_id in range(3):
+            endpoints = endpoints_by_class[class_id]
+            available[class_id] += len(endpoints)
+            if cap_per_run_class is not None and len(endpoints) > cap_per_run_class:
+                indices = np.linspace(
+                    0, len(endpoints) - 1, cap_per_run_class, dtype=np.int64
+                )
+                endpoints = endpoints[indices]
+            if not len(endpoints):
+                continue
+            windows = np.stack(
+                [values[end - window_samples + 1 : end + 1] for end in endpoints]
+            )
+            if normalizer is not None:
+                windows = normalizer.transform(windows)
+            input_parts.append(windows.astype(np.float32, copy=False))
+            target_parts.append(np.full(len(endpoints), class_id, dtype=np.int64))
+            run_parts.append(np.full(len(endpoints), run_id, dtype=object))
+            endpoint_parts.append(endpoints)
+    if not input_parts:
+        raise ValueError("no eligible windows were produced")
+    inputs = np.concatenate(input_parts)
+    targets = np.concatenate(target_parts)
+    source_run_ids = np.concatenate(run_parts)
+    endpoint_samples = np.concatenate(endpoint_parts)
+    order = np.lexsort((endpoint_samples, source_run_ids.astype(str)))
+    return WindowSet(
+        inputs[order],
+        targets[order],
+        source_run_ids[order],
+        endpoint_samples[order],
+        tuple(int(value) for value in available),
     )

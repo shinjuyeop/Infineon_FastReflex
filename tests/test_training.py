@@ -12,6 +12,7 @@ from fastreflex.dataset.loader import (
     WindowSet,
     build_windows,
     fit_normalizer,
+    extract_sensor_profile,
     validate_split,
 )
 from fastreflex.evaluation.metrics import classification_metrics, confusion_matrix
@@ -68,6 +69,16 @@ def window_set(inputs: np.ndarray, targets: np.ndarray) -> WindowSet:
 
 
 class TrainingTest(unittest.TestCase):
+    def test_sensor_profile_extraction_shapes_and_raw_order(self) -> None:
+        imu = np.arange(30, dtype=np.float32).reshape(5, 6)
+        fsr = np.arange(40, dtype=np.float32).reshape(5, 8)
+        np.testing.assert_array_equal(extract_sensor_profile(imu, fsr, "imu6"), imu)
+        np.testing.assert_array_equal(extract_sensor_profile(imu, fsr, "fsr8"), fsr)
+        fusion = extract_sensor_profile(imu, fsr, "fusion14")
+        self.assertEqual(fusion.shape, (5, 14))
+        np.testing.assert_array_equal(fusion[:, :6], imu)
+        np.testing.assert_array_equal(fusion[:, 6:], fsr)
+
     def test_split_is_disjoint_and_invalid_is_excluded(self) -> None:
         records = {
             "normal": record(Path("normal.npz"), "normal", "BENIGN"),

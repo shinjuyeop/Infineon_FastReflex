@@ -44,11 +44,13 @@ class GRUBaseline(nn.Module):
         return self.classifier(hidden[-1])
 
 
-def build_model(family: str, window_samples: int) -> nn.Module:
+def build_model(
+    family: str, window_samples: int, input_channels: int = 6
+) -> nn.Module:
     if family == "mlp":
-        return MLPBaseline(window_samples)
+        return MLPBaseline(window_samples, input_channels)
     if family == "gru":
-        return GRUBaseline()
+        return GRUBaseline(input_channels)
     raise ValueError(f"unsupported model family: {family}")
 
 

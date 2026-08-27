@@ -30,6 +30,7 @@ from fastreflex.simulation.g1 import (
     run_simulation,
     sha256_file,
 )
+from fastreflex.simulation.sensors import FSR_CHANNELS, FSR_UNIT
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -66,7 +67,7 @@ MANIFEST_FIELDS = (
     "policy_sha256",
     "run_file_sha256",
 )
-SERIES_SHAPES = {
+BASE_SERIES_SHAPES = {
     "sequence": (),
     "timestamp_us": (),
     "pelvis_imu": (6,),
@@ -104,6 +105,12 @@ SERIES_SHAPES = {
     "fall_active": (),
     "dual_hazard_active": (),
 }
+SENSOR_SERIES_SHAPES = {
+    "foot_fsr": (8,),
+    "fsr_valid": (8,),
+}
+# Backward-compatible name for the frozen v1 IMU-only schema.
+SERIES_SHAPES = BASE_SERIES_SHAPES
 SCALAR_SHAPES = {
     "first_patch_contact_sample_per_foot": (2,),
     "first_slip_onset_sample_per_foot": (2,),
@@ -139,6 +146,8 @@ class CollectionConfig:
     schema_version: str
     simulator_config_path: Path
     dataset_config_path: Path
+    baseline_dataset_path: Path | None
+    baseline_manifest_sha256: str | None
     require_clean_worktree: bool
     output_root: Path
     duration_s: float
@@ -180,6 +189,18 @@ def load_collection_config(path: Path) -> CollectionConfig:
         dataset_config = _resolve_repository_path(
             source["dataset_config"], "source.dataset_config"
         )
+        baseline_dataset_path = (
+            None
+            if source.get("baseline_dataset") is None
+            else _resolve_repository_path(
+                source["baseline_dataset"], "source.baseline_dataset"
+            )
+        )
+        baseline_manifest_sha256 = (
+            None
+            if source.get("baseline_manifest_sha256") is None
+            else str(source["baseline_manifest_sha256"])
+        )
         output_root = _resolve_repository_path(output["root"], "output.root")
         duration_s = float(common["duration_s"])
         patch_width_m = float(common["patch_width_m"])
@@ -189,8 +210,17 @@ def load_collection_config(path: Path) -> CollectionConfig:
         raise ValueError("collection config is missing required fields") from exc
     if not RUN_ID_PATTERN.fullmatch(dataset_id):
         raise ValueError("dataset_id must be lowercase snake_case")
-    if schema_version != "hazard_dataset_contract_v1":
+    if schema_version not in {
+        "hazard_dataset_contract_v1",
+        "hazard_dataset_contract_v2",
+    }:
         raise ValueError("unsupported Hazard dataset schema version")
+    if schema_version == "hazard_dataset_contract_v2" and baseline_dataset_path is None:
+        raise ValueError("sensor dataset requires source.baseline_dataset for parity")
+    if schema_version == "hazard_dataset_contract_v2" and not re.fullmatch(
+        r"[0-9a-f]{64}", baseline_manifest_sha256 or ""
+    ):
+        raise ValueError("sensor dataset requires a pinned baseline manifest SHA-256")
     if duration_s <= 0.0 or patch_width_m <= 0.0:
         raise ValueError("duration and patch width must be positive")
     if not deterministic:
@@ -242,6 +272,8 @@ def load_collection_config(path: Path) -> CollectionConfig:
         schema_version=schema_version,
         simulator_config_path=simulator_config,
         dataset_config_path=dataset_config,
+        baseline_dataset_path=baseline_dataset_path,
+        baseline_manifest_sha256=baseline_manifest_sha256,
         require_clean_worktree=bool(source.get("require_clean_worktree", True)),
         output_root=output_root,
         duration_s=duration_s,
@@ -385,10 +417,12 @@ def _sample_annotations(
 def build_run_arrays(
     result: SimulationResult,
     intended_role: str | None = None,
+    *,
+    include_foot_fsr: bool = False,
 ) -> dict[str, np.ndarray]:
     """Convert one simulation result into the documented raw NPZ schema."""
-    if tuple(vars(result.runtime)) != tuple(RuntimeTrace.__dataclass_fields__):
-        raise ValueError("RuntimeTrace contains fields outside the IMU runtime contract")
+    if include_foot_fsr and result.runtime.foot_fsr is None:
+        raise ValueError("sensor dataset requires an observed foot_fsr trace")
     diagnostics = result.diagnostics
     (
         sample_valid,
@@ -477,6 +511,10 @@ def build_run_arrays(
             np.any(diagnostics.sink_hazard_onset), dtype=bool
         ),
     }
+    if include_foot_fsr:
+        assert result.runtime.foot_fsr is not None
+        arrays["foot_fsr"] = result.runtime.foot_fsr.astype(np.float32, copy=False)
+        arrays["fsr_valid"] = np.isfinite(result.runtime.foot_fsr)
     return {name: np.asarray(value) for name, value in arrays.items()}
 
 
@@ -485,12 +523,16 @@ def validate_run_arrays(
     expected_samples: int,
 ) -> None:
     """Fail closed on runtime corruption or diagnostic/schema misalignment."""
-    expected_keys = set(SERIES_SHAPES) | set(SCALAR_SHAPES)
+    sensor_schema = "foot_fsr" in arrays or "fsr_valid" in arrays
+    series_shapes = dict(BASE_SERIES_SHAPES)
+    if sensor_schema:
+        series_shapes.update(SENSOR_SERIES_SHAPES)
+    expected_keys = set(series_shapes) | set(SCALAR_SHAPES)
     if set(arrays) != expected_keys:
         missing = sorted(expected_keys - set(arrays))
         extra = sorted(set(arrays) - expected_keys)
         raise ValueError(f"NPZ schema mismatch; missing={missing}, extra={extra}")
-    for name, trailing_shape in SERIES_SHAPES.items():
+    for name, trailing_shape in series_shapes.items():
         expected_shape = (expected_samples, *trailing_shape)
         if arrays[name].shape != expected_shape:
             raise ValueError(
@@ -507,13 +549,16 @@ def validate_run_arrays(
         raise ValueError("timestamp_us must be int64")
     if arrays["pelvis_imu"].dtype != np.float32:
         raise ValueError("pelvis_imu must be float32")
-    for name in (
+    if sensor_schema and arrays["foot_fsr"].dtype != np.float32:
+        raise ValueError("foot_fsr must be float32")
+    boolean_fields = (
         "sample_valid",
         "channel_valid",
         "training_eligible",
         "pre_fall_valid",
         "dual_hazard_active",
-    ):
+    ) + (("fsr_valid",) if sensor_schema else ())
+    for name in boolean_fields:
         if arrays[name].dtype != np.bool_:
             raise ValueError(f"{name} must be bool")
     if arrays["hazard_class_id"].dtype != np.int8:
@@ -539,6 +584,13 @@ def validate_run_arrays(
         raise ValueError("timestamp_us is not contiguous at 1 kHz")
     if not np.all(np.isfinite(arrays["pelvis_imu"])):
         raise ValueError("runtime pelvis_imu contains non-finite values")
+    if sensor_schema:
+        if not np.all(np.isfinite(arrays["foot_fsr"])):
+            raise ValueError("runtime foot_fsr contains non-finite values")
+        if np.any(arrays["foot_fsr"] < 0.0):
+            raise ValueError("runtime foot_fsr contains negative force")
+        if not np.all(arrays["fsr_valid"]):
+            raise ValueError("runtime foot_fsr contains an invalid channel")
     if not np.all(arrays["channel_valid"]) or not np.all(arrays["sample_valid"]):
         raise ValueError("authoritative runtime input contains an invalid sample")
     if not np.array_equal(
@@ -761,6 +813,7 @@ def _write_metadata(
     source_commit: str,
     manifest_sha256: str,
 ) -> None:
+    sensor_schema = config.schema_version == "hazard_dataset_contract_v2"
     metadata = {
         "dataset_id": config.dataset_id,
         "schema_version": config.schema_version,
@@ -796,10 +849,32 @@ def _write_metadata(
         "run_count": len(config.runs),
         "storage_format": "one_complete_run_per_compressed_npz",
         "label_contract_reference": "docs/dataset.md",
-        "runtime_input_fields": ["sequence", "timestamp_us", "pelvis_imu"],
+        "runtime_input_fields": [
+            "sequence",
+            "timestamp_us",
+            "pelvis_imu",
+            *(["foot_fsr"] if sensor_schema else []),
+        ],
         "diagnostic_fields_are_runtime_input": False,
         "manifest_sha256": manifest_sha256,
     }
+    if sensor_schema:
+        metadata["candidate_sensor_profiles"] = {
+            "imu6": list(IMU_CHANNELS),
+            "fsr8": list(FSR_CHANNELS),
+            "fusion14": [*IMU_CHANNELS, *FSR_CHANNELS],
+        }
+        metadata["foot_fsr"] = {
+            "channel_order": list(FSR_CHANNELS),
+            "dtype": "float32",
+            "unit": FSR_UNIT,
+            "sample_rate_hz": SENSOR_RATE_HZ,
+            "construction": "summed_actual_sole_terrain_contact_normal_force_by_foot_local_quadrant",
+        }
+        metadata["baseline_dataset"] = str(
+            config.baseline_dataset_path.relative_to(REPOSITORY_ROOT)
+        )
+        metadata["observer_only_common_field_parity"] = "bit_identical"
     with path.open("w", encoding="utf-8") as stream:
         json.dump(metadata, stream, indent=2, sort_keys=True)
         stream.write("\n")
@@ -850,12 +925,22 @@ def validate_dataset(path: Path) -> dict[str, object]:
     }
     if not required_metadata.issubset(metadata):
         raise ValueError("metadata is missing required dataset identity fields")
-    if metadata["schema_version"] != "hazard_dataset_contract_v1":
+    if metadata["schema_version"] not in {
+        "hazard_dataset_contract_v1",
+        "hazard_dataset_contract_v2",
+    }:
         raise ValueError("metadata schema version is unsupported")
     if metadata["sample_rate_hz"] != 1000 or metadata["physics_rate_hz"] != 2000:
         raise ValueError("metadata sampling rates violate the simulator contract")
     if metadata["channel_order"] != list(IMU_CHANNELS):
         raise ValueError("metadata channel order violates the runtime contract")
+    sensor_schema = metadata["schema_version"] == "hazard_dataset_contract_v2"
+    if sensor_schema:
+        foot_fsr = metadata.get("foot_fsr", {})
+        if foot_fsr.get("channel_order") != list(FSR_CHANNELS):
+            raise ValueError("metadata FSR channel order violates the runtime contract")
+        if foot_fsr.get("unit") != FSR_UNIT:
+            raise ValueError("metadata FSR unit violates the runtime contract")
     if not re.fullmatch(r"[0-9a-f]{40}", metadata["source_commit"]):
         raise ValueError("metadata source_commit is not a full Git SHA")
     if metadata["generator_version"] != metadata["source_commit"]:
@@ -883,6 +968,8 @@ def validate_dataset(path: Path) -> dict[str, object]:
             raise ValueError(f"policy SHA-256 mismatch: {row['run_id']}")
         with np.load(run_path, allow_pickle=False) as stored:
             arrays = {name: stored[name] for name in stored.files}
+        if sensor_schema != ("foot_fsr" in arrays):
+            raise ValueError(f"run sensor schema mismatch: {row['run_id']}")
         expected_samples = int(row["sample_count"])
         validate_run_arrays(arrays, expected_samples)
         if int(row["valid_sample_count"]) != expected_samples:
@@ -918,6 +1005,29 @@ def _verify_git_ignore(path: Path) -> None:
         raise RuntimeError(f"dataset output is not Git ignored: {relative}")
 
 
+def _validate_observer_parity(
+    candidate_arrays: dict[str, np.ndarray], baseline_run_path: Path
+) -> None:
+    """Require every frozen v1 field to be bit-identical to its source run."""
+    if not baseline_run_path.is_file():
+        raise FileNotFoundError(f"baseline parity run is missing: {baseline_run_path}")
+    with np.load(baseline_run_path, allow_pickle=False) as stored:
+        baseline_arrays = {name: stored[name] for name in stored.files}
+    expected_fields = set(BASE_SERIES_SHAPES) | set(SCALAR_SHAPES)
+    if set(baseline_arrays) != expected_fields:
+        raise ValueError(f"baseline parity schema mismatch: {baseline_run_path.name}")
+    for name, baseline in baseline_arrays.items():
+        candidate = candidate_arrays[name]
+        if np.issubdtype(baseline.dtype, np.inexact):
+            identical = np.array_equal(candidate, baseline, equal_nan=True)
+        else:
+            identical = np.array_equal(candidate, baseline)
+        if not identical:
+            raise RuntimeError(
+                f"observer-only parity failed for {baseline_run_path.stem}:{name}"
+            )
+
+
 def collect_dataset(
     config_path: Path,
     policy_path: Path,
@@ -934,6 +1044,10 @@ def collect_dataset(
         raise FileNotFoundError(f"policy artifact not found: {policy_path}")
     if sha256_file(policy_path) != config.policy_sha256:
         raise ValueError("policy SHA-256 does not match the experiment config")
+    if config.baseline_dataset_path is not None:
+        baseline_manifest = config.baseline_dataset_path / "manifest.csv"
+        if sha256_file(baseline_manifest) != config.baseline_manifest_sha256:
+            raise ValueError("baseline dataset manifest SHA-256 mismatch")
     source_commit = _git_source_commit(config.require_clean_worktree)
     final_path = config.output_root / config.dataset_id
     temporary_path = config.output_root / f".{config.dataset_id}.tmp"
@@ -956,7 +1070,18 @@ def collect_dataset(
                 base, spec, config, policy_path
             )
             result = run_simulation(simulation_config)
-            arrays = build_run_arrays(result, intended_role=spec.intended_role)
+            arrays = build_run_arrays(
+                result,
+                intended_role=spec.intended_role,
+                include_foot_fsr=(
+                    config.schema_version == "hazard_dataset_contract_v2"
+                ),
+            )
+            if config.baseline_dataset_path is not None:
+                _validate_observer_parity(
+                    arrays,
+                    config.baseline_dataset_path / "runs" / f"{spec.run_id}.npz",
+                )
             validate_run_arrays(arrays, simulation_config.expected_samples)
             file_name = f"runs/{spec.run_id}.npz"
             run_hash = write_run_npz(temporary_path / file_name, arrays)

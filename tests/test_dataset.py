@@ -15,6 +15,7 @@ from fastreflex.dataset.collector import (
     REPOSITORY_ROOT,
     _write_manifest,
     _write_metadata,
+    _validate_observer_parity,
     build_run_arrays,
     collect_dataset,
     load_collection_config,
@@ -41,6 +42,12 @@ EXPERIMENT_CONFIG = (
     / "configs"
     / "experiment"
     / "20260827_hazard_pilot_dataset.yaml"
+)
+FSR_EXPERIMENT_CONFIG = (
+    REPOSITORY_ROOT
+    / "configs"
+    / "experiment"
+    / "20260827_fsr_observability_pilot.yaml"
 )
 
 
@@ -91,6 +98,7 @@ def synthetic_result(kind: str) -> SimulationResult:
         sequence=np.arange(samples, dtype=np.int64),
         timestamp_us=np.arange(1, samples + 1, dtype=np.int64) * 1000,
         pelvis_imu=np.zeros((samples, 6), dtype=np.float32),
+        foot_fsr=np.full((samples, 8), 5.0, dtype=np.float32),
     )
     return SimulationResult(
         runtime=runtime,
@@ -129,6 +137,14 @@ class DatasetTest(unittest.TestCase):
             {run.patch_start_x_m for run in config.runs if run.intended_role == "SLIP"},
             {0.30, 0.35, 0.40},
         )
+        sensor_config = load_collection_config(FSR_EXPERIMENT_CONFIG)
+        self.assertEqual(sensor_config.dataset_id, "hazard_sensor_pilot_20260827")
+        self.assertEqual(sensor_config.schema_version, "hazard_dataset_contract_v2")
+        self.assertEqual(len(sensor_config.runs), 40)
+        self.assertEqual(
+            tuple(run.run_id for run in sensor_config.runs),
+            tuple(run.run_id for run in config.runs),
+        )
 
     def test_npz_round_trip_dtype_shape_and_sha_reproducibility(self) -> None:
         arrays = build_run_arrays(synthetic_result("slip"))
@@ -150,6 +166,35 @@ class DatasetTest(unittest.TestCase):
             self.assertEqual(first_hash, second_hash)
             with np.load(first, allow_pickle=False) as stored:
                 self.assertEqual(set(stored.files), set(arrays))
+
+        sensor_arrays = build_run_arrays(
+            synthetic_result("slip"), include_foot_fsr=True
+        )
+        validate_run_arrays(sensor_arrays, 80)
+        self.assertEqual(sensor_arrays["foot_fsr"].shape, (80, 8))
+        self.assertEqual(sensor_arrays["foot_fsr"].dtype, np.float32)
+        self.assertEqual(sensor_arrays["fsr_valid"].dtype, np.bool_)
+        with tempfile.TemporaryDirectory() as directory:
+            sensor_path = Path(directory) / "sensor.npz"
+            write_run_npz(sensor_path, sensor_arrays)
+            with np.load(sensor_path, allow_pickle=False) as stored:
+                self.assertIn("foot_fsr", stored.files)
+
+    def test_observer_parity_gate_covers_all_frozen_fields(self) -> None:
+        baseline = build_run_arrays(synthetic_result("sink"))
+        candidate = build_run_arrays(
+            synthetic_result("sink"), include_foot_fsr=True
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "run.npz"
+            np.savez_compressed(path, **baseline)
+            _validate_observer_parity(candidate, path)
+            candidate["first_sink_degradation_onset_sample"] = np.asarray(
+                int(candidate["first_sink_degradation_onset_sample"]) + 1,
+                dtype=np.int64,
+            )
+            with self.assertRaisesRegex(RuntimeError, "parity failed"):
+                _validate_observer_parity(candidate, path)
 
     def test_sink_t1_to_t2_is_unresolved_and_aligned(self) -> None:
         arrays = build_run_arrays(synthetic_result("sink"))

@@ -1,0 +1,126 @@
+experiment:
+  id: FSR_OBSERVABILITY_PILOT
+  date: 2026-08-27
+  dataset_id: hazard_sensor_pilot_20260827
+  schema_version: hazard_dataset_contract_v2
+  purpose: test whether idealized bilateral virtual FSR improves early Sink observability
+
+source:
+  simulator_config: configs/simulator/g1.yaml
+  dataset_config: configs/dataset/hazard.yaml
+  baseline_dataset: data/raw/hazard_pilot_20260827
+  baseline_manifest_sha256: 2a539abe122f8d4e06429d39db2dc37ec6f7569a8360959e64681d9f0ac1cf3e
+  require_clean_worktree: true
+
+output:
+  root: data/raw
+  fail_if_exists: true
+  storage_format: npz_per_complete_run
+
+common:
+  duration_s: 8.0
+  patch_width_m: 0.75
+  headless: true
+  simulator_deterministic: true
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+
+sensor:
+  sample_rate_hz: 1000
+  foot_fsr_unit: N
+  foot_fsr_channels:
+    - left_front_left
+    - left_front_right
+    - left_rear_left
+    - left_rear_right
+    - right_front_left
+    - right_front_right
+    - right_rear_left
+    - right_rear_right
+  profiles:
+    imu6: [pelvis_imu]
+    fsr8: [foot_fsr]
+    fusion14: [pelvis_imu, foot_fsr]
+
+runs:
+  - {run_id: normal_concrete_s010_p000, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.10}
+  - {run_id: normal_concrete_s015_p000, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.15}
+  - {run_id: normal_concrete_s020_p000, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.20}
+  - {run_id: normal_concrete_s025_p000, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.25}
+  - {run_id: normal_marble_s010_p000, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.10}
+  - {run_id: normal_marble_s015_p000, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.15}
+  - {run_id: normal_marble_s020_p000, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.20}
+  - {run_id: normal_marble_s025_p000, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.25}
+  - {run_id: normal_sand_s010_p000, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.10}
+  - {run_id: normal_sand_s015_p000, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15}
+  - {run_id: normal_sand_s020_p000, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.20}
+  - {run_id: normal_sand_s025_p000, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.25}
+  - {run_id: normal_sink_left_mild_s015_p035, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: left, sink_severity: mild}
+  - {run_id: normal_sink_right_mild_s015_p035, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: right, sink_severity: mild}
+  - {run_id: normal_sink_left_moderate_s015_p035, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: left, sink_severity: moderate}
+  - {run_id: normal_sink_right_moderate_s015_p035, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: right, sink_severity: moderate}
+  - {run_id: slip_ice_s010_p030, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.10, patch_start_x: 0.30}
+  - {run_id: slip_ice_s010_p035, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.10, patch_start_x: 0.35}
+  - {run_id: slip_ice_s010_p040, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.10, patch_start_x: 0.40}
+  - {run_id: slip_ice_s015_p030, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.15, patch_start_x: 0.30}
+  - {run_id: slip_ice_s015_p035, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.15, patch_start_x: 0.35}
+  - {run_id: slip_ice_s015_p040, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.15, patch_start_x: 0.40}
+  - {run_id: slip_ice_s020_p030, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.20, patch_start_x: 0.30}
+  - {run_id: slip_ice_s020_p035, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.20, patch_start_x: 0.35}
+  - {run_id: slip_ice_s020_p040, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.20, patch_start_x: 0.40}
+  - {run_id: slip_ice_s025_p030, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.25, patch_start_x: 0.30}
+  - {run_id: slip_ice_s025_p035, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.25, patch_start_x: 0.35}
+  - {run_id: slip_ice_s025_p040, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.25, patch_start_x: 0.40}
+  - {run_id: sink_left_severe_s015_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.30, sink_side: left, sink_severity: severe}
+  - {run_id: sink_left_severe_s015_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: left, sink_severity: severe}
+  - {run_id: sink_left_severe_s020_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.20, patch_start_x: 0.30, sink_side: left, sink_severity: severe}
+  - {run_id: sink_left_severe_s020_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.20, patch_start_x: 0.35, sink_side: left, sink_severity: severe}
+  - {run_id: sink_left_severe_s025_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.25, patch_start_x: 0.30, sink_side: left, sink_severity: severe}
+  - {run_id: sink_left_severe_s025_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.25, patch_start_x: 0.35, sink_side: left, sink_severity: severe}
+  - {run_id: sink_right_severe_s015_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.30, sink_side: right, sink_severity: severe}
+  - {run_id: sink_right_severe_s015_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: right, sink_severity: severe}
+  - {run_id: sink_right_severe_s020_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.20, patch_start_x: 0.30, sink_side: right, sink_severity: severe}
+  - {run_id: sink_right_severe_s020_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.20, patch_start_x: 0.35, sink_side: right, sink_severity: severe}
+  - {run_id: sink_right_severe_s025_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.25, patch_start_x: 0.30, sink_side: right, sink_severity: severe}
+  - {run_id: sink_right_severe_s025_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.25, patch_start_x: 0.35, sink_side: right, sink_severity: severe}
+
+early_target:
+  sink: retrospectively_qualified_physical_t1_to_t3
+  slip: established_t1_to_t3
+  benign: valid_pre_censor_as_normal
+  hazard_stable_prefix: run_start_to_t0
+  transition_t0_to_t1: excluded
+  raw_annotations_modified: false
+
+split:
+  source: artifacts/runs/20260827_first_classification_poc/split.json
+  frozen_before_sensor_analysis: true
+  train: [normal_concrete_s015_p000, normal_concrete_s020_p000, normal_marble_s010_p000, normal_marble_s015_p000, normal_marble_s025_p000, normal_sand_s015_p000, normal_sand_s020_p000, normal_sand_s025_p000, normal_sink_right_mild_s015_p035, normal_sink_left_moderate_s015_p035, slip_ice_s010_p030, slip_ice_s010_p035, slip_ice_s015_p030, slip_ice_s015_p035, slip_ice_s025_p035, sink_left_severe_s015_p035, sink_left_severe_s025_p030, sink_left_severe_s025_p035, sink_right_severe_s015_p030, sink_right_severe_s020_p035]
+  validation: [normal_concrete_s010_p000, normal_marble_s020_p000, normal_sink_left_mild_s015_p035, slip_ice_s020_p035, sink_left_severe_s015_p030, sink_right_severe_s015_p035]
+  holdout: [normal_concrete_s025_p000, normal_sand_s010_p000, normal_sink_right_moderate_s015_p035, slip_ice_s010_p040, slip_ice_s025_p030, sink_left_severe_s020_p035, sink_right_severe_s025_p035]
+
+windowing:
+  primary_ms: 100
+  stride_ms: 10
+  train_max_windows_per_run_class: 200
+
+training:
+  model: mlp
+  hidden: [64, 32]
+  loss: cross_entropy
+  class_weighting: inverse_train_window_frequency
+  optimizer: adam
+  learning_rate: 0.001
+  batch_size: 128
+  max_epochs: 40
+  early_stopping_patience: 6
+  seeds: [20260827, 20260828, 20260829]
+
+replay:
+  stride_ms: 1
+  sustained_ms: 10
+  horizons_ms: [20, 30, 50, 100]
+  decision: argmax
+
+artifacts:
+  path: artifacts/runs/20260827_fsr_observability_pilot
+  gitignored: true

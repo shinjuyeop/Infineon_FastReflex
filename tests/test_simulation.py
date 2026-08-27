@@ -37,6 +37,12 @@ from fastreflex.simulation.hazards import (
     SLIP_THRESHOLD_M,
     TOUCHDOWN_TRANSIENT_SAMPLES,
     derive_physical_diagnostics,
+    read_exact_foot_sample,
+)
+from fastreflex.simulation.sensors import (
+    FSR_CHANNELS,
+    fsr_quadrant_index,
+    read_virtual_fsr,
 )
 from fastreflex.simulation.terrain import (
     SINK_PATCH_GEOM_NAMES,
@@ -92,6 +98,51 @@ class FakeViewer:
 
 
 class SimulationTest(unittest.TestCase):
+    def test_virtual_fsr_channel_order_quadrants_and_contact_force_sum(self) -> None:
+        self.assertEqual(
+            FSR_CHANNELS,
+            (
+                "left_front_left", "left_front_right",
+                "left_rear_left", "left_rear_right",
+                "right_front_left", "right_front_right",
+                "right_rear_left", "right_rear_right",
+            ),
+        )
+        self.assertEqual(fsr_quadrant_index(0.0, 0.0), 0)
+        self.assertEqual(fsr_quadrant_index(0.1, -0.1), 1)
+        self.assertEqual(fsr_quadrant_index(-0.1, 0.1), 2)
+        self.assertEqual(fsr_quadrant_index(-0.1, -0.1), 3)
+
+        model, ground_ids = load_g1_model("concrete")
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        np.testing.assert_array_equal(read_virtual_fsr(model, data, ground_ids), np.zeros(8))
+
+        data.qpos[:] = model.qpos0
+        data.qpos[2] = 0.78
+        mujoco.mj_forward(model, data)
+        before = {
+            "qpos": data.qpos.copy(), "qvel": data.qvel.copy(),
+            "ctrl": data.ctrl.copy(), "time": float(data.time),
+            "imu": read_pelvis_imu(model, data).copy(),
+        }
+        fsr = read_virtual_fsr(model, data, ground_ids)
+        exact = read_exact_foot_sample(model, data, ground_ids)
+        self.assertEqual(fsr.dtype, np.float32)
+        self.assertTrue(np.all(fsr >= 0.0))
+        self.assertTrue(np.all(fsr > 0.0))
+        np.testing.assert_allclose(
+            fsr.reshape(2, 4).sum(axis=1),
+            exact.normal_force_n,
+            rtol=1.0e-6,
+            atol=1.0e-3,
+        )
+        np.testing.assert_array_equal(data.qpos, before["qpos"])
+        np.testing.assert_array_equal(data.qvel, before["qvel"])
+        np.testing.assert_array_equal(data.ctrl, before["ctrl"])
+        self.assertEqual(float(data.time), before["time"])
+        np.testing.assert_array_equal(read_pelvis_imu(model, data), before["imu"])
+
     def test_config_model_and_pelvis_imu_contract(self) -> None:
         config = load_simulation_config(SIMULATOR_CONFIG)
         self.assertEqual(config.physics_timestep_s, 0.0005)
@@ -574,7 +625,7 @@ class SimulationTest(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(diagnostics.contact_penetration_m)))
         self.assertEqual(
             tuple(RuntimeTrace.__dataclass_fields__),
-            ("sequence", "timestamp_us", "pelvis_imu"),
+            ("sequence", "timestamp_us", "pelvis_imu", "foot_fsr"),
         )
 
         tilted_orientation = orientation.copy()

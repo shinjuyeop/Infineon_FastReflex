@@ -33,6 +33,7 @@ from .terrain import (
     validate_sink_scenario,
     validate_transition_geometry,
 )
+from .sensors import FSR_CHANNELS, read_virtual_fsr
 
 
 PHYSICS_TIMESTEP_S = 0.0005
@@ -192,6 +193,7 @@ class RuntimeTrace:
     sequence: np.ndarray
     timestamp_us: np.ndarray
     pelvis_imu: np.ndarray
+    foot_fsr: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -526,7 +528,11 @@ def _fall_reasons(
     return tuple(reasons)
 
 
-def run_simulation(config: SimulationConfig) -> SimulationResult:
+def run_simulation(
+    config: SimulationConfig,
+    *,
+    observe_fsr: bool = True,
+) -> SimulationResult:
     """Run one smoke trace entirely in memory; no dataset or output is written."""
     config.validate()
     if config.policy_path is None:
@@ -559,6 +565,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
 
     timestamp_us: list[int] = []
     imu: list[np.ndarray] = []
+    foot_fsr: list[np.ndarray] = []
     contact: list[np.ndarray] = []
     normal_force: list[np.ndarray] = []
     foot_xyz: list[np.ndarray] = []
@@ -649,6 +656,8 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             )
             timestamp_us.append(int(round(float(data.time) * 1_000_000.0)))
             imu.append(read_pelvis_imu(model, data))
+            if observe_fsr:
+                foot_fsr.append(read_virtual_fsr(model, data, ground_geom_ids))
             contact.append(exact.physical_contact)
             normal_force.append(exact.normal_force_n)
             foot_xyz.append(exact.world_xyz)
@@ -669,9 +678,17 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         sequence=sequence,
         timestamp_us=timestamps,
         pelvis_imu=np.asarray(imu, dtype=np.float32).reshape(-1, 6),
+        foot_fsr=(
+            np.asarray(foot_fsr, dtype=np.float32).reshape(-1, len(FSR_CHANNELS))
+            if observe_fsr
+            else None
+        ),
     )
     if runtime.pelvis_imu.shape != (len(timestamps), 6):
         raise RuntimeError("unexpected pelvis IMU shape")
+    if observe_fsr and runtime.foot_fsr is not None:
+        if runtime.foot_fsr.shape != (len(timestamps), len(FSR_CHANNELS)):
+            raise RuntimeError("unexpected virtual FSR shape")
     expected_timestamps = (sequence + 1) * (1_000_000 // config.sensor_rate_hz)
     if not np.array_equal(timestamps, expected_timestamps):
         raise RuntimeError("1 kHz timestamp sequence contains a drop or jitter")

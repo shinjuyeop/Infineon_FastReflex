@@ -948,6 +948,27 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
             "valid_support_spread_samples_per_foot": np.count_nonzero(
                 np.isfinite(diagnostics.support_penetration_spread_m), axis=0
             ).tolist(),
+            "support_baselines_per_foot": np.count_nonzero(
+                diagnostics.support_baseline_onset, axis=0
+            ).tolist(),
+            "support_loss_samples": int(
+                np.count_nonzero(diagnostics.support_loss_active)
+            ),
+            "support_loss_samples_per_foot": np.count_nonzero(
+                diagnostics.support_loss_active, axis=0
+            ).tolist(),
+            "first_support_loss_sample_per_foot": _first_true_per_foot(
+                diagnostics.support_loss_onset
+            ),
+            "max_support_loss_ratio": _finite_max(
+                diagnostics.support_loss_ratio
+            ),
+            "max_support_loss_ratio_per_foot": _finite_max_per_foot(
+                diagnostics.support_loss_ratio
+            ),
+            "max_weighted_support_loss": _finite_max(
+                diagnostics.weighted_support_loss
+            ),
             "established_slip_samples": int(
                 np.count_nonzero(diagnostics.established_slip)
             ),

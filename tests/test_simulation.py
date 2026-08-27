@@ -35,10 +35,17 @@ from fastreflex.simulation.hazards import (
     SINK_PHYSICAL_THRESHOLD_M,
     SLIP_PERSISTENCE_SAMPLES,
     SLIP_THRESHOLD_M,
+    SUPPORT_BASELINE_MIN_QUADRANTS,
+    SUPPORT_BASELINE_PRESENCE_RATIO,
+    SUPPORT_BASELINE_SAMPLES,
+    SUPPORT_LOSS_PERSISTENCE_SAMPLES,
+    SUPPORT_LOSS_THRESHOLD_RATIO,
+    SUPPORT_TOTAL_LOAD_MIN_RATIO,
     TOUCHDOWN_TRANSIENT_SAMPLES,
     derive_physical_diagnostics,
     support_penetration_diagnostics,
     read_exact_foot_sample,
+    support_loss_diagnostics,
     uneven_support_oracle,
 )
 from fastreflex.simulation.sensors import (
@@ -80,6 +87,12 @@ SINK_PHYSICAL_REDEFINITION_CONFIG = (
     / "configs"
     / "experiment"
     / "20260827_sink_physical_hazard_redefinition.yaml"
+)
+SINK_SUPPORT_LOSS_CONFIG = (
+    ROOT
+    / "configs"
+    / "experiment"
+    / "20260827_sink_support_loss_oracle_sanity.yaml"
 )
 LOCAL_POLICY = (
     ROOT
@@ -326,6 +339,112 @@ class SimulationTest(unittest.TestCase):
         )
         np.testing.assert_array_equal(changed_onset[:30], onset[:30])
 
+    def test_support_loss_baseline_retention_weighting_and_persistence(self) -> None:
+        samples = 70
+        contact = np.ones((samples, 2, 4), dtype=bool)
+        load = np.full((samples, 2, 4), 10.0)
+        loaded = np.ones((samples, 2), dtype=bool)
+        episodes = np.zeros((samples, 2), dtype=np.int32)
+        pre_fall = np.ones(samples, dtype=bool)
+        load[30:, 0, (1, 3)] = 0.0
+        diagnostics = support_loss_diagnostics(
+            contact, load, loaded, episodes, pre_fall
+        )
+
+        self.assertFalse(
+            diagnostics["support_baseline_established"][:29, 0].any()
+        )
+        self.assertTrue(diagnostics["support_baseline_onset"][29, 0])
+        np.testing.assert_array_equal(
+            diagnostics["support_baseline_mask"][29, 0],
+            np.ones(4, dtype=bool),
+        )
+        self.assertEqual(
+            diagnostics["baseline_supported_quadrant_count"][29, 0], 4
+        )
+        self.assertEqual(
+            diagnostics["support_retained_quadrant_count"][30, 0], 2
+        )
+        self.assertEqual(diagnostics["support_retention_ratio"][30, 0], 0.5)
+        self.assertEqual(diagnostics["support_loss_ratio"][30, 0], 0.5)
+        self.assertEqual(diagnostics["weighted_support_loss"][30, 0], 0.5)
+        self.assertFalse(diagnostics["support_loss_active"][:49, 0].any())
+        self.assertTrue(diagnostics["support_loss_onset"][49, 0])
+
+    def test_support_loss_presence_boundary_reset_and_toe_off_gate(self) -> None:
+        samples = 90
+        contact = np.ones((samples, 2, 4), dtype=bool)
+        load = np.full((samples, 2, 4), 10.0)
+        loaded = np.ones((samples, 2), dtype=bool)
+        episodes = np.zeros((samples, 2), dtype=np.int32)
+        pre_fall = np.ones(samples, dtype=bool)
+        # Baseline samples are 10:30. Exactly 10 supported samples are retained;
+        # nine are excluded by the predeclared >=50% presence aggregation.
+        load[10:20, 0, 2] = 0.0
+        load[10:21, 0, 3] = 0.0
+        diagnostics = support_loss_diagnostics(
+            contact, load, loaded, episodes, pre_fall
+        )
+        np.testing.assert_array_equal(
+            diagnostics["support_baseline_mask"][29, 0],
+            np.asarray((True, True, True, False)),
+        )
+        self.assertEqual(
+            diagnostics["baseline_supported_quadrant_count"][29, 0], 3
+        )
+
+        loaded[35, 0] = False
+        reset = support_loss_diagnostics(
+            contact, load, loaded, episodes, pre_fall
+        )
+        self.assertFalse(reset["support_baseline_established"][35, 0])
+        self.assertFalse(reset["support_loss_active"][35, 0])
+        self.assertTrue(reset["support_baseline_onset"][55, 0])
+
+        toe_off_load = np.full((samples, 2, 4), 10.0)
+        toe_off_load[30:, 0] = np.asarray((2.6, 2.6, 0.0, 0.0))
+        toe_off = support_loss_diagnostics(
+            contact, toe_off_load, np.ones_like(loaded), episodes, pre_fall
+        )
+        self.assertEqual(toe_off["support_loss_ratio"][30, 0], 0.5)
+        self.assertFalse(toe_off["support_loss_valid"][30:, 0].any())
+        self.assertFalse(toe_off["support_loss_active"][:, 0].any())
+
+        next_episode = episodes.copy()
+        next_episode[50:, 0] = 1
+        changed = support_loss_diagnostics(
+            contact, load, np.ones_like(loaded), next_episode, pre_fall
+        )
+        self.assertFalse(changed["support_baseline_established"][50:79, 0].any())
+        self.assertTrue(changed["support_baseline_onset"][79, 0])
+
+    def test_support_loss_is_causal_and_censored_at_fall(self) -> None:
+        samples = 70
+        contact = np.ones((samples, 2, 4), dtype=bool)
+        load = np.full((samples, 2, 4), 10.0)
+        load[30:, 0, (0, 2)] = 0.0
+        loaded = np.ones((samples, 2), dtype=bool)
+        episodes = np.zeros((samples, 2), dtype=np.int32)
+        pre_fall = np.ones(samples, dtype=bool)
+        original = support_loss_diagnostics(
+            contact, load, loaded, episodes, pre_fall
+        )
+        future_load = load.copy()
+        future_load[55:, 0] = 10.0
+        changed = support_loss_diagnostics(
+            contact, future_load, loaded, episodes, pre_fall
+        )
+        np.testing.assert_array_equal(
+            original["support_loss_onset"][:55],
+            changed["support_loss_onset"][:55],
+        )
+        pre_fall[45:] = False
+        censored = support_loss_diagnostics(
+            contact, load, loaded, episodes, pre_fall
+        )
+        self.assertFalse(censored["support_loss_active"].any())
+        self.assertFalse(censored["support_baseline_established"][45:].any())
+
     def test_sink_physical_redefinition_config_is_bounded(self) -> None:
         with SINK_PHYSICAL_REDEFINITION_CONFIG.open("r", encoding="utf-8") as stream:
             config = yaml.safe_load(stream)
@@ -343,13 +462,57 @@ class SimulationTest(unittest.TestCase):
         )
         self.assertFalse(config["support_metric"]["future_outcome_dependency"])
 
+    def test_support_loss_config_freezes_candidate_and_acceptance(self) -> None:
+        with SINK_SUPPORT_LOSS_CONFIG.open("r", encoding="utf-8") as stream:
+            config = yaml.safe_load(stream)
+        self.assertEqual(
+            config["experiment"]["id"], "SINK_SUPPORT_LOSS_ORACLE_SANITY"
+        )
+        oracle = config["support_loss_oracle"]
+        self.assertEqual(oracle["quadrant_load_cutoff_n"], LOAD_OFF_N)
+        self.assertEqual(oracle["touchdown_transient_ms"], TOUCHDOWN_TRANSIENT_SAMPLES)
+        self.assertEqual(oracle["baseline_window_ms"], SUPPORT_BASELINE_SAMPLES)
+        self.assertEqual(
+            oracle["baseline_presence_ratio"], SUPPORT_BASELINE_PRESENCE_RATIO
+        )
+        self.assertEqual(
+            oracle["minimum_baseline_supported_quadrants"],
+            SUPPORT_BASELINE_MIN_QUADRANTS,
+        )
+        self.assertEqual(
+            oracle["support_loss_ratio_threshold"], SUPPORT_LOSS_THRESHOLD_RATIO
+        )
+        self.assertEqual(
+            oracle["persistence_ms"], SUPPORT_LOSS_PERSISTENCE_SAMPLES
+        )
+        self.assertEqual(
+            oracle["current_total_load_minimum_baseline_ratio"],
+            SUPPORT_TOTAL_LOAD_MIN_RATIO,
+        )
+        runs = config["runs"]
+        self.assertEqual(len(runs), 26)
+        self.assertEqual(sum(run["role"] == "benign" for run in runs), 14)
+        self.assertEqual(sum(run["role"] == "uneven" for run in runs), 12)
+        with SINK_PHYSICAL_REDEFINITION_CONFIG.open(
+            "r", encoding="utf-8"
+        ) as stream:
+            previous = yaml.safe_load(stream)
+        self.assertEqual(runs, previous["runs"])
+        self.assertEqual(config["provisional_acceptance"]["uneven_detection_min"], 9)
+        self.assertEqual(oracle["freeze_status"], "criterion_not_freezable")
+
     @unittest.skipUnless(LOCAL_POLICY.is_file(), "local verified policy is absent")
-    def test_balanced_control_and_one_uneven_candidate_smoke(self) -> None:
+    def test_balanced_medial_and_lateral_support_diagnostics_smoke(self) -> None:
         with SINK_PHYSICAL_REDEFINITION_CONFIG.open("r", encoding="utf-8") as stream:
             experiment = yaml.safe_load(stream)
         base = load_simulation_config(SIMULATOR_CONFIG)
         threshold = float(experiment["support_metric"]["candidate_threshold_m"])
-        for pattern, expected in (("balanced_soft", False), ("medial_soft", True)):
+        cases = (
+            ("balanced_soft", "moderate", False, False),
+            ("medial_soft", "severe", True, True),
+            ("lateral_soft", "severe", False, True),
+        )
+        for pattern, severity, old_spread_expected, fall_expected in cases:
             with self.subTest(pattern=pattern):
                 result = run_simulation(
                     replace(
@@ -359,9 +522,7 @@ class SimulationTest(unittest.TestCase):
                         policy_path=LOCAL_POLICY,
                         terrain="sand",
                         sink_pattern="transition_right",
-                        sink_severity=(
-                            "moderate" if pattern == "balanced_soft" else "severe"
-                        ),
+                        sink_severity=severity,
                         sink_support_pattern=pattern,
                         headless=True,
                     )
@@ -374,7 +535,15 @@ class SimulationTest(unittest.TestCase):
                     threshold,
                     20,
                 )
-                self.assertEqual(bool(np.any(active)), expected)
+                self.assertEqual(bool(np.any(active)), old_spread_expected)
+                self.assertTrue(np.any(result.diagnostics.support_baseline_onset))
+                self.assertTrue(
+                    np.any(np.isfinite(result.diagnostics.support_loss_ratio))
+                )
+                self.assertEqual(
+                    result.metadata["first_fall_sample"] is not None,
+                    fall_expected,
+                )
                 self.assertEqual(result.metadata["dropped_samples"], 0)
 
     def test_virtual_fsr_channel_order_quadrants_and_contact_force_sum(self) -> None:

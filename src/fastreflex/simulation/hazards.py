@@ -17,6 +17,12 @@ FOOT_CONTACT_GEOM_NAMES = {
 LOAD_ON_N = 5.0
 LOAD_OFF_N = 2.5
 TOUCHDOWN_TRANSIENT_SAMPLES = 10
+SUPPORT_BASELINE_SAMPLES = 20
+SUPPORT_BASELINE_PRESENCE_RATIO = 0.5
+SUPPORT_BASELINE_MIN_QUADRANTS = 2
+SUPPORT_LOSS_THRESHOLD_RATIO = 0.5
+SUPPORT_LOSS_PERSISTENCE_SAMPLES = 20
+SUPPORT_TOTAL_LOAD_MIN_RATIO = 0.30
 SLIP_THRESHOLD_M = 0.050
 SLIP_PERSISTENCE_SAMPLES = 3
 SINK_PHYSICAL_THRESHOLD_M = 0.0055
@@ -67,6 +73,20 @@ class PhysicalDiagnostics:
     quadrant_penetration_m: np.ndarray
     quadrant_loaded: np.ndarray
     loaded_quadrant_count: np.ndarray
+    quadrant_supported: np.ndarray
+    support_baseline_established: np.ndarray
+    support_baseline_onset: np.ndarray
+    support_baseline_mask: np.ndarray
+    baseline_supported_quadrant_count: np.ndarray
+    baseline_median_quadrant_load_n: np.ndarray
+    baseline_median_total_load_n: np.ndarray
+    support_retained_quadrant_count: np.ndarray
+    support_retention_ratio: np.ndarray
+    support_loss_ratio: np.ndarray
+    weighted_support_loss: np.ndarray
+    support_loss_valid: np.ndarray
+    support_loss_active: np.ndarray
+    support_loss_onset: np.ndarray
     support_penetration_spread_m: np.ndarray
     support_penetration_max_m: np.ndarray
     support_penetration_load_weighted_std_m: np.ndarray
@@ -338,6 +358,184 @@ def support_penetration_diagnostics(
     }
 
 
+def support_loss_diagnostics(
+    quadrant_contact: np.ndarray,
+    quadrant_normal_force_n: np.ndarray,
+    loaded_contact: np.ndarray,
+    contact_episode_id: np.ndarray,
+    pre_fall_valid: np.ndarray,
+    *,
+    quadrant_load_cutoff_n: float = LOAD_OFF_N,
+    touchdown_transient_samples: int = TOUCHDOWN_TRANSIENT_SAMPLES,
+    baseline_samples: int = SUPPORT_BASELINE_SAMPLES,
+    baseline_presence_ratio: float = SUPPORT_BASELINE_PRESENCE_RATIO,
+    minimum_baseline_quadrants: int = SUPPORT_BASELINE_MIN_QUADRANTS,
+    current_total_load_min_ratio: float = SUPPORT_TOTAL_LOAD_MIN_RATIO,
+    loss_threshold_ratio: float = SUPPORT_LOSS_THRESHOLD_RATIO,
+    persistence_samples: int = SUPPORT_LOSS_PERSISTENCE_SAMPLES,
+) -> dict[str, np.ndarray]:
+    """Derive a causal per-contact support map and retained-support oracle.
+
+    A baseline is frozen from the first 20 consecutive eligible 1 kHz samples
+    after the touchdown transient. State is discarded whenever loaded contact,
+    the physical contact episode, or pre-fall validity is lost.
+    """
+    contact = np.asarray(quadrant_contact, dtype=bool)
+    load = np.asarray(quadrant_normal_force_n, dtype=np.float64)
+    loaded = np.asarray(loaded_contact, dtype=bool)
+    episodes = np.asarray(contact_episode_id, dtype=np.int64)
+    pre_fall = np.asarray(pre_fall_valid, dtype=bool)
+    if (
+        contact.ndim != 3
+        or contact.shape[1:] != (2, 4)
+        or load.shape != contact.shape
+        or loaded.shape != contact.shape[:2]
+        or episodes.shape != contact.shape[:2]
+        or pre_fall.shape != (contact.shape[0],)
+        or np.any(load < 0.0)
+    ):
+        raise ValueError("support-loss arrays have inconsistent shapes")
+    if (
+        quadrant_load_cutoff_n < 0.0
+        or touchdown_transient_samples < 0
+        or baseline_samples <= 0
+        or not 0.0 < baseline_presence_ratio <= 1.0
+        or not 1 <= minimum_baseline_quadrants <= 4
+        or not 0.0 <= current_total_load_min_ratio <= 1.0
+        or not 0.0 <= loss_threshold_ratio <= 1.0
+        or persistence_samples <= 0
+    ):
+        raise ValueError("support-loss criteria are outside their valid ranges")
+
+    sample_count = contact.shape[0]
+    supported = contact & (load >= quadrant_load_cutoff_n)
+    baseline_established = np.zeros((sample_count, 2), dtype=bool)
+    baseline_onset = np.zeros((sample_count, 2), dtype=bool)
+    baseline_mask = np.zeros((sample_count, 2, 4), dtype=bool)
+    baseline_count = np.zeros((sample_count, 2), dtype=np.int8)
+    baseline_quadrant_load = np.full(
+        (sample_count, 2, 4), np.nan, dtype=np.float64
+    )
+    baseline_total_load = np.full((sample_count, 2), np.nan, dtype=np.float64)
+    retained_count = np.zeros((sample_count, 2), dtype=np.int8)
+    retention = np.full((sample_count, 2), np.nan, dtype=np.float64)
+    loss_ratio = np.full((sample_count, 2), np.nan, dtype=np.float64)
+    weighted_loss = np.full((sample_count, 2), np.nan, dtype=np.float64)
+    loss_valid = np.zeros((sample_count, 2), dtype=bool)
+    loss_active = np.zeros((sample_count, 2), dtype=bool)
+    loss_onset = np.zeros((sample_count, 2), dtype=bool)
+    required_presence = int(np.ceil(baseline_samples * baseline_presence_ratio))
+
+    for side in range(2):
+        baseline_support: np.ndarray | None = None
+        baseline_load: np.ndarray | None = None
+        baseline_total = np.nan
+        baseline_window_support: list[np.ndarray] = []
+        baseline_window_load: list[np.ndarray] = []
+        active_episode = -1
+        episode_start = -1
+        persistence_count = 0
+        previous_active = False
+
+        def reset_state() -> None:
+            nonlocal baseline_support, baseline_load, baseline_total
+            nonlocal baseline_window_support, baseline_window_load
+            nonlocal persistence_count, previous_active
+            baseline_support = None
+            baseline_load = None
+            baseline_total = np.nan
+            baseline_window_support = []
+            baseline_window_load = []
+            persistence_count = 0
+            previous_active = False
+
+        for sample in range(sample_count):
+            episode = int(episodes[sample, side])
+            if episode != active_episode:
+                reset_state()
+                active_episode = episode
+                episode_start = sample if episode >= 0 else -1
+            if (
+                episode < 0
+                or not loaded[sample, side]
+                or not pre_fall[sample]
+            ):
+                reset_state()
+                continue
+
+            touchdown_age = sample - episode_start
+            if baseline_support is None:
+                if touchdown_age < touchdown_transient_samples:
+                    continue
+                baseline_window_support.append(supported[sample, side].copy())
+                baseline_window_load.append(load[sample, side].copy())
+                if len(baseline_window_support) < baseline_samples:
+                    continue
+                support_window = np.asarray(baseline_window_support)
+                load_window = np.asarray(baseline_window_load)
+                baseline_support = (
+                    np.count_nonzero(support_window, axis=0) >= required_presence
+                )
+                baseline_load = np.median(load_window, axis=0)
+                baseline_total = float(np.median(np.sum(load_window, axis=1)))
+                baseline_onset[sample, side] = True
+
+            baseline_established[sample, side] = True
+            baseline_mask[sample, side] = baseline_support
+            count = int(np.count_nonzero(baseline_support))
+            baseline_count[sample, side] = count
+            baseline_quadrant_load[sample, side] = baseline_load
+            baseline_total_load[sample, side] = baseline_total
+            if count < minimum_baseline_quadrants:
+                persistence_count = 0
+                previous_active = False
+                continue
+
+            current_retained = baseline_support & supported[sample, side]
+            retained = int(np.count_nonzero(current_retained))
+            retained_count[sample, side] = retained
+            retention[sample, side] = retained / count
+            loss_ratio[sample, side] = 1.0 - retention[sample, side]
+            weight_denominator = float(np.sum(baseline_load[baseline_support]))
+            if weight_denominator > 0.0:
+                weighted_retention = float(
+                    np.sum(baseline_load[current_retained]) / weight_denominator
+                )
+                weighted_loss[sample, side] = 1.0 - weighted_retention
+
+            current_total = float(np.sum(load[sample, side]))
+            valid = bool(
+                np.isfinite(baseline_total)
+                and baseline_total > 0.0
+                and current_total
+                >= current_total_load_min_ratio * baseline_total
+            )
+            loss_valid[sample, side] = valid
+            passes = bool(valid and loss_ratio[sample, side] >= loss_threshold_ratio)
+            persistence_count = persistence_count + 1 if passes else 0
+            current_active = passes and persistence_count >= persistence_samples
+            loss_active[sample, side] = current_active
+            loss_onset[sample, side] = current_active and not previous_active
+            previous_active = current_active
+
+    return {
+        "quadrant_supported": supported,
+        "support_baseline_established": baseline_established,
+        "support_baseline_onset": baseline_onset,
+        "support_baseline_mask": baseline_mask,
+        "baseline_supported_quadrant_count": baseline_count,
+        "baseline_median_quadrant_load_n": baseline_quadrant_load,
+        "baseline_median_total_load_n": baseline_total_load,
+        "support_retained_quadrant_count": retained_count,
+        "support_retention_ratio": retention,
+        "support_loss_ratio": loss_ratio,
+        "weighted_support_loss": weighted_loss,
+        "support_loss_valid": loss_valid,
+        "support_loss_active": loss_active,
+        "support_loss_onset": loss_onset,
+    }
+
+
 def uneven_support_oracle(
     support_penetration_spread_m: np.ndarray,
     support_valid: np.ndarray,
@@ -593,6 +791,13 @@ def derive_physical_diagnostics(
         contact_episode_id,
         pre_fall,
     )
+    support_loss = support_loss_diagnostics(
+        quadrant_contact_array,
+        quadrant_force_array,
+        loaded,
+        contact_episode_id,
+        pre_fall,
+    )
     established_slip = stack("slip")
     established_slip_onset = established_slip & ~np.vstack(
         (np.zeros((1, 2), dtype=bool), established_slip[:-1])
@@ -702,6 +907,34 @@ def derive_physical_diagnostics(
         quadrant_penetration_m=quadrant_penetration_array.astype(np.float32),
         quadrant_loaded=support["quadrant_loaded"],
         loaded_quadrant_count=support["loaded_quadrant_count"],
+        quadrant_supported=support_loss["quadrant_supported"],
+        support_baseline_established=(
+            support_loss["support_baseline_established"]
+        ),
+        support_baseline_onset=support_loss["support_baseline_onset"],
+        support_baseline_mask=support_loss["support_baseline_mask"],
+        baseline_supported_quadrant_count=(
+            support_loss["baseline_supported_quadrant_count"]
+        ),
+        baseline_median_quadrant_load_n=(
+            support_loss["baseline_median_quadrant_load_n"].astype(np.float32)
+        ),
+        baseline_median_total_load_n=(
+            support_loss["baseline_median_total_load_n"].astype(np.float32)
+        ),
+        support_retained_quadrant_count=(
+            support_loss["support_retained_quadrant_count"]
+        ),
+        support_retention_ratio=(
+            support_loss["support_retention_ratio"].astype(np.float32)
+        ),
+        support_loss_ratio=support_loss["support_loss_ratio"].astype(np.float32),
+        weighted_support_loss=(
+            support_loss["weighted_support_loss"].astype(np.float32)
+        ),
+        support_loss_valid=support_loss["support_loss_valid"],
+        support_loss_active=support_loss["support_loss_active"],
+        support_loss_onset=support_loss["support_loss_onset"],
         support_penetration_spread_m=(
             support["support_penetration_spread_m"].astype(np.float32)
         ),

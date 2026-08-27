@@ -1,8 +1,8 @@
-# Hazard Dataset Contract V1
+# Hazard Dataset Contract
 
 ## 상태와 범위
 
-`HAZARD_DATASET_CONTRACT_V1`은 새 Hazard dataset의 schema와 label 원칙을 정의한다. 최소 simulator migration과 contract parity 뒤 첫 bounded raw artifact `hazard_pilot_20260827`을 materialize했다. Window policy, signal separability, model과 training은 아직 검증하거나 구현하지 않았다.
+`hazard_dataset_contract_v1`은 historical IMU6 Pilot schema와 frozen raw annotation을 보존한다. `hazard_dataset_contract_v2`는 이를 폐기하거나 label을 바꾸지 않고 candidate `foot_fsr` runtime field와 sensor validity만 확장한다. 기존 `hazard_pilot_20260827`은 read-only이며, 별도 `hazard_sensor_pilot_20260827`이 같은 40 conditions를 담는다.
 
 Primary task는 하나의 3-class classification이다.
 
@@ -18,7 +18,7 @@ Transition study에서 `SINK_HAZARD_CRITERIA_FROZEN`을 확정했다. Contact pe
 
 ## Runtime sensor contract
 
-한 sample의 model input은 pelvis에 부착된 IMU 6축뿐이다. 고정 channel order는 다음과 같다.
+Historical v1 한 sample의 model input은 pelvis에 부착된 IMU 6축이다. 고정 channel order는 다음과 같다.
 
 | Index | Channel | Unit | Axis |
 |---:|---|---|---|
@@ -42,6 +42,25 @@ Transition study에서 `SINK_HAZARD_CRITERIA_FROZEN`을 확정했다. Contact pe
 
 이 좌표계는 migrated MuJoCo G1 model에서 deterministic test로 검증했다. `imu` site의 pelvis binding, zero translation/identity rotation, neutral site frame, 좌우 body 위치와 accel-then-gyro channel order가 계약과 일치한다. 실제 G1 또는 target IMU mounting/orientation parity는 deployment 전 별도 검증 대상이다. 축을 바꿔야 한다면 기존 dataset과 같은 schema version으로 조용히 바꾸지 않는다.
 
+### Candidate bilateral virtual FSR
+
+V2 sensor-capable run은 `foot_fsr [N,8] float32`, unit Newton, 1 kHz를 추가한다. Channel order는 다음과 같이 고정한다.
+
+| Index | Channel | Foot-local region |
+|---:|---|---|
+| 0 | `left_front_left` | left foot +x/+y |
+| 1 | `left_front_right` | left foot +x/-y |
+| 2 | `left_rear_left` | left foot -x/+y |
+| 3 | `left_rear_right` | left foot -x/-y |
+| 4 | `right_front_left` | right foot +x/+y |
+| 5 | `right_front_right` | right foot +x/-y |
+| 6 | `right_rear_left` | right foot -x/+y |
+| 7 | `right_rear_right` | right foot -x/-y |
+
+각 값은 named sole geom과 allowed terrain geom의 실제 MuJoCo contact에서 `mj_contactForce` contact-frame normal component를 읽고, contact world position을 해당 ankle-roll/sole body local frame으로 변환해 quadrant별 합산한 값이다. No contact는 정확히 0 N이다. Terrain identity, Slip/Sink oracle, penetration과 label은 값을 만들지 않는다. Contact position, geom ID와 full wrench는 runtime input으로 노출하지 않는다. Raw 값에는 noise, quantization, saturation, filter, calibration curve 또는 resistance conversion을 적용하지 않는다.
+
+Candidate profile은 `imu6=pelvis_imu`, `fsr8=foot_fsr`, `fusion14=[pelvis_imu, foot_fsr]`다. 이는 Pilot comparison을 위한 선택지이며 final sensor architecture가 아니다.
+
 ### Missing, dropped, duplicate sample
 
 - Collector는 sequence gap, non-monotonic timestamp, non-finite channel, duplicate 또는 out-of-order sample을 감추지 않는다.
@@ -52,12 +71,12 @@ Transition study에서 `SINK_HAZARD_CRITERIA_FROZEN`을 확정했다. Contact pe
 
 ## 최소 preprocessing
 
-V1의 기본 입력은 위 순서의 raw IMU 6 channels다. 허용되는 유일한 추가 preprocessing은 train split sample에서만 계산한 per-channel mean/std z-score normalization이다.
+각 profile의 기본 입력은 고정 순서 raw channels다. 허용되는 유일한 추가 preprocessing은 해당 profile의 train split sample에서만 계산한 per-channel mean/std z-score normalization이다.
 
 - Validation/test 또는 전체 dataset 통계를 normalization에 사용하지 않는다.
 - Mean/std와 이를 계산한 train run 목록 또는 split revision을 model artifact provenance에 기록한다.
 - FFT, wavelet, residual, drift estimator, derivative, moving variance, complex filter, terrain-conditioned normalization을 사용하지 않는다.
-- q/dq, FSR, Foot IMU, motor torque, terrain ID와 exact simulator state를 feature로 추가하지 않는다.
+- q/dq, Foot IMU, motor torque, terrain ID와 exact simulator state를 feature로 추가하지 않는다. FSR은 V2의 명시된 raw `foot_fsr` candidate로만 허용한다.
 - Model family별 feature engineering을 만들지 않는다.
 
 새 feature는 raw-signal/Time-to-Separation 연구 근거와 protocol revision이 있기 전에는 추가하지 않는다.
@@ -73,8 +92,10 @@ Dataset의 authoritative source는 미리 잘린 window가 아니라 simulation 
 | `timestamp_us` | `[N] int64` | run-local monotonic timestamp |
 | `sequence` | `[N] int64` | 연속 sample 번호 |
 | `pelvis_imu` | `[N, 6] float32` | 고정 channel order의 raw IMU |
+| `foot_fsr` | `[N, 8] float32` | V2 candidate raw virtual FSR, N |
 | `sample_valid` | `[N] bool` | 이 sample의 runtime input 완전성 |
 | `channel_valid` | `[N, 6] bool` | channel별 validity |
+| `fsr_valid` | `[N, 8] bool` | V2 FSR channel별 validity |
 
 ### Simulator-only label and diagnostic arrays
 
@@ -208,6 +229,8 @@ Pilot과 Phase 4 이후 별도 config revision에서 다음을 결정한다.
 
 그 전까지 unresolved early interval은 `training_eligible=false`이며 강제로 `NORMAL` 처리하지 않는다.
 
+FSR Observability Pilot의 early-target은 raw field를 수정하지 않는 experiment-local derived label이다. Frozen Sink qualification을 나중에 만족한 run만 `[t1,t3)`를 SINK로 retrospectively 부여하고 `[t1,t2)`를 포함한다. Runtime input에는 future t2가 들어가지 않는다. SLIP은 기존 t1부터, hazard-positive stable prefix는 run start부터 t0 전까지 NORMAL이며 `[t0,t1)`은 ambiguous로 제외한다. Benign uniform sand와 mild/moderate Sink는 censor 전까지 NORMAL hard negative다.
+
 ## Window contract
 
 Raw run은 충분히 긴 sequence로 한 번 저장하고, training/evaluation 시점에 causal window를 자른다. Candidate는 다음과 같다.
@@ -270,7 +293,7 @@ Dataset identity의 required fields는 다음과 같다.
 - `sample_rate_hz`
 - `channel_order`
 
-첫 materialization은 40 runs/320,000 samples이며 상세 coverage는 [`20260827_hazard_pilot_dataset.md`](../reports/20260827_hazard_pilot_dataset.md)에 기록한다. Metadata는 verified policy hash, simulator/config digest, deterministic/no-seed 상태와 manifest hash를 포함한다. Dataset, model, report artifact provenance는 서로 분리한다.
+첫 IMU6 materialization과 별도 sensor materialization은 각각 40 runs/320,000 samples다. Sensor dataset collector는 같은 run ID의 모든 v1 common field를 baseline NPZ와 bit-identical 비교한 뒤에만 저장한다. 상세 결과는 [`20260827_hazard_pilot_dataset.md`](../reports/20260827_hazard_pilot_dataset.md)와 [`20260827_fsr_observability_pilot.md`](../reports/20260827_fsr_observability_pilot.md)에 기록한다. Metadata는 verified policy hash, simulator/config digest, deterministic/no-seed 상태와 manifest hash를 포함한다.
 
 ## Legacy read-only reference note
 

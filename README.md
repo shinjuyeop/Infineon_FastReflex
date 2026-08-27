@@ -10,7 +10,7 @@ Unitree G1 simulation 기반 센서 데이터를 이용하여 로봇 보행 중 
 - `SLIP`
 - `SINK`
 
-Runtime 입력은 Waist/Pelvis IMU 6-axis 신호다.
+Historical baseline runtime 입력은 Waist/Pelvis IMU 6-axis 신호다. 현재 Pilot은 observer-only virtual FSR8과 IMU6+FSR8을 candidate profile로 비교했으며 최종 sensor architecture는 아직 고정하지 않았다.
 
 - accelerometer: x/y/z
 - gyroscope: x/y/z
@@ -28,7 +28,7 @@ Runtime 입력은 Waist/Pelvis IMU 6-axis 신호다.
 
 ```text
 MuJoCo
-  -> Raw IMU Dataset
+  -> Raw Candidate-Sensor Dataset
   -> Windowing
   -> PyTorch Model
   -> Training
@@ -55,9 +55,9 @@ MuJoCo
 
 ## Current Status
 
-`TIME_TO_SEPARATION_ANALYZED`
+`FSR_OBSERVABILITY_ANALYZED`
 
-첫 PoC에서 선택한 frozen MLP 100 ms의 3-seed checkpoint를 33 valid Pilot run에 1 ms causal replay했다. SLIP은 +100 ms event recall 0.8333 ± 0.0589로 early-signal candidate가 있었지만 SINK는 0.1111이었고, BENIGN sustained hazard false firing도 seeds별 7~8/16 runs였다. 이는 Pilot-only existing-classifier analysis이며 final latency, continuous detector, Full Dataset, final model 또는 deployment readiness를 뜻하지 않는다. Walking policy ONNX, raw data와 generated replay/training artifacts는 Git에 포함하지 않는다.
+같은 40개 physical condition을 observer-only virtual FSR8과 함께 재수집해 timestamp, pelvis IMU, annotation/diagnostic 전 필드와 outcome이 기존 Pilot에 bit-identical임을 확인했다. Fixed 100 ms MLP early-target ablation에서 Fusion14의 SINK Recall@100 ms는 `0.4074 ± 0.1048`로 IMU6 `0.1111`보다 높았고 Uniform Sand sustained FP도 평균 `3.33/4`에서 `1.67/4`로 줄었다. 그러나 mild/moderate benign Sink는 모두 계속 false firing했다. 이는 idealized virtual-FSR Pilot evidence일 뿐 actual FSR hardware validation, final sensor architecture, Full Dataset, final detector 또는 deployment readiness를 뜻하지 않는다. Walking policy ONNX, raw data와 generated replay/training artifacts는 Git에 포함하지 않는다.
 
 ## 구조
 
@@ -106,6 +106,16 @@ Frozen first-PoC classifier의 Time-to-Separation은 재학습 없이 canonical 
 ```bash
 python scripts/fastreflex.py evaluate \
   --config configs/experiment/20260827_time_to_separation.yaml
+```
+
+FSR observability ablation은 동일한 canonical `collect`와 `train` command에 sensor Pilot config를 제공한다. Existing dataset/artifact는 덮어쓰지 않는다.
+
+```bash
+python scripts/fastreflex.py collect \
+  --config configs/experiment/20260827_fsr_observability_pilot.yaml
+
+python scripts/fastreflex.py train \
+  --config configs/experiment/20260827_fsr_observability_pilot.yaml
 ```
 
 `export`는 같은 entry point의 placeholder로 유지한다.

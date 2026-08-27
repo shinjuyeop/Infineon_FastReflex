@@ -10,9 +10,11 @@ import torch
 from fastreflex.dataset.loader import (
     ManifestRecord,
     WindowSet,
+    _early_target_annotations,
     build_windows,
     fit_normalizer,
     extract_sensor_profile,
+    fit_profile_normalizer,
     validate_split,
 )
 from fastreflex.evaluation.metrics import classification_metrics, confusion_matrix
@@ -78,6 +80,50 @@ class TrainingTest(unittest.TestCase):
         self.assertEqual(fusion.shape, (5, 14))
         np.testing.assert_array_equal(fusion[:, :6], imu)
         np.testing.assert_array_equal(fusion[:, 6:], fsr)
+
+    def test_early_target_labels_sink_from_t1_and_keeps_transition_excluded(self) -> None:
+        samples = 10
+        arrays = {
+            "sample_valid": np.ones(samples, dtype=bool),
+            "pre_fall_valid": np.ones(samples, dtype=bool),
+            "first_censor_sample": np.asarray(-1, dtype=np.int64),
+            "first_patch_contact_sample_per_foot": np.asarray([2, -1]),
+            "first_any_slip_onset_sample": np.asarray(5, dtype=np.int64),
+            "first_sink_physical_onset_sample_per_foot": np.asarray([5, -1]),
+            "hazardous_sink_episode": np.asarray(True),
+        }
+        sink, eligible = _early_target_annotations(arrays, "SINK")
+        np.testing.assert_array_equal(sink, [0, 0, -1, -1, -1, 2, 2, 2, 2, 2])
+        np.testing.assert_array_equal(eligible, sink >= 0)
+        slip, _ = _early_target_annotations(arrays, "SLIP")
+        np.testing.assert_array_equal(slip, [0, 0, -1, -1, -1, 1, 1, 1, 1, 1])
+        benign, _ = _early_target_annotations(arrays, "BENIGN")
+        np.testing.assert_array_equal(benign, np.zeros(samples, dtype=np.int8))
+
+    def test_profile_normalization_uses_train_run_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            records = {}
+            for run_id, offset in (("train", 0.0), ("validation", 1000.0)):
+                time = np.arange(20, dtype=np.float32)[:, None]
+                fsr = time + np.arange(8, dtype=np.float32)[None, :] + offset
+                path = root / f"{run_id}.npz"
+                np.savez(
+                    path,
+                    pelvis_imu=np.zeros((20, 6), dtype=np.float32),
+                    foot_fsr=fsr,
+                    hazard_class_id=np.zeros(20, dtype=np.int8),
+                    training_eligible=np.ones(20, dtype=bool),
+                )
+                records[run_id] = record(path, run_id)
+            normalizer = fit_profile_normalizer(
+                records, ("train",), "fsr8", early_targets=False
+            )
+            np.testing.assert_allclose(
+                normalizer.mean,
+                np.arange(8, dtype=np.float32) + 9.5,
+            )
+            self.assertEqual(normalizer.fit_run_ids, ("train",))
 
     def test_split_is_disjoint_and_invalid_is_excluded(self) -> None:
         records = {

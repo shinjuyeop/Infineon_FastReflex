@@ -863,6 +863,19 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
         {
             "imu_finite": bool(np.all(np.isfinite(result.runtime.pelvis_imu))),
             "imu_shape": list(result.runtime.pelvis_imu.shape),
+            "foot_fsr_shape": (
+                None
+                if result.runtime.foot_fsr is None
+                else list(result.runtime.foot_fsr.shape)
+            ),
+            "foot_fsr_finite_nonnegative": (
+                None
+                if result.runtime.foot_fsr is None
+                else bool(
+                    np.all(np.isfinite(result.runtime.foot_fsr))
+                    and np.all(result.runtime.foot_fsr >= 0.0)
+                )
+            ),
             "contact_samples_per_foot": np.count_nonzero(
                 diagnostics.physical_contact, axis=0
             ).tolist(),

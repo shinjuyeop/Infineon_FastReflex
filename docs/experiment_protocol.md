@@ -2,14 +2,14 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`, Sink/Slip criteria freeze, 40-run Pilot과 first established-state PoC 뒤 frozen MLP 100 ms의 1 ms causal Time-to-Separation replay까지 완료했다. 현재 상태는 `TIME_TO_SEPARATION_ANALYZED`다. SLIP early-signal candidate는 있었지만 SINK 20~100 ms recall과 benign soft-ground false firing이 detector readiness를 지지하지 않으므로 final latency, Full Dataset, final model 또는 deployment readiness를 뜻하지 않는다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
+`MINIMAL_G1_MUJOCO_MIGRATION`, frozen criteria, 40-run IMU Pilot, established-state PoC, Time-to-Separation와 별도 40-run virtual-FSR Observability Pilot까지 완료했다. 현재 상태는 `FSR_OBSERVABILITY_ANALYZED`다. Fusion14는 early SINK와 Uniform Sand FP를 개선했지만 benign mild/moderate Sink FP와 sim-to-real 한계가 남아 sensor architecture와 detector readiness는 unfrozen이다.
 
 ## 고정 연구 원칙
 
 - Source code보다 dataset contract를 먼저 확정한다.
 - Raw run을 먼저 수집·시각화하고 signal separation 근거를 본 뒤 model을 만든다.
 - 실험 차이는 `configs/`에 기록하고 하나의 canonical dataset/training pipeline을 재사용한다.
-- Runtime input은 pelvis IMU6뿐이며 terrain/scenario/exact state는 label/diagnostic/metadata 전용이다.
+- Historical runtime baseline은 pelvis IMU6이며, 명시된 Pilot에서만 FSR8/Fusion14 candidate를 비교한다. Terrain/scenario/exact state는 label/diagnostic/metadata 전용이다.
 - 기본 입력은 raw channels이고, 필요할 때 train split의 per-channel mean/std normalization만 허용한다.
 - Dataset 생성 시 window를 고정하지 않는다.
 - Legacy source와 과거 dataset을 bulk copy하지 않는다. 완료된 G1 migration처럼 필요한 범위와 provenance를 먼저 review한다.
@@ -89,14 +89,31 @@ Config와 실제 결과는 [`20260827_first_classification_poc.yaml`](../configs
 
 Config와 실제 결과는 [`20260827_time_to_separation.yaml`](../configs/experiment/20260827_time_to_separation.yaml), [`20260827_time_to_separation.md`](../reports/20260827_time_to_separation.md)에 기록한다.
 
-### Phase 5 — Full dataset generation
+### Phase 5 — FSR Observability Pilot
+
+- 완료: 기존 40 conditions를 virtual FSR8과 별도 dataset으로 재수집하고 모든 common field bit parity 확인
+- 완료: IMU6/FSR8/Fusion14를 동일 early-target, 20/6/7 split, 100 ms MLP, 3 seeds로 비교
+- 완료: 1 ms causal replay, 10 ms sustained argmax와 20/30/50/100 ms horizon/benign FP audit
+- 결과: Fusion14 SINK@100 ms `0.4074 ± 0.1048`, pooled positive-margin pre-t2 latency 101 ms
+- 결과: Fusion14 total benign FP `5.67 ± 1.25/16`, Uniform Sand `1.67 ± 1.25/4`; mild/moderate Sink는 계속 `2/2`
+- 제한: idealized MuJoCo normal load이며 actual FSR hardware, calibration과 mounting 미검증
+
+Config와 결과는 [`20260827_fsr_observability_pilot.yaml`](../configs/experiment/20260827_fsr_observability_pilot.yaml), [`20260827_fsr_observability_pilot.md`](../reports/20260827_fsr_observability_pilot.md)에 기록한다.
+
+### Phase 6 — Sensor architecture decision
+
+- IMU6 historical evidence와 FSR/Fusion Pilot의 early recall, soft-ground FP, seed/side stability를 함께 review
+- 실제 FSR의 hysteresis, drift, saturation, mounting, sample alignment를 반영한 후 채택 여부 결정
+- Pilot 결과만으로 hardware channel count나 final runtime input을 freeze하지 않음
+
+### Phase 7 — Full dataset generation
 
 - Pilot에서 검증된 하나의 canonical generator와 schema 사용
 - Speed, gait phase, initiating side, scenario family, seed, terrain realization을 class별로 점검
 - NORMAL coverage를 우선 충분히 확보하고 hard-but-valid touchdown/turn/transition을 포함
 - Split manifest를 run/group 단위로 freeze하고 TEST를 seal
 
-### Phase 6 — PyTorch baseline comparison
+### Phase 8 — PyTorch baseline comparison
 
 동일 raw release, split, preprocessing, window/metric 정의로 다음 family를 비교한다.
 
@@ -107,7 +124,7 @@ Config와 실제 결과는 [`20260827_time_to_separation.yaml`](../configs/exper
 
 Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. 첫 PoC의 canonical MLP/GRU를 재사용하고 Full Dataset이 준비된 뒤에만 CNN1D/LSTM을 더해 전체 family를 비교한다.
 
-### Phase 7 — Run/group-disjoint validation
+### Phase 9 — Run/group-disjoint validation
 
 - Validation으로 architecture, window와 hyperparameter 선택
 - Source-run overlap 0을 자동 검증
@@ -116,7 +133,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. �
 - 일부 held-out scenario combination에서 generalization 확인
 - TEST는 model 선택이나 threshold 재조정에 사용하지 않음
 
-### Phase 8 — Frozen Float model export
+### Phase 10 — Frozen Float model export
 
 - 선택이 완료된 Float model과 정확한 input/output contract freeze
 - Dataset ID, split revision, train-only normalization, config, code revision과 metric provenance 포함

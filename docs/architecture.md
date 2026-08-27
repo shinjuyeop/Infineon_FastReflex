@@ -1,6 +1,6 @@
 # Architecture
 
-현재 repository는 `TIME_TO_SEPARATION_ANALYZED` 상태다. 최소 Unitree G1 simulator, Hazard Dataset Contract와 bounded raw collector로 `hazard_pilot_20260827`을 local materialize하고 first established-state PoC와 frozen MLP causal replay를 완료했다. Pilot replay는 SLIP early-signal candidate와 SINK/benign-FP 한계를 함께 보였으며 final early detector, Full Dataset과 final model은 아직 검증하지 않았다.
+현재 repository는 `FSR_OBSERVABILITY_ANALYZED` 상태다. 기존 IMU6 Pilot과 Time-to-Separation evidence를 보존한 채 같은 40 conditions의 observer-only virtual FSR8 sensor Pilot과 fixed early-target ablation을 완료했다. Fusion14가 IMU6보다 SINK@100 ms와 Uniform Sand false-positive에서 나은 Pilot evidence를 보였지만 actual FSR hardware, final sensor architecture, Full Dataset과 final detector는 아직 검증하지 않았다.
 
 ## MuJoCo Baseline
 
@@ -11,22 +11,23 @@ Unitree G1 MJCF/meshes + user-supplied walking ONNX + terrain profile
                      canonical g1 simulation
                        /                 \
                       v                   v
- RuntimeTrace: pelvis IMU6 only   PhysicalDiagnostics: exact state
- future model input boundary      label/analysis only, runtime 금지
+ RuntimeTrace: IMU6 + candidate FSR8  PhysicalDiagnostics: exact state
+ candidate model input boundary      label/analysis only, runtime 금지
                       \                 /
                        v               v
                  one complete run NPZ
                   + manifest/metadata
 ```
 
-- `simulation/g1.py`: 29-DOF model/actuator contract, fixed policy adapter, 0.5 ms physics step, 1 kHz raw pelvis IMU sampling과 in-memory smoke
+- `simulation/g1.py`: 29-DOF model/actuator contract, fixed policy adapter, 0.5 ms physics step, 1 kHz raw pelvis IMU/observer sampling과 in-memory smoke
+- `simulation/sensors.py`: 기존 sole-terrain contact normal load를 foot-local quadrant에 합산하는 observer-only virtual FSR8
 - `simulation/terrain.py`: concrete, marble, ice, sand와 same-height asymmetric compliance profile
 - `simulation/hazards.py`: bilateral contact/touchdown, foot cause metric, established Slip, `sink_physical` precursor와 pelvis effect diagnostic 계산
 - `dataset/collector.py`: experiment matrix 실행, conservative raw annotation, one-run-per-NPZ 저장, manifest/metadata와 SHA/structure validation
 - `configs/simulator/g1.yaml`: 하나의 canonical simulator config
 - `configs/dataset/hazard.yaml`: canonical raw schema와 frozen label contract
 
-Runtime trace는 `[sequence, timestamp_us, pelvis_imu]`만 갖는다. Exact contact, force/load, foot state, fall censor와 oracle은 별도 diagnostics object에만 존재한다. `simulate`는 파일을 저장하지 않고, `collect`만 runtime trace와 diagnostic을 분리된 NPZ key로 materialize한다. Generated `data/raw/`는 Git ignored다.
+Runtime trace는 `[sequence, timestamp_us, pelvis_imu]`와 sensor-capable run의 candidate `foot_fsr`를 갖는다. FSR은 contact force scalar만 8채널로 관측하며 contact 위치/geom, exact wrench, foot state, fall censor와 oracle은 별도 diagnostics object에만 존재한다. `simulate`는 파일을 저장하지 않고, `collect`만 runtime trace와 diagnostic을 분리된 NPZ key로 materialize한다. Generated `data/raw/`는 Git ignored다.
 
 Optional viewer는 canonical physics state를 별도 MuJoCo render model/data에 복사해 약 60 Hz로 sync한다. GUI input은 render copy에만 머물고 physics loop에는 돌아오지 않으며, wall-clock pacing도 viewer mode에만 적용한다. 사용법은 [`simulation.md`](simulation.md)에 둔다.
 
@@ -62,7 +63,7 @@ Terrain classifier는 legacy repository에서 검증된 별도 asset이다. 향�
 ## New Hazard Model
 
 ```text
-Waist/Pelvis IMU6 @ 1 kHz
+Candidate profile @ 1 kHz: IMU6 | FSR8 | Fusion14
   -> Raw causal sequence
   -> Minimal normalization
   -> PyTorch temporal model
@@ -78,12 +79,22 @@ Candidate model families:
 
 현재 canonical implementation은 첫 PoC에 필요한 작은 MLP와 unidirectional GRU까지만 포함한다. CNN1D/LSTM은 Full Dataset 이후 동일 protocol의 full comparison 전에는 추가하지 않는다.
 
+### Candidate sensor profiles
+
+- `imu6`: historical pelvis IMU6 baseline
+- `fsr8`: bilateral virtual FSR4×2 raw normal loads
+- `fusion14`: IMU6 뒤 FSR8을 이어 붙인 raw 14 channels
+
+Virtual FSR은 기존 sole collision contact에서만 읽으므로 geom, mass, friction, contact parameters, controller와 walking policy를 바꾸지 않는다. 40-run sensor Pilot은 기존 Pilot의 timestamp, IMU, event/censor와 모든 common diagnostic array가 bit-identical임을 강제했다. 이 결과는 idealized MuJoCo observability evidence이며 FSR hysteresis, drift, saturation, mounting과 실제 전기 변환을 검증하지 않는다. Sensor architecture는 unfrozen이다.
+
 ## 초기 연구 순서
 
 1. Dataset과 provenance를 먼저 설계한다.
 2. Pilot raw sanity와 established-state MLP/GRU PoC로 기본 separability를 확인한다.
 3. Onset-crossing causal window의 Time-to-Separation과 latency를 연구한다.
-4. Full Dataset을 생성하고 동일 validation protocol로 full candidate family를 비교한다.
-5. 검증된 Float model과 계약 artifact만 export한다.
+4. FSR Observability Pilot으로 IMU6/FSR8/Fusion14를 동일 rule에서 비교한다.
+5. Pilot evidence를 review해 sensor architecture를 결정한다.
+6. 그 뒤에만 Full Dataset을 생성하고 동일 validation protocol로 full candidate family를 비교한다.
+7. 검증된 Float model과 계약 artifact만 export한다.
 
 첫 설계에서는 복잡한 handcrafted feature pipeline을 사용하지 않는다. Research 경계 뒤의 quantization, Vela, firmware, HIL은 E84 deployment repository가 담당한다.

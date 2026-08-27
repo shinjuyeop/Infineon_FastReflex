@@ -44,6 +44,9 @@ from matplotlib import pyplot as plt  # noqa: E402
 
 PROFILES = ("imu6", "fsr8", "fusion14")
 EXPECTED_OUTCOMES = {"BENIGN": 16, "SLIP": 8, "SINK": 9, "DUAL": 0, "INVALID": 7}
+FROZEN_FIRST_POC_SPLIT_SHA256 = (
+    "3b1b29a5e009783da2db0d1bdd198df24695d44c4b0cc55228bf28dfefda2a75"
+)
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -177,6 +180,7 @@ def run_sensor_sanity(records: Mapping[str, object], plots: Path) -> dict[str, o
     quadrant_sum = np.zeros(8, dtype=np.float64)
     touchdown_loads: list[float] = []
     unload_loads: list[float] = []
+    bilateral_loaded_pairs: list[np.ndarray] = []
     per_run: dict[str, object] = {}
     for run_id, record in records.items():
         arrays = _load_run(record.path)
@@ -184,30 +188,37 @@ def run_sensor_sanity(records: Mapping[str, object], plots: Path) -> dict[str, o
         physical = np.asarray(arrays["physical_contact"], dtype=bool)
         loaded = np.asarray(arrays["loaded_contact"], dtype=bool)
         touchdown = np.asarray(arrays["touchdown"], dtype=bool)
+        pre_fall = np.asarray(arrays["pre_fall_valid"], dtype=bool)
         total_samples += len(fsr)
         nonfinite += int((~np.isfinite(fsr)).sum())
         negative += int((fsr < 0.0).sum())
         side_load = fsr.reshape(-1, 2, 4).sum(axis=2)
         airborne_nonzero += int(np.count_nonzero(side_load[~physical] != 0.0))
         loaded_nonpositive += int(np.count_nonzero(side_load[loaded] <= 0.0))
-        quadrant_sum += fsr.sum(axis=0, dtype=np.float64)
-        touchdown_loads.extend(side_load[touchdown].tolist())
-        falling = loaded[:-1] & ~loaded[1:]
+        quadrant_sum += fsr[pre_fall].sum(axis=0, dtype=np.float64)
+        valid_touchdown = touchdown & pre_fall[:, None]
+        touchdown_loads.extend(side_load[valid_touchdown].tolist())
+        falling = loaded[:-1] & ~loaded[1:] & pre_fall[1:, None]
         unload_loads.extend(side_load[1:][falling].tolist())
-        selected = side_load[loaded]
+        valid_loaded = loaded & pre_fall[:, None]
+        selected = side_load[valid_loaded]
+        bilateral = np.all(loaded, axis=1) & pre_fall
+        if bilateral.any():
+            bilateral_loaded_pairs.append(side_load[bilateral])
         group = (
             _scenario_group(run_id)
             if record.observed_outcome == "BENIGN"
             else record.observed_outcome.lower()
         )
-        loaded_values.setdefault(group, []).append(selected)
+        if record.observed_outcome != "INVALID":
+            loaded_values.setdefault(group, []).append(selected)
         per_run[run_id] = {
             "outcome": record.observed_outcome,
             "loaded_total_mean_n": float(selected.mean()) if len(selected) else None,
             "loaded_total_p95_n": float(np.percentile(selected, 95)) if len(selected) else None,
             "left_right_loaded_mean_n": [
-                float(side_load[:, side][loaded[:, side]].mean())
-                if loaded[:, side].any() else None
+                float(side_load[:, side][valid_loaded[:, side]].mean())
+                if valid_loaded[:, side].any() else None
                 for side in range(2)
             ],
         }
@@ -225,6 +236,9 @@ def run_sensor_sanity(records: Mapping[str, object], plots: Path) -> dict[str, o
         if any(len(part) for part in parts)
     }
     _plot_fsr_sanity(records, plots)
+    bilateral_pairs = np.concatenate(bilateral_loaded_pairs, axis=0)
+    bilateral_difference = np.abs(bilateral_pairs[:, 0] - bilateral_pairs[:, 1])
+    bilateral_total = bilateral_pairs.sum(axis=1)
     return {
         "sample_count": total_samples,
         "finite": True,
@@ -238,6 +252,14 @@ def run_sensor_sanity(records: Mapping[str, object], plots: Path) -> dict[str, o
         "unload_next_sample_n": {
             "count": len(unload_loads),
             "max": float(np.max(unload_loads)) if unload_loads else None,
+        },
+        "left_right_loaded_behavior": {
+            "bilateral_sample_count": len(bilateral_pairs),
+            "left_mean_n": float(bilateral_pairs[:, 0].mean()),
+            "right_mean_n": float(bilateral_pairs[:, 1].mean()),
+            "median_absolute_difference_fraction": float(
+                np.median(bilateral_difference / np.maximum(bilateral_total, 1.0e-12))
+            ),
         },
         "quadrant_load_fraction": (quadrant_sum / quadrant_sum.sum()).tolist(),
         "loaded_scale_by_scenario": group_summary,
@@ -357,6 +379,9 @@ def run_fsr_observability_pilot(
     if dataset_summary["outcomes"] != EXPECTED_OUTCOMES:
         raise ValueError(f"sensor dataset outcome parity failed: {dataset_summary['outcomes']}")
     records = load_manifest(dataset_path)
+    source_split = repository_root / config["split"]["source"]
+    if sha256_file(source_split) != FROZEN_FIRST_POC_SPLIT_SHA256:
+        raise ValueError("frozen first-PoC split SHA-256 mismatch")
     split = {name: tuple(config["split"][name]) for name in ("train", "validation", "holdout")}
     split_counts = validate_split(records, split, expected_outcome_counts={
         "train": {"BENIGN": 10, "SLIP": 5, "SINK": 5},
@@ -440,6 +465,9 @@ def run_fsr_observability_pilot(
             "holdout": _metric_summary([item["holdout"] for item in seed_results]),
             "seeds": seed_results,
         }
+        for split_name in ("validation", "holdout"):
+            worst_index = int(classification[profile][split_name]["worst_seed_index"])
+            classification[profile][split_name]["worst_seed"] = seeds[worst_index]
 
     positive_rows: list[dict[str, object]] = []
     benign_rows: list[dict[str, object]] = []

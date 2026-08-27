@@ -1,0 +1,8 @@
+model:
+  family: gru
+  input_channels: 6
+  hidden_size: 32
+  num_layers: 1
+  bidirectional: false
+  dropout: 0.0
+  output_classes: 3

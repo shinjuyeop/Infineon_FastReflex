@@ -1,6 +1,6 @@
 # Architecture
 
-현재 repository는 `PILOT_DATASET_READY` 상태다. 최소 Unitree G1 simulator, Hazard Dataset Contract와 bounded raw collector를 구현했고 `hazard_pilot_20260827`을 local materialize했다. Raw IMU separability, model과 training은 아직 검증하거나 구현하지 않았다.
+현재 repository는 `FIRST_CLASSIFICATION_POC_COMPLETE` 상태다. 최소 Unitree G1 simulator, Hazard Dataset Contract와 bounded raw collector로 `hazard_pilot_20260827`을 local materialize했고, Pilot-only established-state MLP/GRU PoC를 완료했다. Early detection, Full Dataset과 final model은 아직 검증하지 않았다.
 
 ## MuJoCo Baseline
 
@@ -76,12 +76,14 @@ Candidate model families:
 - GRU
 - LSTM
 
+현재 canonical implementation은 첫 PoC에 필요한 작은 MLP와 unidirectional GRU까지만 포함한다. CNN1D/LSTM은 Full Dataset 이후 동일 protocol의 full comparison 전에는 추가하지 않는다.
+
 ## 초기 연구 순서
 
 1. Dataset과 provenance를 먼저 설계한다.
-2. Raw signal과 label 가능성을 분석한다.
-3. Causal window와 latency를 연구한다.
-4. 동일한 validation protocol로 candidate model을 비교한다.
+2. Pilot raw sanity와 established-state MLP/GRU PoC로 기본 separability를 확인한다.
+3. Onset-crossing causal window의 Time-to-Separation과 latency를 연구한다.
+4. Full Dataset을 생성하고 동일 validation protocol로 full candidate family를 비교한다.
 5. 검증된 Float model과 계약 artifact만 export한다.
 
 첫 설계에서는 복잡한 handcrafted feature pipeline을 사용하지 않는다. Research 경계 뒤의 quantization, Vela, firmware, HIL은 E84 deployment repository가 담당한다.

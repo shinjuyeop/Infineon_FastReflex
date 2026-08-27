@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`, Sink/Slip transition과 criteria freeze 뒤 40-run `hazard_pilot_20260827` raw artifact를 materialize했으며 현재 상태는 `PILOT_DATASET_READY`다. 이는 source/manifest/NPZ 구조와 physical outcome coverage가 준비됐다는 뜻이며 IMU signal separability, window, model, training 또는 evaluation이 준비됐다는 뜻은 아니다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
+`MINIMAL_G1_MUJOCO_MIGRATION`, Sink/Slip criteria freeze와 40-run `hazard_pilot_20260827` materialization 뒤 첫 established-state MLP/GRU PoC까지 완료했으며 현재 상태는 `FIRST_CLASSIFICATION_POC_COMPLETE`다. 이는 Pilot 내부에서 100 ms MLP의 established `NORMAL/SLIP/SINK` separability evidence를 얻었다는 뜻이며 early detection, Full Dataset, final model 또는 deployment readiness를 뜻하지 않는다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
 
 ## 고정 연구 원칙
 
@@ -66,7 +66,18 @@ Slip transition 결과는 [`20260826_slip_transition_sanity.yaml`](../configs/ex
 
 Config와 실제 결과는 [`20260827_hazard_pilot_dataset.yaml`](../configs/experiment/20260827_hazard_pilot_dataset.yaml), [`20260827_hazard_pilot_dataset.md`](../reports/20260827_hazard_pilot_dataset.md)에 기록한다.
 
-### Phase 4 — Raw IMU visualization / Time-to-Separation
+### First established-state classification PoC
+
+- 완료: manifest metadata만으로 33 valid run을 20/6/7 run-disjoint split로 고정하고 INVALID 7 run 제외
+- 완료: 50/100 ms causal same-class eligible window, 10 ms stride와 train-only per-run/class cap 적용
+- 완료: train-only z-score와 MLP/GRU 4 candidates × 3 fixed seeds validation 비교
+- 완료: validation으로 MLP 100 ms 선택 후 Pilot internal holdout을 한 번 평가해 macro F1 0.8614 확인
+- 유지: model input은 pelvis IMU6뿐이며 exact diagnostic은 label/sanity/failure analysis에만 사용
+- 제한: 모든 window가 이미 established class이므로 onset-crossing latency와 early detection은 검증하지 않음
+
+Config와 실제 결과는 [`20260827_first_classification_poc.yaml`](../configs/experiment/20260827_first_classification_poc.yaml), [`20260827_first_classification_poc.md`](../reports/20260827_first_classification_poc.md)에 기록한다.
+
+### Phase 4 — Time-to-Separation
 
 - IMU6와 exact continuous physical metrics를 동일 timeline에 표시
 - 20/30/50/100 ms causal history의 관측 가능성 확인
@@ -90,7 +101,7 @@ Config와 실제 결과는 [`20260827_hazard_pilot_dataset.yaml`](../configs/exp
 - GRU
 - LSTM
 
-Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. PyTorch 설치와 model 구현은 이 phase 전에는 하지 않는다.
+Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. 첫 PoC의 canonical MLP/GRU를 재사용하고 Full Dataset이 준비된 뒤에만 CNN1D/LSTM을 더해 전체 family를 비교한다.
 
 ### Phase 7 — Run/group-disjoint validation
 
@@ -108,7 +119,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. Py
 - Research repository에는 검토된 Float contract artifact만 export
 - Quantization 이후 작업은 `Infineon_FastReflex_E84` repository로 넘김
 
-연구 순서는 `MuJoCo baseline → Sink transition/criteria freeze → Slip transition sanity → Pilot Dataset → raw IMU sanity → Time-to-Separation → Full Dataset → PyTorch model comparison`이다. Pilot Dataset까지 완료했다. 다음 단계는 별도 승인 뒤 Phase 4 Raw IMU sanity이며 Slip t1 주변과 hazardous Sink의 `[t1,t2)`에서 pelvis IMU6 관측 가능성을 먼저 확인한다. Time-to-Separation이나 ML을 자동으로 시작하지 않는다.
+연구 순서는 `MuJoCo baseline → Sink transition/criteria freeze → Slip transition sanity → Pilot Dataset → First established-state PoC → Time-to-Separation → Full Dataset → full PyTorch model comparison`이다. First established-state PoC까지 완료했다. 다음 단계는 별도 승인 뒤 Phase 4 Time-to-Separation이며 onset-crossing causal history와 Slip t1/Sink t1·t2 기준 관측 시점을 검증한다. Full Dataset이나 full model comparison을 자동으로 시작하지 않는다.
 
 ## Split과 leakage protocol
 
@@ -153,4 +164,4 @@ E84 deployment repository 범위:
 - Vela, firmware integration
 - E84 runtime, HIL과 target validation
 
-현재 milestone은 smoke simulation, Sink/Slip finite transition condition과 bounded raw Pilot Dataset materialization까지만 실행했다. Raw signal 분석, Time-to-Separation, Full Dataset, PyTorch 설치, model 구현/training/evaluation, quantization, E84 또는 HIL은 수행하지 않았다.
+현재 milestone은 smoke simulation, Sink/Slip finite transition, bounded raw Pilot Dataset과 첫 Pilot-only established-state PyTorch PoC까지 실행했다. Time-to-Separation, Full Dataset, CNN/LSTM을 포함한 full model comparison, quantization, E84 또는 HIL은 수행하지 않았다.

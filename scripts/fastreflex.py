@@ -16,13 +16,19 @@ SOURCE_ROOT = REPOSITORY_ROOT / "src"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-PLACEHOLDER_COMMANDS = ("train", "evaluate", "export")
+PLACEHOLDER_COMMANDS = ("evaluate", "export")
 DEFAULT_SIMULATOR_CONFIG = REPOSITORY_ROOT / "configs" / "simulator" / "g1.yaml"
 DEFAULT_COLLECTION_CONFIG = (
     REPOSITORY_ROOT
     / "configs"
     / "experiment"
     / "20260827_hazard_pilot_dataset.yaml"
+)
+DEFAULT_TRAINING_CONFIG = (
+    REPOSITORY_ROOT
+    / "configs"
+    / "experiment"
+    / "20260827_first_classification_poc.yaml"
 )
 
 
@@ -94,6 +100,10 @@ def build_parser() -> argparse.ArgumentParser:
             "FASTREFLEX_G1_POLICY"
         ),
     )
+    train = subparsers.add_parser(
+        "train", help="run the bounded first pelvis IMU classification PoC"
+    )
+    train.add_argument("--config", type=Path, default=DEFAULT_TRAINING_CONFIG)
     for command in PLACEHOLDER_COMMANDS:
         subparsers.add_parser(command, help="reserved for a later milestone")
     return parser
@@ -183,9 +193,28 @@ def main() -> int:
         )
         return 0
 
+    if args.command == "train":
+        from fastreflex.training.trainer import run_first_classification_poc
+
+        output_path, metrics = run_first_classification_poc(
+            args.config, REPOSITORY_ROOT
+        )
+        print(
+            json.dumps(
+                {
+                    "output_path": str(output_path),
+                    "selected_candidate": metrics["selection"]["candidate_id"],
+                    "holdout_macro_f1": metrics["holdout"]["metrics"]["macro_f1"],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+
     print(
         f"'{args.command}' is not implemented: "
-        "this milestone only provides the MuJoCo simulation baseline."
+        "this workflow has not been implemented yet."
     )
     return 0
 

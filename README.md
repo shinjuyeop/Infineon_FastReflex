@@ -55,9 +55,9 @@ MuJoCo
 
 ## Current Status
 
-`PILOT_DATASET_READY`
+`FIRST_CLASSIFICATION_POC_COMPLETE`
 
-Unitree G1 29-DOF MuJoCo, raw pelvis IMU6 1 kHz와 frozen Slip/Sink physical contract로 40-run `hazard_pilot_20260827` raw dataset을 local materialize하고 구조·event·coverage를 검증했다. 이 상태는 raw Pilot artifact가 다음 signal sanity 분석에 준비됐다는 뜻이며 IMU separability, training-window policy 또는 model 성능을 뜻하지 않는다. Walking policy ONNX와 generated raw data는 Git에 포함하지 않으며 PyTorch model/training은 아직 구현하지 않았다.
+40-run `hazard_pilot_20260827` 중 33 valid run을 metadata-only 20/6/7 run-disjoint split로 고정하고, 50/100 ms raw pelvis IMU6 established-state MLP/GRU PoC를 완료했다. Validation으로 선택한 MLP 100 ms는 한 번 연 Pilot internal holdout에서 macro F1 0.8614를 보였다. 이는 Pilot-only established `NORMAL/SLIP/SINK` separability evidence이며 early detection, Time-to-Separation, Full Dataset, final model 또는 deployment readiness를 뜻하지 않는다. Walking policy ONNX, raw data와 generated training artifacts는 Git에 포함하지 않는다.
 
 ## 구조
 
@@ -94,10 +94,17 @@ python scripts/fastreflex.py collect \
   --config configs/experiment/20260827_hazard_pilot_dataset.yaml
 ```
 
-`train`, `evaluate`, `export`는 같은 entry point의 placeholder로 유지한다.
+첫 bounded classification PoC는 fixed experiment config를 사용하는 canonical `train` command로 재현한다. 기존 local artifact가 있으면 덮어쓰지 않고 fail-closed한다.
+
+```bash
+python scripts/fastreflex.py train \
+  --config configs/experiment/20260827_first_classification_poc.yaml
+```
+
+`evaluate`, `export`는 같은 entry point의 placeholder로 유지한다.
 
 Viewer, 네 terrain 예제, policy 준비와 summary 해석은 [`docs/simulation.md`](docs/simulation.md)를 참고한다.
 
 ## Dependency
 
-현재 baseline은 `numpy`, `mujoco`, `onnxruntime`, `PyYAML`만 사용한다. PyTorch와 dataset/model 연구 dependency는 해당 milestone 전에는 추가하지 않는다.
+MuJoCo/runtime dependency에 더해 첫 raw-IMU PoC는 `torch`와 sanity plot용 `matplotlib`을 사용한다. Confusion matrix와 precision/recall/F1은 source에 작게 구현하며 `scikit-learn`이나 별도 ML framework는 추가하지 않는다.

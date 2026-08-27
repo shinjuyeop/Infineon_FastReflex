@@ -1,0 +1,100 @@
+experiment:
+  id: FIRST_CLASSIFICATION_POC
+  date: 2026-08-27
+  purpose: test established-state NORMAL/SLIP/SINK separability from causal pelvis IMU6 windows
+
+dataset:
+  dataset_id: hazard_pilot_20260827
+  path: data/raw/hazard_pilot_20260827
+  manifest_sha256: 2a539abe122f8d4e06429d39db2dc37ec6f7569a8360959e64681d9f0ac1cf3e
+  source_commit: 7e6fa1c168d8f9d419d49cf2fff96095e673761f
+  sample_rate_hz: 1000
+  input: pelvis_imu
+  input_channels: 6
+  class_ids: {NORMAL: 0, SLIP: 1, SINK: 2}
+  exclude_observed_outcomes: [INVALID, DUAL]
+
+split:
+  frozen_before_signal_analysis: true
+  selection_basis: manifest metadata only
+  train:
+    - normal_concrete_s015_p000
+    - normal_concrete_s020_p000
+    - normal_marble_s010_p000
+    - normal_marble_s015_p000
+    - normal_marble_s025_p000
+    - normal_sand_s015_p000
+    - normal_sand_s020_p000
+    - normal_sand_s025_p000
+    - normal_sink_right_mild_s015_p035
+    - normal_sink_left_moderate_s015_p035
+    - slip_ice_s010_p030
+    - slip_ice_s010_p035
+    - slip_ice_s015_p030
+    - slip_ice_s015_p035
+    - slip_ice_s025_p035
+    - sink_left_severe_s015_p035
+    - sink_left_severe_s025_p030
+    - sink_left_severe_s025_p035
+    - sink_right_severe_s015_p030
+    - sink_right_severe_s020_p035
+  validation:
+    - normal_concrete_s010_p000
+    - normal_marble_s020_p000
+    - normal_sink_left_mild_s015_p035
+    - slip_ice_s020_p035
+    - sink_left_severe_s015_p030
+    - sink_right_severe_s015_p035
+  holdout:
+    - normal_concrete_s025_p000
+    - normal_sand_s010_p000
+    - normal_sink_right_moderate_s015_p035
+    - slip_ice_s010_p040
+    - slip_ice_s025_p030
+    - sink_left_severe_s020_p035
+    - sink_right_severe_s025_p035
+
+windowing:
+  causal: true
+  require_all_samples_same_class: true
+  require_all_samples_training_eligible: true
+  candidates_ms: [50, 100]
+  stride_ms: 10
+  train_max_windows_per_run_class: 200
+  validation_cap: null
+  holdout_cap: null
+
+normalization:
+  method: per_channel_zscore
+  fit_split: train
+  epsilon: 1.0e-8
+
+models:
+  mlp: configs/model/mlp.yaml
+  gru: configs/model/gru.yaml
+
+training:
+  loss: cross_entropy
+  class_weighting: inverse_train_window_frequency
+  optimizer: adam
+  learning_rate: 0.001
+  batch_size: 128
+  max_epochs: 40
+  early_stopping:
+    metric: validation_macro_f1
+    mode: max
+    patience: 6
+  seeds: [20260827, 20260828, 20260829]
+  holdout_seed: 20260827
+  deterministic: true
+
+selection:
+  primary: mean_validation_macro_f1_across_seeds
+  secondary: minimum_mean_validation_per_class_recall
+  tertiary: shorter_window_then_fewer_parameters_then_simpler_model
+  near_tie_macro_f1: 0.005
+  holdout_access: once_after_candidate_selection
+
+artifacts:
+  path: artifacts/runs/20260827_first_classification_poc
+  gitignored: true

@@ -4,7 +4,17 @@
 
 `hazard_dataset_contract_v1`은 historical IMU6 Pilot schema와 frozen raw annotation을 보존한다. `hazard_dataset_contract_v2`는 이를 폐기하거나 label을 바꾸지 않고 candidate `foot_fsr` runtime field와 sensor validity만 확장한다. `hazard_dataset_contract_v3`는 Sink-focused observability dataset에 frozen deformable-support s1 진단과 명시적인 run split을 추가한다. v3는 기존 outcome-based Sink history나 v1/v2 dataset을 소급 relabel하지 않는다. 기존 `hazard_pilot_20260827`과 `hazard_sensor_pilot_20260827`은 read-only다.
 
-Primary task는 하나의 3-class classification이다.
+현재 architecture target은 historical raw dataset을 relabel하지 않는 별도 dual-stream contract다.
+
+| Stream | Runtime state | First input boundary |
+|---|---|---|
+| Terrain | `CONCRETE/MARBLE/ICE/SAND/UNKNOWN` | frozen reference: foot FSR4 + foot/ankle IMU6 |
+| Stability | `STABLE/UNSTABLE` | pelvis IMU6 @ 1 kHz |
+| Fusion | `NORMAL/SLIP_RISK/SINK_RISK/GENERIC_INSTABILITY` + recovery flag | 두 producer의 latest valid state |
+
+Terrain/Stability integrated sanity는 Full Dataset을 생성하지 않았다. Exact MoS clock이 acceptance를 실패했으므로 새 Stability label schema나 dataset identity를 freeze하지 않는다. Future dataset은 accepted `t_instability` definition, run-disjoint split과 ambiguity exclusion을 새 manifest provenance로 명시해야 한다.
+
+아래 3-class task는 historical v1-v3 dataset contract로 보존한다.
 
 | ID | Class | 의미 |
 |---:|---|---|
@@ -14,13 +24,15 @@ Primary task는 하나의 3-class classification이다.
 
 Terrain, scenario, contact, exact simulator state와 physical oracle은 label/diagnostic/metadata 전용이다. Runtime model input에는 넣지 않는다.
 
+`SLIP_RISK/SINK_RISK`는 historical `SLIP/SINK` label의 rename이 아니다. 전자는 terrain-conditioned control advisory이고 후자는 과거 physical/outcome label이다. Existing NPZ label을 risk state로 소급 변환하지 않는다.
+
 Transition study에서 `SINK_HAZARD_CRITERIA_FROZEN`을 확정했다. Contact penetration만 존재하고 자세와 보행이 안정적인 상태는 primary `SINK`가 아니다. 아래 `sink_physical_active`는 원인 측 precursor diagnostic이며 class label과 동치가 아니다. Frozen effect gate는 patch-linked physical sink 뒤 pelvis tilt가 benign-control envelope를 넘는지를 사용한다. 이 정의와 기존 Pilot raw annotation은 historical contract로 불변이다.
 
 후속 bounded sanity는 passive support joint의 실제 vertical displacement spread를 outcome-independent `UNEVEN_SUPPORT_SINK` physical clock으로 검증했다. 이 clock은 v3 Sink observability study에만 materialize하며 기존 Pilot을 소급 relabel하지 않는다.
 
 ## Runtime sensor contract
 
-Historical v1 한 sample의 model input은 pelvis에 부착된 IMU 6축이다. 고정 channel order는 다음과 같다.
+Historical v1과 current Stability-first baseline 한 sample의 model input은 pelvis에 부착된 IMU 6축이다. 고정 channel order는 다음과 같다.
 
 | Index | Channel | Unit | Axis |
 |---:|---|---|---|
@@ -41,6 +53,10 @@ Historical v1 한 sample의 model input은 pelvis에 부착된 IMU 6축이다. �
 - Sequence: `sequence`, `int64`, 0부터 1씩 증가하며 timestamp와 같은 sample을 식별한다.
 
 축 방향의 legacy source 근거는 forward command가 command vector의 x 성분이고 base forward displacement를 `qpos[0]`으로 측정하며, left/right body가 각각 +y/-y에 배치되고 height/fall이 z 성분으로 정의된 G1 model/controller다.
+
+Stability runtime 입력에는 COM, COM velocity, XCoM, support polygon, exact foot contact, raw MoS, terrain GT, physical Slip/Sink onset, future fall, scenario name과 support body displacement를 넣지 않는다. 이 값은 exact ground truth/diagnostic object에만 존재한다.
+
+Terrain frozen reference는 `(50,10)` causal endpoint window의 left foot FSR4 + left foot/ankle accel3/gyro3다. Current repository의 bilateral virtual FSR8은 이 FSR4와 physical/runtime parity가 확정된 sensor migration이 아니며 foot/ankle IMU6도 없다. 따라서 terrain training input이나 runtime artifact를 현재 dataset contract에 조용히 추가하지 않는다.
 
 이 좌표계는 migrated MuJoCo G1 model에서 deterministic test로 검증했다. `imu` site의 pelvis binding, zero translation/identity rotation, neutral site frame, 좌우 body 위치와 accel-then-gyro channel order가 계약과 일치한다. 실제 G1 또는 target IMU mounting/orientation parity는 deployment 전 별도 검증 대상이다. 축을 바꿔야 한다면 기존 dataset과 같은 schema version으로 조용히 바꾸지 않는다.
 

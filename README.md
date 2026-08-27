@@ -2,15 +2,16 @@
 
 ## 목적
 
-Unitree G1 simulation 기반 센서 데이터를 이용하여 로봇 보행 중 위험 상태를 빠르게 분류하는 모델을 연구한다.
+Unitree G1 simulation 기반 센서로 terrain과 walking stability를 독립적으로 추정하고 control-facing hazard state로 fuse하는 구조를 연구한다.
 
-현재 신규 Hazard model의 primary task는 다음 3-class classification이다.
+현재 primary architecture target은 다음 두 stream이다.
 
-- `NORMAL`
-- `SLIP`
-- `SINK`
+- Terrain: `CONCRETE / MARBLE / ICE / SAND / UNKNOWN`
+- Stability: `STABLE / UNSTABLE`
 
-Historical baseline runtime 입력은 Waist/Pelvis IMU 6-axis 신호다. 현재 Pilot은 observer-only virtual FSR8과 IMU6+FSR8을 candidate profile로 비교했으며 최종 sensor architecture는 아직 고정하지 않았다.
+Fusion은 `ICE + UNSTABLE → SLIP_RISK`, `SAND + UNSTABLE → SINK_RISK`, 그 외 `UNSTABLE → GENERIC_INSTABILITY`로 해석하고 terrain과 무관하게 recovery를 요청한다. Risk 이름은 terrain-conditioned advisory이며 causal Slip/Sink diagnosis가 아니다. Historical `NORMAL/SLIP/SINK` direct-classification 연구와 physical oracle evidence는 보존한다.
+
+Stability의 첫 runtime input은 Waist/Pelvis IMU 6-axis다. Legacy frozen Terrain reference는 foot FSR4 + foot/ankle IMU6를 요구하지만 clean migration은 pending이다. 최종 sensor architecture는 고정하지 않았다.
 
 - accelerometer: x/y/z
 - gyroscope: x/y/z
@@ -18,8 +19,10 @@ Historical baseline runtime 입력은 Waist/Pelvis IMU 6-axis 신호다. 현재 
 ## 기본 원칙
 
 - 1 kHz sensor sequence를 기준으로 연구한다.
-- 복잡한 수작업 전처리를 최소화하고 Raw IMU와 최소 normalization에서 시작한다.
-- PyTorch 기반으로 MLP baseline, 1D CNN, GRU, LSTM을 비교한다.
+- Terrain producer와 Stability producer를 독립 update하고 latest valid terrain을 hold한다.
+- Stability는 복잡한 수작업 전처리를 피하고 deterministic pelvis-IMU rule부터 검증한다.
+- Exact COM/XCoM/support state는 ground truth와 analysis에만 사용하고 runtime detector에 넣지 않는다.
+- AI는 exact stability clock이 acceptance를 통과한 뒤 작은 GRU부터 비교한다.
 - dataset, training, validation, Float model export를 이 저장소에서 관리한다.
 - 실험 차이는 새 runner가 아니라 config로 표현한다.
 - quantization과 E84 deployment는 별도 저장소에서 수행한다.
@@ -27,13 +30,12 @@ Historical baseline runtime 입력은 Waist/Pelvis IMU 6-axis 신호다. 현재 
 ## Pipeline
 
 ```text
-MuJoCo
-  -> Raw Candidate-Sensor Dataset
-  -> Windowing
-  -> PyTorch Model
-  -> Training
-  -> Validation
-  -> Frozen Float Model
+MuJoCo runtime streams
+  ├─ touchdown-centered Terrain Recognition -> held terrain_state
+  └─ continuous Walking Stability Detection -> stability_state
+                                              |
+                                              v
+              deterministic State Fusion -> hazard_state + recovery_required
 ```
 
 ## Repository boundary
@@ -41,7 +43,7 @@ MuJoCo
 이 저장소가 담당하는 범위:
 
 - Unitree G1 MuJoCo simulation을 이용한 데이터 설계 및 수집
-- NORMAL / SLIP / SINK dataset 관리
+- terrain/stability dataset contract와 historical NORMAL/SLIP/SINK evidence 관리
 - 모델 설계, 학습, run-disjoint / group-disjoint validation
 - 검증된 Float model과 계약 artifact export
 
@@ -55,9 +57,11 @@ MuJoCo
 
 ## Current Status
 
-`SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY`
+`INTEGRATED_SCENARIO_NEEDS_REVISION`
 
-기존 Pilot과 outcome-based Sink history를 소급 변경하지 않고 passive vertical support joint의 spatial displacement spread를 새 physical clock 후보로 검증했다. Predeclared 10 mm/20 ms criterion은 rigid/balanced benign `0/14`, primary moderate uneven `11/12`를 보였고 left/right, 세 pattern, 두 speed와 detected fall/non-fall coverage를 통과했다. 이는 granular soil model이나 real-world depth calibration이 아닌 deformable-support engineering proxy이며 runtime sensor separability, trained detector, actual FSR hardware, Full Dataset 또는 deployment readiness를 뜻하지 않는다. Walking policy ONNX, raw runs와 generated audit artifact는 Git에 포함하지 않는다.
+44-run `TERRAIN_STABILITY_INTEGRATED_SANITY`에서 hard controls는 6/6 stable, fall-intended Ice/Sand는 10/10과 12/12 fall이었지만 stable-intended는 Ice 1/8, Sand 4/8만 non-fall이었고 12개 run이 target transition 전에 fall했다. Phase-aware exact MoS clock도 stable FP 5/11, fall coverage 22/33으로 acceptance를 통과하지 못했다. Fail-closed로 Stability GRU는 실행하지 않았다. Fusion truth table과 independent state plumbing은 test를 통과했지만 integration readiness, terrain AI integration과 sensor architecture freeze를 뜻하지 않는다.
+
+Legacy frozen Terrain v4는 artifact/checksum/input contract를 audit했으나 current repository에 left foot/ankle IMU6와 TFLite runtime parity가 없어 `TERRAIN_RUNTIME_MODEL_PENDING`이다. Integrated run의 terrain state는 명시적인 `ORACLE_PROXY`이며 AI latency로 주장하지 않는다. 이전 `SINK_SENSOR_OBSERVABILITY_PROMISING`과 모든 Slip/Sink historical report는 그대로 보존한다.
 
 ## 구조
 
@@ -106,6 +110,22 @@ Frozen first-PoC classifier의 Time-to-Separation은 재학습 없이 canonical 
 ```bash
 python scripts/fastreflex.py evaluate \
   --config configs/experiment/20260827_time_to_separation.yaml
+```
+
+Terrain/Stability integrated sanity는 같은 canonical `evaluate` command에서 frozen 44-run matrix, exact-state gate, IMU rule, fusion과 terminal status replay를 실행한다. Existing artifact는 덮어쓰지 않는다.
+
+```bash
+python scripts/fastreflex.py evaluate \
+  --config configs/experiment/20260827_terrain_stability_integrated_sanity.yaml
+```
+
+Integrated calibration이 존재하면 canonical `simulate` 결과의 timestamp-synchronized status replay도 사용할 수 있다.
+
+```bash
+python scripts/fastreflex.py simulate \
+  --terrain ice --slip-pattern transition --speed 0.15 --duration 8 \
+  --policy /path/to/policy.onnx \
+  --status-calibration artifacts/runs/20260827_terrain_stability_integrated_sanity/calibration.json
 ```
 
 FSR observability ablation은 동일한 canonical `collect`와 `train` command에 sensor Pilot config를 제공한다. Existing dataset/artifact는 덮어쓰지 않는다.

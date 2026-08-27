@@ -1,6 +1,6 @@
 # Architecture
 
-현재 repository는 frozen deformable-support clock을 새 v3 dataset에 materialize하고 runtime sensor ablation을 마친 `SINK_SENSOR_OBSERVABILITY_PROMISING` 상태다. Selected IMU6/GRU는 holdout Recall@s1+100 ms 1.00과 median latency 78 ms를 보였지만 macro F1 0.731, SINK recall 0.786, benign sustained FP 9/13와 balanced FP 6/6으로 primary gates를 통과하지 못했다. 이 support-cell 구조는 soil model이 아닌 engineering proxy이며 actual sensor hardware, final sensor architecture, Full Hazard Dataset과 final detector는 아직 검증하지 않았다.
+현재 primary target은 Terrain Recognition + Walking Stability Detection + deterministic State Fusion이다. 첫 44-run integrated sanity의 verdict는 `INTEGRATED_SCENARIO_NEEDS_REVISION`이다. Stable-intended Ice/Sand coverage와 hard-prefix causality가 부족했고 phase-aware exact MoS clock도 stable FP 5/11, fall coverage 22/33으로 실패했다. Fusion contract는 구현됐지만 integration readiness, Terrain AI migration, Stability AI와 sensor architecture는 아직 검증하거나 freeze하지 않았다. 이전 `SINK_SENSOR_OBSERVABILITY_PROMISING`과 direct NORMAL/SLIP/SINK 연구는 historical evidence로 보존한다.
 
 ## MuJoCo Baseline
 
@@ -19,10 +19,11 @@ Unitree G1 MJCF/meshes + user-supplied walking ONNX + terrain profile
                   + manifest/metadata
 ```
 
-- `simulation/g1.py`: 29-DOF model/actuator contract, fixed policy adapter, 0.5 ms physics step, 1 kHz raw pelvis IMU/observer sampling과 in-memory smoke
+- `simulation/g1.py`: 29-DOF model/actuator contract, fixed policy adapter, 0.5 ms physics step, 1 kHz raw pelvis IMU/observer sampling, exact stability capture와 in-memory smoke
 - `simulation/sensors.py`: 기존 sole-terrain contact normal load를 foot-local quadrant에 합산하는 observer-only virtual FSR8
 - `simulation/terrain.py`: concrete, marble, ice, sand, historical same-height compliance와 passive vertical-DOF deformable-support profile
 - `simulation/hazards.py`: bilateral contact/touchdown, established Slip, historical Sink diagnostics와 causal support-surface displacement spread 계산
+- `simulation/stability.py`: privileged whole-body COM/XCoM/support MoS, stable envelope, pelvis-IMU rule, independent runtime state와 fusion truth table
 - `dataset/collector.py`: experiment matrix 실행, historical annotation과 v3 d0/s1 episode label, one-run-per-NPZ 저장, manifest/metadata와 SHA/structure validation
 - `configs/simulator/g1.yaml`: 하나의 canonical simulator config
 - `configs/dataset/hazard.yaml`: canonical raw schema와 frozen label contract
@@ -60,24 +61,48 @@ Foot FSR4 + Foot IMU6
 
 Terrain classifier는 legacy repository에서 검증된 별도 asset이다. 향후 provenance를 갖춘 frozen release로 명시적 검토 후 migration한다. 현재 baseline에는 classifier 코드나 model이 없다.
 
-## New Hazard Model
+Audit된 frozen Terrain v4는 left foot FSR4 + left foot/ankle IMU6, `(50,10)` @ 1 kHz contract다. Current repository에는 ankle IMU6와 TFLite runtime parity가 없으므로 `TERRAIN_RUNTIME_MODEL_PENDING`이다. Exact terrain identity를 integration plumbing에 사용할 때는 반드시 `ORACLE_PROXY`로 표시하고 prediction이나 AI latency라고 부르지 않는다.
+
+## Terrain + Stability + Fusion target
 
 ```text
-Candidate profile @ 1 kHz: IMU6 | FSR8 | Fusion14
-  -> Raw causal sequence
-  -> Minimal normalization
-  -> PyTorch temporal model
-  -> NORMAL / SLIP / SINK
+                     runtime streams
+                     /             \
+                    v               v
+ touchdown-centered Terrain    continuous Stability
+  CONCRETE/MARBLE/ICE/SAND     STABLE/UNSTABLE
+                    \               /
+                     v             v
+                    deterministic fusion
+      NORMAL / SLIP_RISK / SINK_RISK / GENERIC_INSTABILITY
+                         + RECOVERY_REQUIRED
 ```
 
-Candidate model families:
+Terrain과 Stability producer는 독립 update한다. Terrain은 valid update를 다음 touchdown까지 hold하고 Stability event가 terrain inference를 재시작시키지 않는다. `UNKNOWN + UNSTABLE`도 `GENERIC_INSTABILITY`, recovery true다.
+
+Stability exact ground truth와 runtime detector는 분리한다.
+
+```text
+MuJoCo exact COM, COM velocity, loaded sole polygon
+  -> XCoM and signed dynamic Margin of Stability
+  -> stable-control phase lower envelope
+  -> t_instability diagnostic
+
+Pelvis IMU6 only
+  -> deterministic causal rule
+  -> optional small GRU only after exact-clock acceptance
+```
+
+First predeclared exact clock은 phase lower 0.5 percentile, additional 10 mm degradation, 20 ms persistence였다. Stable FP 45.45%와 fall coverage 66.67%로 실패했으므로 AI target으로 사용할 수 없다. IMU rule도 accepted holdout에서 stable FP 2/3, Recall@100 ms 0, median latency 353.5 ms였다. Threshold sweep이나 GRU training으로 실패를 덮지 않았다.
+
+Historical direct-classification candidate families는 evidence 재현용으로 남는다.
 
 - MLP baseline
 - CNN1D
 - GRU
 - LSTM
 
-현재 canonical implementation은 첫 PoC에 필요한 작은 MLP와 unidirectional GRU까지만 포함한다. CNN1D/LSTM은 Full Dataset 이후 동일 protocol의 full comparison 전에는 추가하지 않는다.
+현재 canonical implementation은 historical PoC와 future accepted stability baseline에 재사용할 작은 MLP/GRU만 포함한다. CNN1D/LSTM은 revised stability clock과 dataset acceptance 전에는 추가하지 않는다.
 
 `training/sensor_ablation.py`는 historical 3-class Pilot path와 별도로 같은 canonical loader/model/trainer에서 v3 `NORMAL/SINK` binary study를 실행한다. Train-only normalization, three fixed seeds, validation run-balanced selection, sealed one-shot holdout와 selected ensemble의 1 ms replay를 하나의 config-driven flow로 유지한다. Generated raw dataset, checkpoints와 metrics JSON은 Git ignored다.
 
@@ -95,17 +120,14 @@ Virtual FSR은 기존 sole collision contact에서만 읽으므로 geom, mass, f
 
 `evaluation/fsr_temporal.py`는 같은 canonical distribution에서 net change와 raw 1 ms continuous-valid path를 계산하고 static horizon과 직접 비교한다. Invalid gap은 path jump로 연결하지 않으며 t2가 horizon에 포함된 run을 flag한다. Temporal representation도 analysis-only이며 feature adoption이나 detector freeze를 뜻하지 않는다.
 
-## 초기 연구 순서
+## 현재 연구 순서
 
-1. Dataset과 provenance를 먼저 설계한다.
-2. Pilot raw sanity와 established-state MLP/GRU PoC로 기본 separability를 확인한다.
-3. Onset-crossing causal window의 Time-to-Separation과 latency를 연구한다.
-4. FSR Observability Pilot으로 IMU6/FSR8/Fusion14를 동일 rule에서 비교한다.
-5. FSR load distribution의 t0/t1 physical observability와 terrain/phase shortcut을 분석한다.
-6. Temporal redistribution이 static evidence를 앞당기는지 causal path로 검증한다.
-7. Pilot evidence를 review해 sensor architecture를 결정한다.
-8. 완료: Passive deformable-support proxy의 새 physical clock으로 matched balanced/uneven causal observability를 검증하고 PROMISING verdict를 기록했다.
-9. 별도 승인과 설계 review 뒤에만 Full Hazard Dataset을 생성하고 동일 validation protocol로 full candidate family를 비교한다.
-10. 검증된 Float model과 계약 artifact만 export한다.
+1. 완료된 direct NORMAL/SLIP/SINK Pilot, FSR와 deformable-support evidence를 historical baseline으로 보존한다.
+2. Terrain과 Stability producer, deterministic fusion과 leakage boundary를 유지한다.
+3. 현재 blocker인 transition 전 fall과 stable Ice/Sand coverage를 revised bounded scenario에서 먼저 해결한다.
+4. Stable-domain phase/contact representation으로 exact `t_instability`를 다시 사전 선언하고 stable FP/fall coverage/lead gate를 통과시킨다.
+5. Gate 통과 뒤 같은 pelvis IMU6 deterministic rule과 small GRU를 동일 holdout에서 비교한다.
+6. Terrain v4 sensor/runtime parity를 명시적으로 review하고 clean한 경우에만 frozen inference artifact를 migration한다.
+7. 이후 별도 승인으로 dataset, sensor architecture review와 Float export를 진행한다.
 
 첫 설계에서는 복잡한 handcrafted feature pipeline을 사용하지 않는다. Research 경계 뒤의 quantization, Vela, firmware, HIL은 E84 deployment repository가 담당한다.

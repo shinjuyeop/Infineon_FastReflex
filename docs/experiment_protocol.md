@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`, frozen criteria, historical Pilot/FSR analyses와 outcome-based Sink history를 보존한 상태에서 deformable-support s1 runtime observability를 평가했다. 현재 상태는 `SINK_SENSOR_OBSERVABILITY_PROMISING`이다. Selected IMU6/GRU는 holdout causal Recall@+100 ms 1.00과 median latency 78 ms를 보였지만 macro F1 0.731, SINK recall 0.786, benign FP 9/13와 balanced FP 6/6으로 primary gates를 통과하지 못했다. Sensor architecture와 detector readiness는 unfrozen이다.
+Historical Pilot/FSR analyses, frozen Slip/Sink criteria와 `SINK_SENSOR_OBSERVABILITY_PROMISING` evidence를 보존한 채 Terrain + Walking Stability + Fusion 구조를 첫 integrated sanity로 검증했다. 현재 verdict는 `INTEGRATED_SCENARIO_NEEDS_REVISION`이다. Ice stable-intended 1/8, Sand stable-intended 4/8, transition 전 fall 12건으로 scenario gate가 실패했고 exact MoS clock도 stable FP 5/11, fall coverage 22/33으로 실패했다. Fail-closed로 GRU를 수행하지 않았으며 Terrain runtime은 `ORACLE_PROXY`/`TERRAIN_RUNTIME_MODEL_PENDING`이다. Sensor architecture와 detector readiness는 unfrozen이다.
 
 ## 고정 연구 원칙
 
@@ -15,6 +15,20 @@
 - Legacy source와 과거 dataset을 bulk copy하지 않는다. 완료된 G1 migration처럼 필요한 범위와 provenance를 먼저 review한다.
 - 실제 random source가 있을 때만 seed를 도입하고 code revision, dataset identity, config와 metric을 함께 기록한다.
 - Quantization, target conversion, firmware와 HIL은 Research 결과가 freeze된 뒤 E84 deployment repository가 담당한다.
+
+## Terrain/Stability integrated sanity protocol
+
+이 architecture에서 Terrain과 Stability는 서로 독립 producer다. Terrain은 touchdown/patch-contact-centered valid state를 hold하고 Stability는 continuous update한다. Fusion은 Stable이면 NORMAL/recovery false, Unstable이면 terrain에 따라 Slip Risk/Sink Risk/Generic Instability와 recovery true를 만든다. UNKNOWN terrain도 recovery를 막지 않는다.
+
+Ground truth와 runtime detector를 다음처럼 분리한다.
+
+- Exact ground truth: whole-body COM/velocity, active sole polygon, XCoM, signed dynamic MoS, exact contact phase
+- Runtime rule/AI: pelvis IMU6 only
+- Forbidden runtime shortcut: terrain GT, COM/XCoM/MoS/contact, physical Slip/Sink clock, future fall/outcome와 scenario name
+
+첫 frozen experiment는 hard stable six run의 phase별 MoS 0.5 percentile, additional 10 mm degradation과 20 ms persistence를 predeclared했다. Acceptance는 stable firing ≤5%, fall coverage ≥80%, Ice/Sand detection 존재, median lead ≥100 ms다. Scenario acceptance는 Ice/Sand stable coverage, fall-intended coverage, pre-transition fall 0과 finite sensor를 별도로 검사한다. Scenario 또는 exact clock이 실패하면 rule/AI 성능으로 primary conclusion을 내거나 threshold를 sweep하지 않는다.
+
+실제 결과는 scenario와 exact-clock gate가 모두 FAIL이었다. Pelvis IMU rule은 secondary holdout에서 supported fall 4/4를 결국 감지했지만 stable FP 2/3, Recall@10/20/50/100 ms 0, median latency 353.5 ms였다. Optional GRU는 실행하지 않았다. Config와 report는 [`20260827_terrain_stability_integrated_sanity.yaml`](../configs/experiment/20260827_terrain_stability_integrated_sanity.yaml), [`20260827_terrain_stability_integrated_sanity.md`](../reports/20260827_terrain_stability_integrated_sanity.md)에 기록한다.
 
 ## 연구 단계
 
@@ -183,7 +197,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. �
 - Research repository에는 검토된 Float contract artifact만 export
 - Quantization 이후 작업은 `Infineon_FastReflex_E84` repository로 넘김
 
-연구 순서는 `MuJoCo baseline → historical Sink/Slip criteria → Pilot Dataset → first PoC/Time-to-Separation → FSR analyses → deformable-support proxy sanity → Sink causal observability PROMISING → 별도 설계 review → Full Hazard Dataset → full PyTorch model comparison`이다. 다음 단계는 자동으로 시작하지 않으며 balanced-soft FP와 split coverage를 먼저 review한다.
+연구 순서는 `MuJoCo baseline → historical Sink/Slip criteria → Pilot/FSR/deformable-support evidence → Terrain+Stability architecture → integrated scenario/oracle revision → accepted pelvis IMU rule/optional GRU comparison → explicit Terrain artifact migration review → future dataset/sensor decision`이다. 다음 단계는 자동으로 시작하지 않으며 scenario hard-prefix parity와 exact-clock stable FP를 먼저 review한다.
 
 ## Split과 leakage protocol
 
@@ -228,4 +242,4 @@ E84 deployment repository 범위:
 - Vela, firmware integration
 - E84 runtime, HIL과 target validation
 
-현재 milestone은 frozen deformable-support s1에 대한 126-run Sink-focused dataset, fixed sensor/model ablation, one-shot holdout와 causal replay까지 실행했다. SLIP+SINK Full Hazard Dataset, CNN/LSTM을 포함한 full model comparison, sensor architecture freeze, quantization, E84 또는 HIL은 수행하지 않았다.
+현재 milestone은 44-run Terrain/Stability integrated sanity, exact-state oracle, pelvis-IMU rule, deterministic fusion과 status replay까지 실행했다. Scenario/oracle failure 때문에 Stability AI, Full Dataset, CNN/LSTM comparison, recovery controller, sensor architecture freeze, quantization, E84 또는 HIL은 수행하지 않았다.

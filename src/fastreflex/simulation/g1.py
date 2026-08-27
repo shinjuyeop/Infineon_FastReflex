@@ -36,6 +36,11 @@ from .terrain import (
     validate_transition_geometry,
 )
 from .sensors import FSR_CHANNELS, read_virtual_fsr
+from .stability import (
+    StabilityDiagnostics,
+    derive_stability_diagnostics,
+    read_exact_stability_sample,
+)
 
 
 PHYSICS_TIMESTEP_S = 0.0005
@@ -211,6 +216,7 @@ class SimulationResult:
     runtime: RuntimeTrace
     diagnostics: PhysicalDiagnostics
     metadata: dict[str, object]
+    stability: StabilityDiagnostics | None = None
 
 
 def load_simulation_config(path: Path) -> SimulationConfig:
@@ -616,6 +622,9 @@ def run_simulation(
     support_cell_contact: list[np.ndarray] = []
     soft_patch_contact: list[np.ndarray] = []
     low_friction_patch_contact: list[np.ndarray] = []
+    whole_body_com: list[np.ndarray] = []
+    whole_body_com_velocity: list[np.ndarray] = []
+    foot_support_points: list[np.ndarray] = []
     pre_fall: list[bool] = []
     pelvis_world_z: list[float] = []
     pelvis_orientation: list[np.ndarray] = []
@@ -690,6 +699,7 @@ def run_simulation(
                 low_friction_geom_ids,
             )
             support_sample = read_deformable_support_sample(data, support_layout)
+            stability_sample = read_exact_stability_sample(model, data)
             pelvis_velocity = np.zeros(6, dtype=np.float64)
             mujoco.mj_objectVelocity(
                 model,
@@ -718,6 +728,13 @@ def run_simulation(
             support_cell_contact.append(support_sample.cell_contact)
             soft_patch_contact.append(exact.soft_patch_contact)
             low_friction_patch_contact.append(exact.low_friction_patch_contact)
+            whole_body_com.append(stability_sample.com_xyz_m)
+            whole_body_com_velocity.append(
+                stability_sample.com_velocity_xyz_m_s
+            )
+            foot_support_points.append(
+                stability_sample.foot_support_points_xyz_m
+            )
             pre_fall.append(first_fall_sample is None)
             pelvis_world_z.append(float(data.qpos[2]))
             pelvis_orientation.append(data.qpos[3:7].copy())
@@ -781,6 +798,12 @@ def run_simulation(
             support_cell_contact, dtype=bool
         ).reshape(-1, 2, 4),
     )
+    stability = derive_stability_diagnostics(
+        np.asarray(whole_body_com, dtype=np.float64).reshape(-1, 3),
+        np.asarray(whole_body_com_velocity, dtype=np.float64).reshape(-1, 3),
+        np.asarray(foot_support_points, dtype=np.float64).reshape(-1, 2, 4, 3),
+        diagnostics.loaded_contact,
+    )
     metadata: dict[str, object] = {
         "terrain": config.terrain,
         "slip_pattern": config.slip_pattern,
@@ -816,7 +839,12 @@ def run_simulation(
         "minimum_pelvis_height_m": minimum_pelvis_height_m,
         "minimum_pelvis_up": minimum_pelvis_up,
     }
-    return SimulationResult(runtime=runtime, diagnostics=diagnostics, metadata=metadata)
+    return SimulationResult(
+        runtime=runtime,
+        diagnostics=diagnostics,
+        metadata=metadata,
+        stability=stability,
+    )
 
 
 def _finite_max(values: np.ndarray) -> float | None:

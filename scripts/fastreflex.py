@@ -97,6 +97,14 @@ def build_parser() -> argparse.ArgumentParser:
             "FASTREFLEX_G1_POLICY"
         ),
     )
+    simulate.add_argument(
+        "--status-calibration",
+        type=Path,
+        help=(
+            "render a timestamp-synchronized terrain/stability status replay "
+            "using a calibration.json produced by the integrated sanity"
+        ),
+    )
     mode = simulate.add_mutually_exclusive_group()
     mode.add_argument(
         "--headless",
@@ -198,6 +206,15 @@ def main() -> int:
             headless=headless,
         )
         result = run_simulation(config)
+        if args.status_calibration is not None:
+            from fastreflex.evaluation.integrated_stability import (
+                render_simulation_status,
+            )
+
+            print(
+                render_simulation_status(result, args.status_calibration),
+                file=sys.stderr,
+            )
         print(json.dumps(summarize_result(result), indent=2, sort_keys=True))
         return 0
 
@@ -293,6 +310,33 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "TERRAIN_STABILITY_INTEGRATED_SANITY":
+            from fastreflex.evaluation.integrated_stability import (
+                run_integrated_stability_sanity,
+            )
+
+            output_path, metrics = run_integrated_stability_sanity(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "terrain_runtime_status": metrics["terrain_runtime"][
+                            "status"
+                        ],
+                        "scenario_gate": metrics["scenario_gate"]["passed"],
+                        "stability_ground_truth_gate": metrics["oracle_gate"][
+                            "passed"
+                        ],
+                        "ai_performed": metrics["ai"]["performed"],
+                        "verdict": metrics["verdict"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id == "FSR_TEMPORAL_REDISTRIBUTION_ANALYSIS":
             from fastreflex.evaluation.fsr_temporal import (
                 run_fsr_temporal_redistribution_analysis,

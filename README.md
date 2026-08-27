@@ -55,9 +55,9 @@ MuJoCo
 
 ## Current Status
 
-`MUJOCO_BASELINE_READY`
+`PILOT_DATASET_READY`
 
-Unitree G1 29-DOF MuJoCo 보행 baseline, raw pelvis IMU6 1 kHz 취득, concrete/marble/ice/sand engineering terrain과 simulator-only physical diagnostic 경로를 검증했다. Same-height finite patch의 Sink criterion과 full-width Ice transition의 clean ANY-SLIP event foundation을 사용할 수 있다. Walking policy ONNX는 repository에 포함하지 않고 user-supplied artifact로 받는다. Hazard dataset은 아직 생성하지 않았고 ML model과 training pipeline도 구현하지 않았다.
+Unitree G1 29-DOF MuJoCo, raw pelvis IMU6 1 kHz와 frozen Slip/Sink physical contract로 40-run `hazard_pilot_20260827` raw dataset을 local materialize하고 구조·event·coverage를 검증했다. 이 상태는 raw Pilot artifact가 다음 signal sanity 분석에 준비됐다는 뜻이며 IMU separability, training-window policy 또는 model 성능을 뜻하지 않는다. Walking policy ONNX와 generated raw data는 Git에 포함하지 않으며 PyTorch model/training은 아직 구현하지 않았다.
 
 ## 구조
 
@@ -87,7 +87,14 @@ python scripts/fastreflex.py simulate \
   --policy /path/to/policy.onnx
 ```
 
-`collect`, `train`, `evaluate`, `export`는 같은 entry point의 placeholder로 유지한다.
+첫 raw Pilot Dataset은 기존 final directory를 덮어쓰지 않는 fail-closed `collect` command로 생성한다.
+
+```bash
+python scripts/fastreflex.py collect \
+  --config configs/experiment/20260827_hazard_pilot_dataset.yaml
+```
+
+`train`, `evaluate`, `export`는 같은 entry point의 placeholder로 유지한다.
 
 Viewer, 네 terrain 예제, policy 준비와 summary 해석은 [`docs/simulation.md`](docs/simulation.md)를 참고한다.
 

@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`, Sink transition/criteria freeze와 finite Ice patch Slip transition sanity를 완료했으며 현재 상태는 `MUJOCO_BASELINE_READY`다. G1 보행, pelvis IMU6 1 kHz, physical diagnostic foundation과 두 hazard의 transition event foundation을 검증했다. Dataset, model, training과 evaluation pipeline은 아직 구현되지 않았다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
+`MINIMAL_G1_MUJOCO_MIGRATION`, Sink/Slip transition과 criteria freeze 뒤 40-run `hazard_pilot_20260827` raw artifact를 materialize했으며 현재 상태는 `PILOT_DATASET_READY`다. 이는 source/manifest/NPZ 구조와 physical outcome coverage가 준비됐다는 뜻이며 IMU signal separability, window, model, training 또는 evaluation이 준비됐다는 뜻은 아니다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
 
 ## 고정 연구 원칙
 
@@ -13,7 +13,7 @@
 - 기본 입력은 raw channels이고, 필요할 때 train split의 per-channel mean/std normalization만 허용한다.
 - Dataset 생성 시 window를 고정하지 않는다.
 - Legacy source와 과거 dataset을 bulk copy하지 않는다. 완료된 G1 migration처럼 필요한 범위와 provenance를 먼저 review한다.
-- Random seed, code revision, dataset revision, config와 metric을 함께 기록한다.
+- 실제 random source가 있을 때만 seed를 도입하고 code revision, dataset identity, config와 metric을 함께 기록한다.
 - Quantization, target conversion, firmware와 HIL은 Research 결과가 freeze된 뒤 E84 deployment repository가 담당한다.
 
 ## 연구 단계
@@ -57,10 +57,14 @@ Slip transition 결과는 [`20260826_slip_transition_sanity.yaml`](../configs/ex
 
 ### Phase 3 — Small pilot raw dataset generation
 
-- 소수 run으로 full-length 1 kHz raw trace 생성
-- Manifest/provenance, missing sample, run boundary와 label diagnostics 검증
-- 다양한 normal contact, established Slip과 review 후 frozen된 SINK hazard event가 실제로 포함되는지 확인
-- 이 단계에서는 full dataset이나 model 성능을 주장하지 않음
+- 완료: 16 NORMAL-intended, 12 Slip-intended, 12 Sink-intended의 40개 complete 8초 run 생성
+- 완료: 320,000개 raw pelvis IMU6 sample, 1 kHz timestamp, drop/invalid sensor 0 검증
+- 완료: observed BENIGN/SLIP/SINK/DUAL/INVALID = 16/8/9/0/7과 left/right event coverage 확인
+- 완료: one-run-per-NPZ, manifest/metadata, per-file/manifest SHA와 fail-closed atomic finalization 검증
+- 유지: `[t1,t2)` SINK interval과 invalid/dual/censor sample은 training-ineligible
+- 제한: full dataset, split, signal separability와 model 성능은 주장하지 않음
+
+Config와 실제 결과는 [`20260827_hazard_pilot_dataset.yaml`](../configs/experiment/20260827_hazard_pilot_dataset.yaml), [`20260827_hazard_pilot_dataset.md`](../reports/20260827_hazard_pilot_dataset.md)에 기록한다.
 
 ### Phase 4 — Raw IMU visualization / Time-to-Separation
 
@@ -104,7 +108,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. Py
 - Research repository에는 검토된 Float contract artifact만 export
 - Quantization 이후 작업은 `Infineon_FastReflex_E84` repository로 넘김
 
-연구 순서는 `MuJoCo baseline → Sink transition/criteria freeze → Slip transition sanity → Pilot Dataset → raw IMU sanity → Time-to-Separation → Full Dataset → PyTorch model comparison`이다. 앞의 세 simulator 단계까지 완료했다. 다음 단계는 별도 승인을 받은 Phase 3 Pilot Dataset이며 이 milestone에서 자동으로 시작하지 않는다. Pilot에서는 Slip의 t1 주변 IMU 분리와 hazardous Sink의 t1 이후 t2 이전 IMU 분리를 먼저 확인한다.
+연구 순서는 `MuJoCo baseline → Sink transition/criteria freeze → Slip transition sanity → Pilot Dataset → raw IMU sanity → Time-to-Separation → Full Dataset → PyTorch model comparison`이다. Pilot Dataset까지 완료했다. 다음 단계는 별도 승인 뒤 Phase 4 Raw IMU sanity이며 Slip t1 주변과 hazardous Sink의 `[t1,t2)`에서 pelvis IMU6 관측 가능성을 먼저 확인한다. Time-to-Separation이나 ML을 자동으로 시작하지 않는다.
 
 ## Split과 leakage protocol
 
@@ -149,4 +153,4 @@ E84 deployment repository 범위:
 - Vela, firmware integration
 - E84 runtime, HIL과 target validation
 
-현재 milestone은 smoke simulation과 Sink/Slip finite transition condition 설계까지만 실행했다. Dataset 생성, PyTorch 설치, model 구현/training/evaluation, quantization, E84 또는 HIL은 수행하지 않았다.
+현재 milestone은 smoke simulation, Sink/Slip finite transition condition과 bounded raw Pilot Dataset materialization까지만 실행했다. Raw signal 분석, Time-to-Separation, Full Dataset, PyTorch 설치, model 구현/training/evaluation, quantization, E84 또는 HIL은 수행하지 않았다.

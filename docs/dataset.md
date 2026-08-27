@@ -2,7 +2,7 @@
 
 ## 상태와 범위
 
-`HAZARD_DATASET_CONTRACT_V1`은 새 Hazard dataset의 schema와 label 원칙을 정의한다. 최소 simulator migration과 contract parity test는 완료했지만 dataset/window 생성, model 구현 또는 training은 수행하지 않았다.
+`HAZARD_DATASET_CONTRACT_V1`은 새 Hazard dataset의 schema와 label 원칙을 정의한다. 최소 simulator migration과 contract parity 뒤 첫 bounded raw artifact `hazard_pilot_20260827`을 materialize했다. Window policy, signal separability, model과 training은 아직 검증하거나 구현하지 않았다.
 
 Primary task는 하나의 3-class classification이다.
 
@@ -68,7 +68,7 @@ Dataset의 authoritative source는 미리 잘린 window가 아니라 simulation 
 
 ### Runtime sensor arrays
 
-| Field | Proposed shape/type | 의미 |
+| Field | Shape/type | 의미 |
 |---|---|---|
 | `timestamp_us` | `[N] int64` | run-local monotonic timestamp |
 | `sequence` | `[N] int64` | 연속 sample 번호 |
@@ -78,42 +78,37 @@ Dataset의 authoritative source는 미리 잘린 window가 아니라 simulation 
 
 ### Simulator-only label and diagnostic arrays
 
-현재 in-memory baseline은 좌/우 배열 순서를 `[left, right]`로 고정한다. 구체적인 NPZ key와 storage layout은 pilot dataset milestone에서 확정하되 다음 정보는 손실 없이 저장한다.
+좌/우 배열 순서는 `[left, right]`로 고정한다. Pilot의 NPZ는 다음 simulator-only field를 runtime input과 별도 key로 저장한다.
 
 - `hazard_class_id`: `[N] int8`; eligible sample에서는 0/1/2
 - `training_eligible`: `[N] bool`
 - 좌/우 named sole-ground physical contact와 physical-contact rising-edge touchdown
-- 좌/우 force-loaded state 및 raw contact episode ID
-- `established_slip_active`, `established_slip_onset`
-- Slip continuous diagnostics: foot-ground tangential relative velocity, touchdown anchor-relative x/y displacement와 그 norm
-- `sink_physical_active`, `sink_physical_onset`, `sink_physical_episode_id`
-- `soft_patch_contact`, 그 onset과 patch-linked `sink_physical_after_patch_onset`
-- Sink continuous diagnostics: contact-foot world z/vertical velocity, touchdown-relative downward displacement, surface-relative sole depth, raw contact penetration, first-loaded-reference penetration과 그 변화량
-- 좌/우 loaded penetration asymmetry와 loaded/contact state
-- Effect diagnostics: pelvis/root world z, orientation/roll/pitch/tilt, angular/linear velocity, commanded-forward velocity tracking error
-- t0 전 1,000 ms baseline mask와 pelvis z/tilt/forward velocity/angular-speed event-relative change
+- 좌/우 force-loaded state
+- `established_slip_active`, per-foot onset, `any_slip_active`와 ANY onset
+- Slip continuous diagnostics: touchdown anchor drift norm과 tangential velocity
+- `sink_physical_active`, per-foot onset과 patch-linked onset
+- `soft_patch_contact`, `low_friction_patch_contact`
+- Sink continuous diagnostics: raw contact penetration과 first-loaded-reference 대비 변화량
+- Effect diagnostics: pelvis/root world z와 tilt, angular/linear velocity, commanded-forward velocity와 tracking error
 - `sink_degradation_active`/onset과 patch-linked `sink_hazard_active`/onset
 - `dual_hazard_active`
 - `pre_fall_valid`와 first-fall/censor marker
 - 필요 시 exact root/foot pose와 velocity. 이는 항상 diagnostic-only로 표시한다.
 
-`hazard_class_id=-1`은 primary class가 아니라 `EXCLUDED/UNRESOLVED` sentinel로 예약한다. Dual hazard, fall-censored sample, invalid sensor sample, 그리고 아직 검증되지 않은 early interval처럼 3-class 학습에 넣을 수 없는 sample에 사용한다. 이 sample을 `NORMAL`로 바꾸지 않는다.
+`hazard_class_id=-1`은 primary class가 아니라 `EXCLUDED/UNRESOLVED` sentinel로 예약한다. Pilot에서는 qualifying Slip run의 `[t0,t1)`, hazardous Sink run의 `[t0,t2)`, censor 이후, invalid/dual run 전체를 `-1`과 `training_eligible=false`로 보존한다. Slip은 t1부터 class 1, Sink는 frozen t2부터 class 2를 기록한다. 이는 raw-state annotation이며 최종 window policy가 아니다.
 
 ### Run metadata
 
-각 run에는 적어도 다음 metadata가 필요하다.
+Pilot manifest는 각 run에 다음 metadata를 기록한다.
 
 - `run_id`
-- simulator/physics/sensor random `seed` 또는 명시적인 seed set
-- `scenario_family`
-- commanded speed 또는 commanded speed profile
-- terrain configuration/realization
-- `variation_group_id`
-- scenario realization/group ID
-- initial controller/gait phase
-- dual-hazard 발생 여부와 run-level validity summary
+- `scenario_family`, `intended_role`, observed physical outcome
+- terrain, commanded speed, patch start/width와 Sink side/severity
+- fixed initial controller phase와 first patch-contact policy phase
+- event timing, censor reason, left/right/dual coverage와 validity/drop summary
+- policy와 run-file SHA-256
 
-이 metadata는 coverage와 split을 위한 것이며 runtime input이 아니다. Acceleration/deceleration처럼 command가 시간에 따라 달라질 때에는 command trace 또는 재현 가능한 profile reference도 diagnostic으로 보존한다.
+현재 simulator에는 random source가 없어 dataset-level `simulator_deterministic=true`, `random_seed=null`로 기록한다. 의미 없는 seed 반복을 independent data로 세지 않는다. 이 metadata는 coverage와 향후 split을 위한 것이며 runtime input이 아니다. Randomization이나 command profile이 실제로 추가될 때만 seed/group 또는 command trace를 도입한다.
 
 ## Physical label contract
 
@@ -189,7 +184,7 @@ Tilt threshold는 concrete, uniform sand, left/right mild transition의 8초 ben
 - `DUAL_PHENOMENON`: established Slip onset이 t2보다 먼저 발생한 hazardous episode. Raw run은 보존하되 V1 train/evaluation에서는 제외
 - Censor가 먼저 와 qualification할 수 없으면 `INCONCLUSIVE`이며 `training_eligible=false`
 
-Hazardous episode의 future early-detection reference 후보는 결과가 이미 드러난 t2가 아니라 원인 onset t1이다. `[t1,t2)` sample/window eligibility와 latency gate는 Pilot/Time-to-Separation에서 검증하기 전까지 `training_eligible=false`로 유지한다. Frozen criterion은 episode qualification을 고정한 것이며 아직 dataset을 생성했다는 뜻은 아니다.
+Hazardous episode의 future early-detection reference 후보는 결과가 이미 드러난 t2가 아니라 원인 onset t1이다. `[t1,t2)` sample/window eligibility와 latency gate는 Raw IMU sanity/Time-to-Separation에서 검증하기 전까지 `training_eligible=false`로 유지한다. Pilot materialization은 이 원칙을 적용했으며 training label/window가 확정됐다는 뜻은 아니다.
 
 `SINK_HAZARD_CRITERIA_FROZEN`
 
@@ -245,9 +240,9 @@ Split manifest는 다음을 검증해야 한다.
 
 특히 `NORMAL`을 충분히 넓게 수집한다. Legacy의 좁은 normal-domain 실험에서 false-positive generalization 문제가 있었고, 이후 coverage-corrected 연구는 speed, contact age, impact, turn/trajectory와 sensor variation을 넓혀야 했다. Class count balance만으로 이 문제를 해결했다고 간주하지 않는다.
 
-## Storage와 dataset identity 제안
+## Storage와 dataset identity
 
-복잡한 database나 framework 없이 다음 구조로 시작한다.
+Pilot은 복잡한 database나 shard framework 없이 한 NPZ를 한 complete run으로 저장한다.
 
 ```text
 data/
@@ -255,15 +250,15 @@ data/
     <dataset_id>/
       manifest.csv
       metadata.json
-      shard_000.npz
-      shard_001.npz
+      runs/
+        <run_id>.npz
 ```
 
 - `metadata.json`: dataset identity, 공통 schema, generator/simulator provenance
-- `manifest.csv`: run ID, shard/offset, sample count, metadata group, class/event coverage, validity/drop summary와 split assignment
-- `shard_XXX.npz`: 하나 이상의 complete raw run. 여러 run을 concatenate하면 explicit run offsets를 저장하고 run 경계를 넘는 window를 금지한다. Pickle/object array는 사용하지 않는다.
+- `manifest.csv`: 한 row당 한 run의 condition, observed outcome, event timing, validity/drop과 NPZ SHA-256
+- `runs/<run_id>.npz`: 한 complete 1 kHz raw run. Pickle/object array를 사용하지 않고 run 경계를 concatenate하지 않는다.
 
-최종 shard shape와 field name은 Phase 2 simulator migration에서 정하되 authoritative run boundary와 위 필수 정보는 바꾸지 않는다. Generated dataset은 Git에 commit하지 않는다.
+Collector는 temporary directory에서 전체 run/manifest/metadata/SHA validation을 통과한 뒤 final directory로 atomic rename하며 기존 dataset identity를 overwrite하지 않는다. Generated dataset은 `data/raw/`에 두고 Git에 commit하지 않는다.
 
 Dataset identity의 required fields는 다음과 같다.
 
@@ -275,7 +270,7 @@ Dataset identity의 required fields는 다음과 같다.
 - `sample_rate_hz`
 - `channel_order`
 
-추가로 simulator/model/policy version, config digest와 split revision을 기록하는 것을 권장한다. Dataset, model, report artifact provenance는 서로 분리한다.
+첫 materialization은 40 runs/320,000 samples이며 상세 coverage는 [`20260827_hazard_pilot_dataset.md`](../reports/20260827_hazard_pilot_dataset.md)에 기록한다. Metadata는 verified policy hash, simulator/config digest, deterministic/no-seed 상태와 manifest hash를 포함한다. Dataset, model, report artifact provenance는 서로 분리한다.
 
 ## Legacy read-only reference note
 

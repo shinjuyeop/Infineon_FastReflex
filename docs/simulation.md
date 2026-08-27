@@ -194,7 +194,7 @@ python scripts/fastreflex.py simulate \
 
 이 profile은 실제 재료 측정값이나 deformable-material model이 아니다. Relative behavior와 signal-separation을 보기 위한 engineering approximation이며 viewer를 위해 friction, `solref`, `solimp`를 바꾸지 않는다.
 
-`uniform`은 기존 scene/profile을 그대로 사용한다. Sink의 `asymmetric_left/right`와 `transition_left/right`는 `scene_sink.xml`에서 한쪽 compliance를 바꾼다. Slip의 `--slip-pattern transition`도 같은 finite topology를 재사용하되 `x=[0.35,1.10] m`의 left/right patch를 모두 기존 Ice profile로 설정하고 그 전후는 concrete로 둔다. 모든 경계의 nominal top은 `z=0`이고 box가 맞닿을 뿐 겹치지 않는다. Hole, step, lowered surface 또는 deformable mesh는 없다. Cyan Ice patch와 Sink의 blue/orange는 visual-only이며 physics/label selection에 사용하지 않는다. Sink non-uniform pattern은 `--terrain sand`, Slip transition은 `--terrain ice`에서만 허용되고 두 pattern을 결합할 수 없다.
+`uniform`은 기존 scene/profile을 그대로 사용한다. Sink의 `asymmetric_left/right`와 `transition_left/right`는 `scene_sink.xml`에서 한쪽 compliance를 바꾼다. Slip의 `--slip-pattern transition`도 같은 finite topology를 재사용하되 기본 `x=[0.35,1.10] m`의 left/right patch를 모두 기존 Ice profile로 설정하고 그 전후는 concrete로 둔다. Pilot variation에는 `--patch-start-x`와 `--patch-width`를 사용하며 default는 각각 0.35 m와 0.75 m다. 모든 경계의 nominal top은 `z=0`이고 box가 맞닿을 뿐 겹치지 않는다. Hole, step, lowered surface 또는 deformable mesh는 없다. Cyan Ice patch와 Sink의 blue/orange는 visual-only이며 physics/label selection에 사용하지 않는다. Sink non-uniform pattern은 `--terrain sand`, Slip transition은 `--terrain ice`에서만 허용되고 두 pattern을 결합할 수 없다.
 
 ## Hazard label 설명
 

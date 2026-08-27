@@ -82,14 +82,14 @@ Viewer는 render state만 복사하며 physics/controller/sensor/label을 바꾸
 
 ## Gait-phase sensitivity와 Pilot variation
 
-첫 patch contact 시 해당 physical-contact episode age와 deterministic controller의 nominal 0–1 policy phase는 다음과 같았다. Phase는 0.8초 policy period와 t0 timestamp로 계산했으며 foot-contact state와 함께 gait-phase coverage를 해석하는 diagnostic이다.
+첫 patch contact 시 해당 physical-contact episode age와 deterministic controller의 nominal 0–1 policy phase는 다음과 같았다. Phase는 0.6초 policy period와 20 ms control update를 기준으로 계산했으며 foot-contact state와 함께 gait-phase coverage를 해석하는 diagnostic이다.
 
 | Speed | Left contact age | Right contact age | First foot | Policy phase at first t0 |
 |---:|---:|---:|---|---:|
 | 0.10 | 11 ms | 1 ms | Left | 0.000 |
-| 0.15 | 0 ms | 6 ms | Left | 0.250 |
-| 0.20 | 0 ms | 7 ms | Right | 0.875 |
-| 0.25 | 0 ms | 8 ms | Left | 0.525 |
+| 0.15 | 0 ms | 6 ms | Left | 0.000 |
+| 0.20 | 0 ms | 7 ms | Right | 0.500 |
+| 0.25 | 0 ms | 8 ms | Left | 0.033 |
 
 첫 foot은 속도에 따라 바뀌지만 모든 t0가 touchdown 또는 매우 이른 stance에 집중됐다. 따라서 Pilot Dataset에서는 patch start position/initial gait phase variation으로 contact age를 넓히고 left/right first-contact coverage를 균형화해야 한다. 대량 sweep이나 새 oracle은 필요 없으며 동일 full-width topology와 frozen profile을 유지한 소수의 재현 가능한 variation이면 된다.
 

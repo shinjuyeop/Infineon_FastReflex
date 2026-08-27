@@ -49,6 +49,7 @@ from fastreflex.simulation.terrain import (
     TRANSITION_PATCH_END_X_M,
     TRANSITION_PATCH_GEOM_NAMES,
     TRANSITION_PATCH_START_X_M,
+    TRANSITION_PATCH_WIDTH_M,
 )
 from scripts.fastreflex import build_parser
 
@@ -100,6 +101,8 @@ class SimulationTest(unittest.TestCase):
         self.assertEqual(config.slip_pattern, "uniform")
         self.assertEqual(config.sink_pattern, "uniform")
         self.assertEqual(config.sink_severity, "moderate")
+        self.assertEqual(config.patch_start_x_m, TRANSITION_PATCH_START_X_M)
+        self.assertEqual(config.patch_width_m, TRANSITION_PATCH_WIDTH_M)
 
         model, ground_ids = load_g1_model("concrete")
         self.assertEqual(len(ground_ids), 1)
@@ -362,6 +365,44 @@ class SimulationTest(unittest.TestCase):
                 sink_pattern="transition_left",
             ).validate()
 
+        shifted, _ = load_g1_model(
+            "ice",
+            slip_pattern="transition",
+            patch_start_x_m=0.40,
+            patch_width_m=0.75,
+        )
+        shifted_left = shifted.geom("terrain_transition_left").id
+        shifted_pre = shifted.geom("terrain_transition_pre").id
+        shifted_post = shifted.geom("terrain_transition_post").id
+        self.assertAlmostEqual(
+            float(
+                shifted.geom_pos[shifted_pre, 0]
+                + shifted.geom_size[shifted_pre, 0]
+            ),
+            0.40,
+        )
+        self.assertAlmostEqual(
+            float(
+                shifted.geom_pos[shifted_left, 0]
+                - shifted.geom_size[shifted_left, 0]
+            ),
+            0.40,
+        )
+        self.assertAlmostEqual(
+            float(
+                shifted.geom_pos[shifted_left, 0]
+                + shifted.geom_size[shifted_left, 0]
+            ),
+            1.15,
+        )
+        self.assertAlmostEqual(
+            float(
+                shifted.geom_pos[shifted_post, 0]
+                - shifted.geom_size[shifted_post, 0]
+            ),
+            1.15,
+        )
+
     def test_viewer_cli_rates_and_availability_contract(self) -> None:
         parser = build_parser()
         viewer_args = parser.parse_args(["simulate", "--viewer"])
@@ -388,6 +429,21 @@ class SimulationTest(unittest.TestCase):
             ["simulate", "--terrain", "ice", "--slip-pattern", "transition"]
         )
         self.assertEqual(slip_transition_args.slip_pattern, "transition")
+        shifted_args = parser.parse_args(
+            [
+                "simulate",
+                "--terrain",
+                "ice",
+                "--slip-pattern",
+                "transition",
+                "--patch-start-x",
+                "0.40",
+                "--patch-width",
+                "0.75",
+            ]
+        )
+        self.assertEqual(shifted_args.patch_start_x, 0.40)
+        self.assertEqual(shifted_args.patch_width, 0.75)
         with redirect_stderr(io.StringIO()) as error:
             with self.assertRaises(SystemExit) as conflict:
                 parser.parse_args(["simulate", "--headless", "--viewer"])

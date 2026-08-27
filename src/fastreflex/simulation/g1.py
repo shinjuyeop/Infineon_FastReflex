@@ -27,8 +27,11 @@ from .terrain import (
     get_terrain_profile,
     low_friction_patch_geom_ids,
     soft_sink_geom_ids,
+    TRANSITION_PATCH_START_X_M,
+    TRANSITION_PATCH_WIDTH_M,
     validate_slip_scenario,
     validate_sink_scenario,
+    validate_transition_geometry,
 )
 
 
@@ -141,6 +144,8 @@ class SimulationConfig:
     slip_pattern: str
     sink_pattern: str
     sink_severity: str
+    patch_start_x_m: float
+    patch_width_m: float
     headless: bool
 
     @property
@@ -177,6 +182,7 @@ class SimulationConfig:
         get_terrain_profile(self.terrain)
         validate_slip_scenario(self.terrain, self.slip_pattern, self.sink_pattern)
         validate_sink_scenario(self.terrain, self.sink_pattern, self.sink_severity)
+        validate_transition_geometry(self.patch_start_x_m, self.patch_width_m)
 
 
 @dataclass(frozen=True)
@@ -209,6 +215,7 @@ def load_simulation_config(path: Path) -> SimulationConfig:
         terrain = document["terrain"]
         slip = document.get("slip", {})
         sink = document.get("sink", {})
+        transition_patch = document.get("transition_patch", {})
         output = document["output"]
         raw_policy = controller["policy_path"]
         config = SimulationConfig(
@@ -221,6 +228,12 @@ def load_simulation_config(path: Path) -> SimulationConfig:
             slip_pattern=str(slip.get("pattern", "uniform")),
             sink_pattern=str(sink.get("pattern", "uniform")),
             sink_severity=str(sink.get("severity", "moderate")),
+            patch_start_x_m=float(
+                transition_patch.get("start_x_m", TRANSITION_PATCH_START_X_M)
+            ),
+            patch_width_m=float(
+                transition_patch.get("width_m", TRANSITION_PATCH_WIDTH_M)
+            ),
             headless=bool(output["headless"]),
         )
     except (KeyError, TypeError, ValueError) as exc:
@@ -282,22 +295,35 @@ def load_g1_model(
     sink_pattern: str = "uniform",
     sink_severity: str = "moderate",
     slip_pattern: str = "uniform",
+    patch_start_x_m: float = TRANSITION_PATCH_START_X_M,
+    patch_width_m: float = TRANSITION_PATCH_WIDTH_M,
 ) -> tuple[mujoco.MjModel, frozenset[int]]:
     """Load the baseline or one validated finite/full-lane patch scene."""
     validate_slip_scenario(terrain_name, slip_pattern, sink_pattern)
     validate_sink_scenario(terrain_name, sink_pattern, sink_severity)
+    validate_transition_geometry(patch_start_x_m, patch_width_m)
     use_patch_scene = sink_pattern != "uniform" or slip_pattern == "transition"
     scene_path = SINK_SCENE_PATH if use_patch_scene else SCENE_PATH
     model = mujoco.MjModel.from_xml_path(str(scene_path))
     validate_model_contract(model)
     if slip_pattern == "transition":
-        ground_ids = apply_slip_patch_profiles(model)
+        ground_ids = apply_slip_patch_profiles(
+            model,
+            patch_start_x_m,
+            patch_width_m,
+        )
     elif sink_pattern == "uniform":
         ground_ids = frozenset(
             (apply_terrain_profile(model, get_terrain_profile(terrain_name)),)
         )
     else:
-        ground_ids = apply_sink_patch_profiles(model, sink_pattern, sink_severity)
+        ground_ids = apply_sink_patch_profiles(
+            model,
+            sink_pattern,
+            sink_severity,
+            patch_start_x_m,
+            patch_width_m,
+        )
     return model, ground_ids
 
 
@@ -510,6 +536,8 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         config.sink_pattern,
         config.sink_severity,
         config.slip_pattern,
+        config.patch_start_x_m,
+        config.patch_width_m,
     )
     data = mujoco.MjData(model)
     controller = UnitreeG1Controller(
@@ -560,6 +588,8 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             config.sink_pattern,
             config.sink_severity,
             config.slip_pattern,
+            config.patch_start_x_m,
+            config.patch_width_m,
         )
         viewer_data = mujoco.MjData(viewer_model)
         _copy_integration_state(model, data, viewer_model, viewer_data)
@@ -670,6 +700,18 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         "slip_pattern": config.slip_pattern,
         "sink_pattern": config.sink_pattern,
         "sink_severity": config.sink_severity,
+        "patch_start_x_m": (
+            config.patch_start_x_m
+            if config.slip_pattern == "transition"
+            or config.sink_pattern.startswith("transition_")
+            else None
+        ),
+        "patch_width_m": (
+            config.patch_width_m
+            if config.slip_pattern == "transition"
+            or config.sink_pattern.startswith("transition_")
+            else None
+        ),
         "physics_timestep_s": config.physics_timestep_s,
         "physics_rate_hz": int(round(1.0 / config.physics_timestep_s)),
         "sensor_rate_hz": config.sensor_rate_hz,

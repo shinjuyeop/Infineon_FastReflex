@@ -1,0 +1,76 @@
+experiment:
+  id: HAZARD_PILOT_DATASET
+  date: 2026-08-27
+  dataset_id: hazard_pilot_20260827
+  schema_version: hazard_dataset_contract_v1
+  purpose: materialize and validate the first bounded authoritative raw Hazard dataset
+
+source:
+  simulator_config: configs/simulator/g1.yaml
+  dataset_config: configs/dataset/hazard.yaml
+  require_clean_worktree: true
+
+output:
+  root: data/raw
+  fail_if_exists: true
+  storage_format: npz_per_complete_run
+
+common:
+  duration_s: 8.0
+  patch_width_m: 0.75
+  headless: true
+  simulator_deterministic: true
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+
+runs:
+  - {run_id: normal_concrete_s010_p000, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.10}
+  - {run_id: normal_concrete_s015_p000, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.15}
+  - {run_id: normal_concrete_s020_p000, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.20}
+  - {run_id: normal_concrete_s025_p000, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.25}
+  - {run_id: normal_marble_s010_p000, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.10}
+  - {run_id: normal_marble_s015_p000, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.15}
+  - {run_id: normal_marble_s020_p000, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.20}
+  - {run_id: normal_marble_s025_p000, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.25}
+  - {run_id: normal_sand_s010_p000, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.10}
+  - {run_id: normal_sand_s015_p000, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15}
+  - {run_id: normal_sand_s020_p000, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.20}
+  - {run_id: normal_sand_s025_p000, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.25}
+  - {run_id: normal_sink_left_mild_s015_p035, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: left, sink_severity: mild}
+  - {run_id: normal_sink_right_mild_s015_p035, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: right, sink_severity: mild}
+  - {run_id: normal_sink_left_moderate_s015_p035, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: left, sink_severity: moderate}
+  - {run_id: normal_sink_right_moderate_s015_p035, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: right, sink_severity: moderate}
+
+  - {run_id: slip_ice_s010_p030, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.10, patch_start_x: 0.30}
+  - {run_id: slip_ice_s010_p035, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.10, patch_start_x: 0.35}
+  - {run_id: slip_ice_s010_p040, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.10, patch_start_x: 0.40}
+  - {run_id: slip_ice_s015_p030, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.15, patch_start_x: 0.30}
+  - {run_id: slip_ice_s015_p035, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.15, patch_start_x: 0.35}
+  - {run_id: slip_ice_s015_p040, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.15, patch_start_x: 0.40}
+  - {run_id: slip_ice_s020_p030, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.20, patch_start_x: 0.30}
+  - {run_id: slip_ice_s020_p035, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.20, patch_start_x: 0.35}
+  - {run_id: slip_ice_s020_p040, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.20, patch_start_x: 0.40}
+  - {run_id: slip_ice_s025_p030, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.25, patch_start_x: 0.30}
+  - {run_id: slip_ice_s025_p035, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.25, patch_start_x: 0.35}
+  - {run_id: slip_ice_s025_p040, scenario_family: slip, intended_role: SLIP, terrain: ice, speed_mps: 0.25, patch_start_x: 0.40}
+
+  - {run_id: sink_left_severe_s015_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.30, sink_side: left, sink_severity: severe}
+  - {run_id: sink_left_severe_s015_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: left, sink_severity: severe}
+  - {run_id: sink_left_severe_s020_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.20, patch_start_x: 0.30, sink_side: left, sink_severity: severe}
+  - {run_id: sink_left_severe_s020_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.20, patch_start_x: 0.35, sink_side: left, sink_severity: severe}
+  - {run_id: sink_left_severe_s025_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.25, patch_start_x: 0.30, sink_side: left, sink_severity: severe}
+  - {run_id: sink_left_severe_s025_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.25, patch_start_x: 0.35, sink_side: left, sink_severity: severe}
+  - {run_id: sink_right_severe_s015_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.30, sink_side: right, sink_severity: severe}
+  - {run_id: sink_right_severe_s015_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.35, sink_side: right, sink_severity: severe}
+  - {run_id: sink_right_severe_s020_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.20, patch_start_x: 0.30, sink_side: right, sink_severity: severe}
+  - {run_id: sink_right_severe_s020_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.20, patch_start_x: 0.35, sink_side: right, sink_severity: severe}
+  - {run_id: sink_right_severe_s025_p030, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.25, patch_start_x: 0.30, sink_side: right, sink_severity: severe}
+  - {run_id: sink_right_severe_s025_p035, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.25, patch_start_x: 0.35, sink_side: right, sink_severity: severe}
+
+annotation:
+  class_ids: {NORMAL: 0, SLIP: 1, SINK: 2, EXCLUDED_UNRESOLVED: -1}
+  slip_reference: first_any_foot_established_slip
+  sink_class_start: t2_degradation
+  sink_t1_to_t2_training_eligible: false
+  dual_run_training_eligible: false
+  post_censor_training_eligible: false
+  terrain_identity_is_label: false

@@ -16,8 +16,14 @@ SOURCE_ROOT = REPOSITORY_ROOT / "src"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-PLACEHOLDER_COMMANDS = ("collect", "train", "evaluate", "export")
+PLACEHOLDER_COMMANDS = ("train", "evaluate", "export")
 DEFAULT_SIMULATOR_CONFIG = REPOSITORY_ROOT / "configs" / "simulator" / "g1.yaml"
+DEFAULT_COLLECTION_CONFIG = (
+    REPOSITORY_ROOT
+    / "configs"
+    / "experiment"
+    / "20260827_hazard_pilot_dataset.yaml"
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,6 +40,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     simulate.add_argument("--speed", type=float)
     simulate.add_argument("--duration", type=float)
+    simulate.add_argument("--patch-start-x", type=float)
+    simulate.add_argument("--patch-width", type=float)
     simulate.add_argument(
         "--slip-pattern",
         choices=("uniform", "transition"),
@@ -73,6 +81,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--viewer",
         action="store_true",
         help="open the official MuJoCo viewer and pace simulation near real time",
+    )
+    collect = subparsers.add_parser(
+        "collect", help="materialize and validate a raw Hazard pilot dataset"
+    )
+    collect.add_argument("--config", type=Path, default=DEFAULT_COLLECTION_CONFIG)
+    collect.add_argument(
+        "--policy",
+        type=Path,
+        help=(
+            "user-supplied verified Unitree G1 ONNX policy; alternatively set "
+            "FASTREFLEX_G1_POLICY"
+        ),
     )
     for command in PLACEHOLDER_COMMANDS:
         subparsers.add_parser(command, help="reserved for a later milestone")
@@ -126,10 +146,41 @@ def main() -> int:
                 if args.sink_severity is None
                 else args.sink_severity
             ),
+            patch_start_x_m=(
+                config.patch_start_x_m
+                if args.patch_start_x is None
+                else args.patch_start_x
+            ),
+            patch_width_m=(
+                config.patch_width_m
+                if args.patch_width is None
+                else args.patch_width
+            ),
             headless=headless,
         )
         result = run_simulation(config)
         print(json.dumps(summarize_result(result), indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "collect":
+        from fastreflex.dataset.collector import collect_dataset
+
+        environment_policy = os.environ.get("FASTREFLEX_G1_POLICY")
+        policy_path = args.policy
+        if policy_path is None and environment_policy:
+            policy_path = Path(environment_policy)
+        if policy_path is None:
+            parser.error(
+                "collect requires --policy or the FASTREFLEX_G1_POLICY environment variable"
+            )
+        output_path, summary = collect_dataset(args.config, policy_path)
+        print(
+            json.dumps(
+                {"output_path": str(output_path), **summary},
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 0
 
     print(

@@ -73,6 +73,9 @@ TRANSITION_GROUND_GEOM_NAMES = (
 )
 TRANSITION_PATCH_START_X_M = 0.35
 TRANSITION_PATCH_END_X_M = 1.10
+TRANSITION_PATCH_WIDTH_M = 0.75
+TRANSITION_MIN_X_M = -10.0
+TRANSITION_MAX_X_M = 10.0
 
 # Synthetic severity ladder for one compliant lane. These are engineering
 # contact-response parameters derived from the uniform sand control, not soil
@@ -188,6 +191,8 @@ def apply_sink_patch_profiles(
     model: mujoco.MjModel,
     pattern: str,
     severity: str,
+    patch_start_x_m: float = TRANSITION_PATCH_START_X_M,
+    patch_width_m: float = TRANSITION_PATCH_WIDTH_M,
 ) -> frozenset[int]:
     """Configure the canonical sink scene for a full-lane or finite patch."""
     validate_sink_scenario("sand", pattern, severity)
@@ -205,6 +210,8 @@ def apply_sink_patch_profiles(
         "terrain_transition_post": (0.35, 0.35, 0.35, 1.0),
     }
     is_transition = pattern.startswith("transition_")
+    if is_transition:
+        configure_transition_geometry(model, patch_start_x_m, patch_width_m)
     _select_patch_topology(
         model,
         is_transition=is_transition,
@@ -261,8 +268,59 @@ def _select_patch_topology(
         set_enabled(name, is_transition, rgba)
 
 
-def apply_slip_patch_profiles(model: mujoco.MjModel) -> frozenset[int]:
+def validate_transition_geometry(
+    patch_start_x_m: float,
+    patch_width_m: float,
+) -> None:
+    """Validate a bounded same-height transition inside the canonical scene."""
+    patch_end_x_m = patch_start_x_m + patch_width_m
+    if not (
+        np.isfinite(patch_start_x_m)
+        and np.isfinite(patch_width_m)
+        and patch_width_m > 0.0
+        and TRANSITION_MIN_X_M < patch_start_x_m < patch_end_x_m
+        and patch_end_x_m < TRANSITION_MAX_X_M
+    ):
+        raise ValueError(
+            "transition patch must have positive finite width within (-10, 10) m"
+        )
+
+
+def configure_transition_geometry(
+    model: mujoco.MjModel,
+    patch_start_x_m: float,
+    patch_width_m: float,
+) -> None:
+    """Move existing boxes without changing their shared nominal top height."""
+    validate_transition_geometry(patch_start_x_m, patch_width_m)
+    patch_end_x_m = patch_start_x_m + patch_width_m
+
+    def set_x_extent(name: str, minimum_x_m: float, maximum_x_m: float) -> None:
+        geom_id = model.geom(name).id
+        model.geom_pos[geom_id, 0] = (minimum_x_m + maximum_x_m) / 2.0
+        model.geom_size[geom_id, 0] = (maximum_x_m - minimum_x_m) / 2.0
+
+    set_x_extent(
+        "terrain_transition_pre",
+        TRANSITION_MIN_X_M,
+        patch_start_x_m,
+    )
+    for name in TRANSITION_PATCH_GEOM_NAMES:
+        set_x_extent(name, patch_start_x_m, patch_end_x_m)
+    set_x_extent(
+        "terrain_transition_post",
+        patch_end_x_m,
+        TRANSITION_MAX_X_M,
+    )
+
+
+def apply_slip_patch_profiles(
+    model: mujoco.MjModel,
+    patch_start_x_m: float = TRANSITION_PATCH_START_X_M,
+    patch_width_m: float = TRANSITION_PATCH_WIDTH_M,
+) -> frozenset[int]:
     """Apply concrete-to-full-width-Ice-to-concrete transition profiles."""
+    configure_transition_geometry(model, patch_start_x_m, patch_width_m)
     ice_color = (0.35, 0.70, 0.95, 1.0)
     _select_patch_topology(
         model,

@@ -17,5 +17,9 @@ sink:
   pattern: uniform
   severity: moderate
 
+transition_patch:
+  start_x_m: 0.35
+  width_m: 0.75
+
 output:
   headless: true

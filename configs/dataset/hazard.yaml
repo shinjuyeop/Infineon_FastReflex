@@ -22,6 +22,19 @@ task:
     - {id: 1, name: SLIP}
     - {id: 2, name: SINK}
 
+storage:
+  layout: one_complete_run_per_npz
+  runtime_fields: [sequence, timestamp_us, pelvis_imu, sample_valid, channel_valid]
+  diagnostic_role: simulator_only_not_runtime_input
+  generated_root: data/raw
+
+sample_annotation:
+  excluded_unresolved_id: -1
+  slip_class_start: established_any_slip_onset
+  sink_class_start: frozen_degradation_onset_t2
+  sink_t1_to_t2_training_eligible: false
+  post_censor_training_eligible: false
+
 windows:
   candidate_ms: [20, 30, 50, 100]
 

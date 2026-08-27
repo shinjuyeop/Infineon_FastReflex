@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`, frozen criteria, 40-run IMU/FSR Pilot과 기존 FSR analysis를 보존한 상태에서 passive deformable-support Sink proxy sanity를 완료했다. 현재 상태는 `SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY`다. Support displacement spread는 rigid/balanced benign 0/14와 primary uneven 11/12를 보였고 outcome과 독립된 future observability clock 후보가 됐다. 기존 Pilot label은 불변이며 sim-to-real 한계, sensor architecture와 detector readiness는 unfrozen이다.
+`MINIMAL_G1_MUJOCO_MIGRATION`, frozen criteria, historical Pilot/FSR analyses와 outcome-based Sink history를 보존한 상태에서 deformable-support s1 runtime observability를 평가했다. 현재 상태는 `SINK_SENSOR_OBSERVABILITY_PROMISING`이다. Selected IMU6/GRU는 holdout causal Recall@+100 ms 1.00과 median latency 78 ms를 보였지만 macro F1 0.731, SINK recall 0.786, benign FP 9/13와 balanced FP 6/6으로 primary gates를 통과하지 못했다. Sensor architecture와 detector readiness는 unfrozen이다.
 
 ## 고정 연구 원칙
 
@@ -56,6 +56,18 @@
 - 제한: soil model이나 real-world depth calibration이 아닌 deformable-support engineering proxy이며 runtime sensor observability는 미검증
 
 Verdict는 `SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY`다. 새 clock을 사용하는 future dataset은 새 schema/provenance로 생성해야 하며 기존 Pilot을 relabel하지 않는다. Config와 결과는 [`20260827_sink_deformable_support_proxy_sanity.yaml`](../configs/experiment/20260827_sink_deformable_support_proxy_sanity.yaml), [`20260827_sink_deformable_support_proxy_sanity.md`](../reports/20260827_sink_deformable_support_proxy_sanity.md)에 기록한다.
+
+### Sink sensor observability study
+
+- 완료: v3 `sink_observability_20260827` 126 runs/1,008,000 samples를 pre-frozen 76/25/25 split로 생성
+- 완료: observed SINK/BENIGN/INVALID `50/63/13`, left/right `28/22`, medial/lateral/localized `27/11/12` readiness 확인
+- 완료: IMU6/FSR8/Fusion14 × MLP/GRU × 3 seeds를 train-only normalization과 같은 100 ms protocol로 비교
+- 완료: validation near-tie/secondary recall rule로 IMU6/GRU 선택 후 holdout one-shot과 1 ms causal replay
+- 결과: holdout macro F1 0.7307, NORMAL/SINK recall 0.9529/0.7862, Recall@s1/+20/+50/+100 `0.125/0.125/0.125/1.000`
+- 결과: median/p95 latency `78.0/91.65 ms`, benign FP `9/13`, balanced deformable FP `6/6`
+- 제한: simulation-only Sink-focused evidence이며 final detector/sensor architecture, real sensor와 Full Hazard validation 미완료
+
+Verdict는 `SINK_SENSOR_OBSERVABILITY_PROMISING`이다. Acceptance gate를 결과 뒤 완화하거나 holdout을 재평가하지 않는다. Config와 결과는 [`20260827_sink_sensor_observability_study.yaml`](../configs/experiment/20260827_sink_sensor_observability_study.yaml), [`20260827_sink_sensor_observability_study.md`](../reports/20260827_sink_sensor_observability_study.md)에 기록한다.
 
 ### Slip transition sanity — Pilot 이전 단계
 
@@ -171,7 +183,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. �
 - Research repository에는 검토된 Float contract artifact만 export
 - Quantization 이후 작업은 `Infineon_FastReflex_E84` repository로 넘김
 
-연구 순서는 `MuJoCo baseline → historical Sink/Slip criteria → Pilot Dataset → first PoC/Time-to-Separation → FSR analyses → deformable-support proxy sanity → causal observability decision → Full Dataset → full PyTorch model comparison`이다. 다음 단계 후보는 별도 승인된 matched balanced/uneven observability study이며 새 s1의 schema/provenance와 fresh test reservation을 먼저 다룬다. Dataset 생성이나 classifier training을 자동으로 시작하지 않는다.
+연구 순서는 `MuJoCo baseline → historical Sink/Slip criteria → Pilot Dataset → first PoC/Time-to-Separation → FSR analyses → deformable-support proxy sanity → Sink causal observability PROMISING → 별도 설계 review → Full Hazard Dataset → full PyTorch model comparison`이다. 다음 단계는 자동으로 시작하지 않으며 balanced-soft FP와 split coverage를 먼저 review한다.
 
 ## Split과 leakage protocol
 
@@ -216,4 +228,4 @@ E84 deployment repository 범위:
 - Vela, firmware integration
 - E84 runtime, HIL과 target validation
 
-현재 milestone은 smoke simulation, Sink/Slip finite transition, bounded raw Pilot, 첫 established-state PoC와 frozen-classifier Time-to-Separation replay까지 실행했다. Full Dataset, retraining, CNN/LSTM을 포함한 full model comparison, quantization, E84 또는 HIL은 수행하지 않았다.
+현재 milestone은 frozen deformable-support s1에 대한 126-run Sink-focused dataset, fixed sensor/model ablation, one-shot holdout와 causal replay까지 실행했다. SLIP+SINK Full Hazard Dataset, CNN/LSTM을 포함한 full model comparison, sensor architecture freeze, quantization, E84 또는 HIL은 수행하지 않았다.

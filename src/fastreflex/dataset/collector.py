@@ -67,6 +67,19 @@ MANIFEST_FIELDS = (
     "policy_sha256",
     "run_file_sha256",
 )
+OBSERVABILITY_MANIFEST_FIELDS = (
+    *MANIFEST_FIELDS[:11],
+    "sink_support_pattern",
+    "sink_pattern",
+    "split",
+    "condition_signature",
+    *MANIFEST_FIELDS[11:18],
+    "deformable_sink_onset_ms",
+    "mechanical_recovery_ms",
+    *MANIFEST_FIELDS[18:25],
+    "has_deformable_sink",
+    *MANIFEST_FIELDS[25:],
+)
 BASE_SERIES_SHAPES = {
     "sequence": (),
     "timestamp_us": (),
@@ -109,6 +122,16 @@ SENSOR_SERIES_SHAPES = {
     "foot_fsr": (8,),
     "fsr_valid": (8,),
 }
+DEFORMABLE_SERIES_SHAPES = {
+    "contact_episode_id": (2,),
+    "support_surface_displacement_m": (2, 4),
+    "support_surface_vertical_velocity_m_s": (2, 4),
+    "support_surface_cell_contact": (2, 4),
+    "support_surface_spread_m": (2,),
+    "deformable_patch_episode_active": (2,),
+    "deformable_sink_active": (2,),
+    "deformable_sink_onset": (2,),
+}
 # Backward-compatible name for the frozen v1 IMU-only schema.
 SERIES_SHAPES = BASE_SERIES_SHAPES
 SCALAR_SHAPES = {
@@ -120,6 +143,10 @@ SCALAR_SHAPES = {
     "first_censor_sample": (),
     "censor_reason": (),
     "hazardous_sink_episode": (),
+}
+DEFORMABLE_SCALAR_SHAPES = {
+    "first_deformable_sink_onset_sample_per_foot": (2,),
+    "first_deformable_sink_onset_sample": (),
 }
 
 
@@ -135,6 +162,8 @@ class RunSpec:
     patch_start_x_m: float | None
     sink_side: str | None
     sink_severity: str | None
+    sink_support_pattern: str
+    split: str | None
 
 
 @dataclass(frozen=True)
@@ -154,6 +183,10 @@ class CollectionConfig:
     patch_width_m: float
     simulator_deterministic: bool
     policy_sha256: str
+    minimum_post_d0_evaluation_ms: int
+    recovery_threshold_m: float
+    recovery_persistence_ms: int
+    split: dict[str, tuple[str, ...]] | None
     runs: tuple[RunSpec, ...]
 
 
@@ -213,6 +246,7 @@ def load_collection_config(path: Path) -> CollectionConfig:
     if schema_version not in {
         "hazard_dataset_contract_v1",
         "hazard_dataset_contract_v2",
+        "hazard_dataset_contract_v3",
     }:
         raise ValueError("unsupported Hazard dataset schema version")
     if schema_version == "hazard_dataset_contract_v2" and baseline_dataset_path is None:
@@ -221,6 +255,9 @@ def load_collection_config(path: Path) -> CollectionConfig:
         r"[0-9a-f]{64}", baseline_manifest_sha256 or ""
     ):
         raise ValueError("sensor dataset requires a pinned baseline manifest SHA-256")
+    observability_schema = schema_version == "hazard_dataset_contract_v3"
+    if observability_schema and baseline_dataset_path is not None:
+        raise ValueError("observability dataset must not claim v2 observer parity")
     if duration_s <= 0.0 or patch_width_m <= 0.0:
         raise ValueError("duration and patch width must be positive")
     if not deterministic:
@@ -258,6 +295,10 @@ def load_collection_config(path: Path) -> CollectionConfig:
                     if raw.get("sink_severity") is None
                     else str(raw["sink_severity"])
                 ),
+                sink_support_pattern=str(
+                    raw.get("sink_support_pattern", "balanced_soft")
+                ),
+                split=None if raw.get("split") is None else str(raw["split"]),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError("run entry is missing required fields") from exc
@@ -266,6 +307,35 @@ def load_collection_config(path: Path) -> CollectionConfig:
     identifiers = [run.run_id for run in runs]
     if len(set(identifiers)) != len(identifiers):
         raise ValueError("run_id values must be unique")
+    split: dict[str, tuple[str, ...]] | None = None
+    minimum_post_d0_evaluation_ms = 0
+    recovery_threshold_m = 0.001
+    recovery_persistence_ms = 20
+    if observability_schema:
+        try:
+            raw_split = document["split"]
+            labeling = document["labeling"]
+            minimum_post_d0_evaluation_ms = int(
+                labeling["minimum_post_d0_evaluation_ms"]
+            )
+            recovery_threshold_m = float(labeling["recovery_threshold_m"])
+            recovery_persistence_ms = int(labeling["recovery_persistence_ms"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("v3 observability labeling/split is incomplete") from exc
+        split = {
+            name: tuple(str(value) for value in raw_split[name])
+            for name in ("train", "validation", "holdout")
+        }
+        _validate_observability_matrix(
+            tuple(runs), split, patch_width_m
+        )
+        _validate_observability_contract(document, tuple(runs), split)
+        if (
+            minimum_post_d0_evaluation_ms <= 0
+            or recovery_threshold_m < 0.0
+            or recovery_persistence_ms <= 0
+        ):
+            raise ValueError("v3 observability labeling criteria are invalid")
     return CollectionConfig(
         config_path=config_path,
         dataset_id=dataset_id,
@@ -280,6 +350,10 @@ def load_collection_config(path: Path) -> CollectionConfig:
         patch_width_m=patch_width_m,
         simulator_deterministic=deterministic,
         policy_sha256=policy_sha256,
+        minimum_post_d0_evaluation_ms=minimum_post_d0_evaluation_ms,
+        recovery_threshold_m=recovery_threshold_m,
+        recovery_persistence_ms=recovery_persistence_ms,
+        split=split,
         runs=tuple(runs),
     )
 
@@ -303,6 +377,20 @@ def _validate_run_spec(run: RunSpec) -> None:
         "severe",
     }:
         raise ValueError(f"invalid sink severity for {run.run_id}")
+    if run.sink_support_pattern not in {
+        "balanced_soft",
+        "balanced_deformable",
+        "medial_deformable",
+        "lateral_deformable",
+        "localized_deformable",
+    }:
+        raise ValueError(f"invalid Sink support pattern for {run.run_id}")
+    if run.split is not None and run.split not in {
+        "train",
+        "validation",
+        "holdout",
+    }:
+        raise ValueError(f"invalid split for {run.run_id}")
     if run.scenario_family == "slip":
         if run.terrain != "ice" or run.patch_start_x_m is None:
             raise ValueError(f"Slip transition is incomplete: {run.run_id}")
@@ -323,6 +411,147 @@ def _validate_run_spec(run: RunSpec) -> None:
         raise ValueError(f"patch start is not finite: {run.run_id}")
 
 
+def _condition_signature(run: RunSpec, patch_width_m: float) -> str:
+    topology = (
+        "rigid" if run.patch_start_x_m is None else run.sink_support_pattern
+    )
+    pattern = (
+        "none"
+        if run.patch_start_x_m is None
+        else run.sink_support_pattern.removesuffix("_deformable")
+    )
+    values = (
+        run.terrain,
+        topology,
+        run.sink_severity or "none",
+        run.sink_side or "none",
+        pattern,
+        f"{run.speed_mps:.3f}",
+        "none" if run.patch_start_x_m is None else f"{run.patch_start_x_m:.3f}",
+        "none" if run.patch_start_x_m is None else f"{patch_width_m:.3f}",
+    )
+    return "|".join(values)
+
+
+def _validate_observability_matrix(
+    runs: tuple[RunSpec, ...],
+    split: dict[str, tuple[str, ...]],
+    patch_width_m: float,
+) -> None:
+    identifiers = {run.run_id for run in runs}
+    assigned = [run_id for name in ("train", "validation", "holdout") for run_id in split[name]]
+    if len(assigned) != len(set(assigned)) or set(assigned) != identifiers:
+        raise ValueError("v3 split must cover every run exactly once")
+    declared = {run.run_id: run.split for run in runs}
+    for split_name, run_ids in split.items():
+        if any(declared[run_id] != split_name for run_id in run_ids):
+            raise ValueError("run-level split declaration and split block disagree")
+    signatures = [_condition_signature(run, patch_width_m) for run in runs]
+    if len(signatures) != len(set(signatures)):
+        raise ValueError("duplicate physical condition signature")
+    speed_contract = {
+        "train": {0.12, 0.18, 0.24},
+        "validation": {0.15, 0.27},
+        "holdout": {0.21, 0.30},
+    }
+    for run in runs:
+        assert run.split is not None
+        if run.speed_mps not in speed_contract[run.split]:
+            raise ValueError(f"split-specific speed violation: {run.run_id}")
+    for split_name, expected_speeds in speed_contract.items():
+        observed_speeds = {
+            run.speed_mps for run in runs if run.split == split_name
+        }
+        if observed_speeds != expected_speeds:
+            raise ValueError(f"{split_name} speed coverage violates frozen matrix")
+
+
+def _validate_observability_contract(
+    document: dict[str, object],
+    runs: tuple[RunSpec, ...],
+    split: dict[str, tuple[str, ...]],
+) -> None:
+    """Freeze the predeclared v3 mechanics, label, and matrix before simulation."""
+    expected_label = {
+        "physical_metric": "support_surface_spread_m",
+        "spread_threshold_m": 0.010,
+        "persistence_ms": 20,
+        "d0": "deformable_support_first_physical_contact",
+        "s1": "first_sustained_deformable_sink_active_sample",
+        "positive_class_id": 2,
+        "positive_d0_to_s1": "excluded",
+        "positive_s1_to_contact_episode_end": "sink",
+        "post_episode": "normal_reset",
+        "no_s1_valid_run": "benign",
+        "future_outcome_dependency": False,
+        "fsr_or_imu_dependency": False,
+    }
+    labeling = document.get("labeling")
+    if not isinstance(labeling, dict) or any(
+        labeling.get(name) != value for name, value in expected_label.items()
+    ):
+        raise ValueError("v3 physical Sink label contract was modified")
+    mechanics = document.get("mechanics")
+    expected_mechanics = {
+        "travel_mm": {"reference": 4, "mild": 20, "moderate": 40, "severe": 65},
+        "stiffness_n_per_m": {
+            "reference": 50000,
+            "mild": 12000,
+            "moderate": 7000,
+            "severe": 4500,
+        },
+        "damping_n_s_per_m": {
+            "reference": 1000,
+            "mild": 490,
+            "moderate": 374,
+            "severe": 300,
+        },
+        "tuning_after_results": "prohibited",
+    }
+    if not isinstance(mechanics, dict) or any(
+        mechanics.get(name) != value for name, value in expected_mechanics.items()
+    ):
+        raise ValueError("v3 deformable mechanics declaration was modified")
+
+    rigid_count = sum(run.patch_start_x_m is None for run in runs)
+    balanced_count = sum(
+        run.sink_support_pattern == "balanced_deformable" for run in runs
+    )
+    moderate_uneven_count = sum(
+        run.sink_severity == "moderate"
+        and run.sink_support_pattern
+        in {"medial_deformable", "lateral_deformable", "localized_deformable"}
+        for run in runs
+    )
+    boundary_count = sum(
+        run.sink_severity in {"mild", "severe"}
+        and run.sink_support_pattern
+        in {"medial_deformable", "lateral_deformable", "localized_deformable"}
+        for run in runs
+    )
+    if not (
+        120 <= len(runs) <= 140
+        and 15 <= rigid_count <= 20
+        and 35 <= balanced_count <= 45
+        and 35 <= moderate_uneven_count <= 45
+        and 20 <= boundary_count <= 30
+    ):
+        raise ValueError("v3 condition matrix composition violates frozen ranges")
+    expected_positions = {
+        "train": {0.30, 0.38},
+        "validation": {0.34, 0.42},
+        "holdout": {0.32, 0.40},
+    }
+    for split_name, run_ids in split.items():
+        positions = {
+            run.patch_start_x_m
+            for run in runs
+            if run.run_id in run_ids and run.patch_start_x_m is not None
+        }
+        if positions != expected_positions[split_name]:
+            raise ValueError(f"{split_name} patch positions violate frozen matrix")
+
+
 def _first_true(values: np.ndarray) -> int | None:
     indices = np.flatnonzero(np.asarray(values, dtype=bool))
     return None if indices.size == 0 else int(indices[0])
@@ -341,6 +570,9 @@ def _first_true_per_foot(values: np.ndarray) -> np.ndarray:
 def _sample_annotations(
     result: SimulationResult,
     intended_role: str | None,
+    *,
+    deformable_observability: bool = False,
+    minimum_post_d0_evaluation_ms: int = 0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     runtime = result.runtime
     diagnostics = result.diagnostics
@@ -350,6 +582,66 @@ def _sample_annotations(
     base_eligible = sample_valid & diagnostics.pre_fall_valid
     hazard_class_id = np.full(sample_count, -1, dtype=np.int8)
     hazard_class_id[base_eligible] = 0
+
+    if deformable_observability:
+        first_patch = _first_true(
+            np.any(
+                diagnostics.soft_patch_contact_onset
+                & diagnostics.pre_fall_valid[:, None],
+                axis=1,
+            )
+        )
+        first_sink = _first_true(np.any(diagnostics.deformable_sink_onset, axis=1))
+        first_censor = result.metadata["first_fall_sample"]
+        dynamic_patch_expected = result.metadata["sink_support_pattern"].endswith(
+            "_deformable"
+        )
+        insufficient_evaluation = bool(
+            dynamic_patch_expected
+            and first_sink is None
+            and first_censor is not None
+            and (
+                first_patch is None
+                or int(first_censor) - first_patch
+                < minimum_post_d0_evaluation_ms
+            )
+        )
+        invalid_run = bool(
+            (first_censor is not None and int(first_censor) < SENSOR_RATE_HZ)
+            or (dynamic_patch_expected and first_patch is None)
+            or insufficient_evaluation
+        )
+        if invalid_run:
+            hazard_class_id[:] = -1
+        elif first_sink is not None:
+            for side in range(2):
+                for onset in np.flatnonzero(
+                    diagnostics.deformable_sink_onset[:, side]
+                ):
+                    episode = int(diagnostics.contact_episode_id[onset, side])
+                    if episode < 0:
+                        raise ValueError("deformable s1 has no foot contact episode")
+                    same_episode = diagnostics.contact_episode_id[:, side] == episode
+                    patch_episode = (
+                        same_episode
+                        & diagnostics.deformable_patch_episode_active[:, side]
+                    )
+                    episode_patch_samples = np.flatnonzero(patch_episode)
+                    if not episode_patch_samples.size:
+                        raise ValueError("deformable s1 has no causal d0")
+                    d0 = int(episode_patch_samples[0])
+                    if d0 > onset:
+                        raise ValueError("deformable d0 occurs after s1")
+                    hazard_class_id[d0:onset] = -1
+                    sink_episode = same_episode & (np.arange(sample_count) >= onset)
+                    hazard_class_id[sink_episode & base_eligible] = 2
+        return (
+            sample_valid,
+            channel_valid,
+            hazard_class_id,
+            hazard_class_id >= 0,
+            np.zeros(sample_count, dtype=bool),
+        )
 
     first_slip = _first_true(diagnostics.any_established_slip_onset)
     first_sink_hazard = _first_true(diagnostics.sink_hazard_onset)
@@ -419,6 +711,8 @@ def build_run_arrays(
     intended_role: str | None = None,
     *,
     include_foot_fsr: bool = False,
+    include_deformable_support: bool = False,
+    minimum_post_d0_evaluation_ms: int = 0,
 ) -> dict[str, np.ndarray]:
     """Convert one simulation result into the documented raw NPZ schema."""
     if include_foot_fsr and result.runtime.foot_fsr is None:
@@ -430,7 +724,12 @@ def build_run_arrays(
         hazard_class_id,
         training_eligible,
         dual_hazard_active,
-    ) = _sample_annotations(result, intended_role)
+    ) = _sample_annotations(
+        result,
+        intended_role,
+        deformable_observability=include_deformable_support,
+        minimum_post_d0_evaluation_ms=minimum_post_d0_evaluation_ms,
+    )
     patch_onset = (
         diagnostics.low_friction_patch_contact_onset
         | diagnostics.soft_patch_contact_onset
@@ -515,6 +814,42 @@ def build_run_arrays(
         assert result.runtime.foot_fsr is not None
         arrays["foot_fsr"] = result.runtime.foot_fsr.astype(np.float32, copy=False)
         arrays["fsr_valid"] = np.isfinite(result.runtime.foot_fsr)
+    if include_deformable_support:
+        first_deformable_per_foot = _first_true_per_foot(
+            diagnostics.deformable_sink_onset
+        )
+        first_deformable = _first_true(
+            np.any(diagnostics.deformable_sink_onset, axis=1)
+        )
+        arrays.update(
+            {
+                "contact_episode_id": diagnostics.contact_episode_id,
+                "support_surface_displacement_m": (
+                    diagnostics.support_surface_displacement_m
+                ),
+                "support_surface_vertical_velocity_m_s": (
+                    diagnostics.support_surface_vertical_velocity_m_s
+                ),
+                "support_surface_cell_contact": (
+                    diagnostics.support_surface_cell_contact
+                ),
+                "support_surface_spread_m": (
+                    diagnostics.support_surface_spread_m
+                ),
+                "deformable_patch_episode_active": (
+                    diagnostics.deformable_patch_episode_active
+                ),
+                "deformable_sink_active": diagnostics.deformable_sink_active,
+                "deformable_sink_onset": diagnostics.deformable_sink_onset,
+                "first_deformable_sink_onset_sample_per_foot": (
+                    first_deformable_per_foot
+                ),
+                "first_deformable_sink_onset_sample": np.asarray(
+                    -1 if first_deformable is None else first_deformable,
+                    dtype=np.int64,
+                ),
+            }
+        )
     return {name: np.asarray(value) for name, value in arrays.items()}
 
 
@@ -524,10 +859,15 @@ def validate_run_arrays(
 ) -> None:
     """Fail closed on runtime corruption or diagnostic/schema misalignment."""
     sensor_schema = "foot_fsr" in arrays or "fsr_valid" in arrays
+    deformable_schema = "support_surface_displacement_m" in arrays
     series_shapes = dict(BASE_SERIES_SHAPES)
     if sensor_schema:
         series_shapes.update(SENSOR_SERIES_SHAPES)
-    expected_keys = set(series_shapes) | set(SCALAR_SHAPES)
+    scalar_shapes = dict(SCALAR_SHAPES)
+    if deformable_schema:
+        series_shapes.update(DEFORMABLE_SERIES_SHAPES)
+        scalar_shapes.update(DEFORMABLE_SCALAR_SHAPES)
+    expected_keys = set(series_shapes) | set(scalar_shapes)
     if set(arrays) != expected_keys:
         missing = sorted(expected_keys - set(arrays))
         extra = sorted(set(arrays) - expected_keys)
@@ -538,7 +878,7 @@ def validate_run_arrays(
             raise ValueError(
                 f"{name} has shape {arrays[name].shape}, expected {expected_shape}"
             )
-    for name, expected_shape in SCALAR_SHAPES.items():
+    for name, expected_shape in scalar_shapes.items():
         if arrays[name].shape != expected_shape:
             raise ValueError(
                 f"{name} has shape {arrays[name].shape}, expected {expected_shape}"
@@ -551,13 +891,24 @@ def validate_run_arrays(
         raise ValueError("pelvis_imu must be float32")
     if sensor_schema and arrays["foot_fsr"].dtype != np.float32:
         raise ValueError("foot_fsr must be float32")
+    if deformable_schema and arrays["support_surface_displacement_m"].dtype != np.float32:
+        raise ValueError("support surface displacement must be float32")
     boolean_fields = (
         "sample_valid",
         "channel_valid",
         "training_eligible",
         "pre_fall_valid",
         "dual_hazard_active",
-    ) + (("fsr_valid",) if sensor_schema else ())
+    ) + (("fsr_valid",) if sensor_schema else ()) + (
+        (
+            "support_surface_cell_contact",
+            "deformable_patch_episode_active",
+            "deformable_sink_active",
+            "deformable_sink_onset",
+        )
+        if deformable_schema
+        else ()
+    )
     for name in boolean_fields:
         if arrays[name].dtype != np.bool_:
             raise ValueError(f"{name} must be bool")
@@ -570,6 +921,14 @@ def validate_run_arrays(
         "first_sink_physical_onset_sample_per_foot",
         "first_sink_degradation_onset_sample",
         "first_censor_sample",
+        *(
+            (
+                "first_deformable_sink_onset_sample_per_foot",
+                "first_deformable_sink_onset_sample",
+            )
+            if deformable_schema
+            else ()
+        ),
     ):
         if arrays[name].dtype != np.int64:
             raise ValueError(f"{name} must be int64")
@@ -602,6 +961,71 @@ def validate_run_arrays(
     invalid_seen = np.logical_or.accumulate(~arrays["pre_fall_valid"])
     if np.any(arrays["pre_fall_valid"] & invalid_seen):
         raise ValueError("pre_fall_valid becomes true after censor")
+    if deformable_schema:
+        if np.any(arrays["support_surface_displacement_m"] < 0.0):
+            raise ValueError("support displacement sign violates positive-down contract")
+        if not np.all(np.isfinite(arrays["support_surface_displacement_m"])):
+            raise ValueError("support displacement contains non-finite values")
+        expected_spread = np.ptp(
+            arrays["support_surface_displacement_m"], axis=2
+        )
+        if not np.allclose(
+            arrays["support_surface_spread_m"],
+            expected_spread,
+            rtol=0.0,
+            atol=1.0e-7,
+        ):
+            raise ValueError("support spread is inconsistent with support cells")
+        if np.any(arrays["hazard_class_id"] == 1):
+            raise ValueError("Sink-focused dataset unexpectedly contains Slip labels")
+        first_per_foot = _first_true_per_foot(
+            arrays["deformable_sink_onset"]
+        )
+        if not np.array_equal(
+            arrays["first_deformable_sink_onset_sample_per_foot"],
+            first_per_foot,
+        ):
+            raise ValueError("per-foot deformable Sink onset scalar is inconsistent")
+        first_any = _first_true(np.any(arrays["deformable_sink_onset"], axis=1))
+        if int(arrays["first_deformable_sink_onset_sample"]) != (
+            -1 if first_any is None else first_any
+        ):
+            raise ValueError("deformable Sink onset scalar is inconsistent")
+        if np.any(arrays["deformable_sink_onset"] & ~arrays["deformable_sink_active"]):
+            raise ValueError("deformable Sink onset must be active")
+        _validate_deformable_labels(arrays)
+
+
+def _validate_deformable_labels(arrays: dict[str, np.ndarray]) -> None:
+    """Reconstruct v3 labels from d0/s1/contact episodes only."""
+    actual = arrays["hazard_class_id"]
+    if np.all(actual == -1):
+        return
+    eligible = arrays["sample_valid"] & arrays["pre_fall_valid"]
+    expected = np.full(len(actual), -1, dtype=np.int8)
+    expected[eligible] = 0
+    samples = np.arange(len(actual))
+    for side in range(2):
+        for onset_value in np.flatnonzero(
+            arrays["deformable_sink_onset"][:, side]
+        ):
+            onset = int(onset_value)
+            episode = int(arrays["contact_episode_id"][onset, side])
+            same_episode = arrays["contact_episode_id"][:, side] == episode
+            patch_episode = (
+                same_episode
+                & arrays["deformable_patch_episode_active"][:, side]
+            )
+            patch_samples = np.flatnonzero(patch_episode)
+            if episode < 0 or not patch_samples.size:
+                raise ValueError("deformable Sink onset has no causal d0 episode")
+            d0 = int(patch_samples[0])
+            if d0 > onset:
+                raise ValueError("deformable d0 occurs after s1")
+            expected[d0:onset] = -1
+            expected[same_episode & (samples >= onset) & eligible] = 2
+    if not np.array_equal(actual, expected):
+        raise ValueError("v3 labels disagree with the frozen d0/s1 policy")
 
 
 def write_run_npz(path: Path, arrays: dict[str, np.ndarray]) -> str:
@@ -655,6 +1079,33 @@ def _slip_foot_summary(diagnostics: object) -> str:
     return "none"
 
 
+def _mechanical_recovery_sample(
+    diagnostics: object,
+    side: str | None,
+    threshold_m: float,
+    persistence_samples: int,
+) -> int | None:
+    if side not in SIDES:
+        return None
+    side_index = SIDES.index(side)
+    patch_contact = diagnostics.soft_patch_contact[:, side_index]
+    contact_samples = np.flatnonzero(patch_contact)
+    if not contact_samples.size:
+        return None
+    start = int(contact_samples[-1]) + 1
+    displacement = np.max(
+        diagnostics.support_surface_displacement_m[:, side_index], axis=1
+    )
+    run_length = 0
+    for sample in range(start, len(displacement)):
+        if not diagnostics.pre_fall_valid[sample]:
+            break
+        run_length = run_length + 1 if displacement[sample] <= threshold_m else 0
+        if run_length >= persistence_samples:
+            return sample
+    return None
+
+
 def _manifest_row(
     spec: RunSpec,
     config: CollectionConfig,
@@ -675,24 +1126,64 @@ def _manifest_row(
     else:
         first_sink = _first_true(np.any(diagnostics.sink_physical_onset, axis=1))
     first_sink_hazard = _first_true(diagnostics.sink_hazard_onset)
+    first_deformable_sink = _first_true(
+        np.any(diagnostics.deformable_sink_onset, axis=1)
+    )
+    recovery_sample = _mechanical_recovery_sample(
+        diagnostics,
+        spec.sink_side,
+        config.recovery_threshold_m,
+        config.recovery_persistence_ms,
+    )
     first_censor = int(arrays["first_censor_sample"])
     has_slip = first_slip is not None
     has_sink = first_sink_hazard is not None
     has_dual = bool(has_slip and has_sink and first_slip < first_sink_hazard)
-    transition_censored_without_outcome = bool(
-        spec.patch_start_x_m is not None
-        and first_censor >= 0
-        and (
-            (spec.intended_role == "SLIP" and not has_slip)
-            or (spec.intended_role == "SINK" and not has_sink)
+    observability_schema = config.schema_version == "hazard_dataset_contract_v3"
+    if observability_schema:
+        first_patch = first_patch_sample
+        insufficient_evaluation = bool(
+            spec.sink_support_pattern.endswith("_deformable")
+            and first_deformable_sink is None
+            and first_censor >= 0
+            and (
+                first_patch is None
+                or first_censor - first_patch
+                < config.minimum_post_d0_evaluation_ms
+            )
         )
-    )
-    invalid = bool(
-        not np.all(arrays["sample_valid"])
-        or (first_censor >= 0 and first_censor < SENSOR_RATE_HZ)
-        or transition_censored_without_outcome
-    )
-    if invalid:
+        invalid = bool(
+            not np.all(arrays["sample_valid"])
+            or (first_censor >= 0 and first_censor < SENSOR_RATE_HZ)
+            or (
+                spec.sink_support_pattern.endswith("_deformable")
+                and first_patch is None
+            )
+            or insufficient_evaluation
+        )
+    else:
+        transition_censored_without_outcome = bool(
+            spec.patch_start_x_m is not None
+            and first_censor >= 0
+            and (
+                (spec.intended_role == "SLIP" and not has_slip)
+                or (spec.intended_role == "SINK" and not has_sink)
+            )
+        )
+        invalid = bool(
+            not np.all(arrays["sample_valid"])
+            or (first_censor >= 0 and first_censor < SENSOR_RATE_HZ)
+            or transition_censored_without_outcome
+        )
+    if observability_schema:
+        observed = (
+            "INVALID"
+            if invalid
+            else "SINK"
+            if first_deformable_sink is not None
+            else "BENIGN"
+        )
+    elif invalid:
         observed = "INVALID"
     elif has_dual:
         observed = "DUAL"
@@ -703,7 +1194,7 @@ def _manifest_row(
     else:
         observed = "BENIGN"
     assert observed in OUTCOMES
-    return {
+    row = {
         "run_id": spec.run_id,
         "file": file_name,
         "scenario_family": spec.scenario_family,
@@ -743,6 +1234,29 @@ def _manifest_row(
         "policy_sha256": result.metadata["policy_sha256"],
         "run_file_sha256": run_hash,
     }
+    if observability_schema:
+        row.update(
+            {
+                "sink_support_pattern": spec.sink_support_pattern,
+                "sink_pattern": (
+                    "uniform"
+                    if spec.sink_side is None
+                    else f"transition_{spec.sink_side}"
+                ),
+                "split": spec.split or "",
+                "condition_signature": _condition_signature(
+                    spec, config.patch_width_m
+                ),
+                "deformable_sink_onset_ms": _sample_time_ms(
+                    result, first_deformable_sink
+                ),
+                "mechanical_recovery_ms": _sample_time_ms(
+                    result, recovery_sample
+                ),
+                "has_deformable_sink": first_deformable_sink is not None,
+            }
+        )
+    return row
 
 
 def _simulation_config_for_run(
@@ -768,6 +1282,7 @@ def _simulation_config_for_run(
             if spec.sink_severity is None
             else spec.sink_severity
         ),
+        sink_support_pattern=spec.sink_support_pattern,
         patch_start_x_m=(
             base.patch_start_x_m
             if spec.patch_start_x_m is None
@@ -800,9 +1315,18 @@ def _git_source_commit(require_clean: bool) -> str:
     ).stdout.strip()
 
 
-def _write_manifest(path: Path, rows: list[dict[str, object]]) -> None:
+def _write_manifest(
+    path: Path,
+    rows: list[dict[str, object]],
+    schema_version: str = "hazard_dataset_contract_v1",
+) -> None:
+    fields = (
+        OBSERVABILITY_MANIFEST_FIELDS
+        if schema_version == "hazard_dataset_contract_v3"
+        else MANIFEST_FIELDS
+    )
     with path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=MANIFEST_FIELDS)
+        writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
 
@@ -813,7 +1337,11 @@ def _write_metadata(
     source_commit: str,
     manifest_sha256: str,
 ) -> None:
-    sensor_schema = config.schema_version == "hazard_dataset_contract_v2"
+    sensor_schema = config.schema_version in {
+        "hazard_dataset_contract_v2",
+        "hazard_dataset_contract_v3",
+    }
+    observability_schema = config.schema_version == "hazard_dataset_contract_v3"
     metadata = {
         "dataset_id": config.dataset_id,
         "schema_version": config.schema_version,
@@ -855,6 +1383,11 @@ def _write_metadata(
             "pelvis_imu",
             *(["foot_fsr"] if sensor_schema else []),
         ],
+        "model_input_fields": [
+            "pelvis_imu",
+            *(["foot_fsr"] if sensor_schema else []),
+        ],
+        "alignment_only_fields": ["sequence", "timestamp_us"],
         "diagnostic_fields_are_runtime_input": False,
         "manifest_sha256": manifest_sha256,
     }
@@ -871,10 +1404,32 @@ def _write_metadata(
             "sample_rate_hz": SENSOR_RATE_HZ,
             "construction": "summed_actual_sole_terrain_contact_normal_force_by_foot_local_quadrant",
         }
-        metadata["baseline_dataset"] = str(
-            config.baseline_dataset_path.relative_to(REPOSITORY_ROOT)
-        )
-        metadata["observer_only_common_field_parity"] = "bit_identical"
+        if config.baseline_dataset_path is not None:
+            metadata["baseline_dataset"] = str(
+                config.baseline_dataset_path.relative_to(REPOSITORY_ROOT)
+            )
+            metadata["observer_only_common_field_parity"] = "bit_identical"
+    if observability_schema:
+        assert config.split is not None
+        metadata["split_membership_frozen_before_simulation"] = True
+        metadata["split_run_ids"] = {
+            name: list(run_ids) for name, run_ids in config.split.items()
+        }
+        metadata["physical_condition_signatures"] = {
+            run.run_id: _condition_signature(run, config.patch_width_m)
+            for run in config.runs
+        }
+        metadata["sink_observability_label"] = {
+            "metric": "support_surface_spread_m",
+            "threshold_m": 0.010,
+            "persistence_ms": 20,
+            "positive_class_id": 2,
+            "d0_to_s1": "excluded_only_when_s1_occurs_in_same_episode",
+            "post_episode": "normal_reset",
+            "minimum_post_d0_evaluation_ms": (
+                config.minimum_post_d0_evaluation_ms
+            ),
+        }
     with path.open("w", encoding="utf-8") as stream:
         json.dump(metadata, stream, indent=2, sort_keys=True)
         stream.write("\n")
@@ -895,7 +1450,12 @@ def validate_dataset(path: Path) -> dict[str, object]:
         metadata = json.load(stream)
     with manifest_path.open("r", encoding="utf-8", newline="") as stream:
         reader = csv.DictReader(stream)
-        if tuple(reader.fieldnames or ()) != MANIFEST_FIELDS:
+        expected_manifest_fields = (
+            OBSERVABILITY_MANIFEST_FIELDS
+            if metadata.get("schema_version") == "hazard_dataset_contract_v3"
+            else MANIFEST_FIELDS
+        )
+        if tuple(reader.fieldnames or ()) != expected_manifest_fields:
             raise ValueError("manifest columns do not match the canonical schema")
         rows = list(reader)
     required_metadata = {
@@ -928,19 +1488,44 @@ def validate_dataset(path: Path) -> dict[str, object]:
     if metadata["schema_version"] not in {
         "hazard_dataset_contract_v1",
         "hazard_dataset_contract_v2",
+        "hazard_dataset_contract_v3",
     }:
         raise ValueError("metadata schema version is unsupported")
     if metadata["sample_rate_hz"] != 1000 or metadata["physics_rate_hz"] != 2000:
         raise ValueError("metadata sampling rates violate the simulator contract")
     if metadata["channel_order"] != list(IMU_CHANNELS):
         raise ValueError("metadata channel order violates the runtime contract")
-    sensor_schema = metadata["schema_version"] == "hazard_dataset_contract_v2"
+    sensor_schema = metadata["schema_version"] in {
+        "hazard_dataset_contract_v2",
+        "hazard_dataset_contract_v3",
+    }
+    observability_schema = metadata["schema_version"] == "hazard_dataset_contract_v3"
     if sensor_schema:
         foot_fsr = metadata.get("foot_fsr", {})
         if foot_fsr.get("channel_order") != list(FSR_CHANNELS):
             raise ValueError("metadata FSR channel order violates the runtime contract")
         if foot_fsr.get("unit") != FSR_UNIT:
             raise ValueError("metadata FSR unit violates the runtime contract")
+    if observability_schema:
+        required_v3_metadata = {
+            "split_membership_frozen_before_simulation",
+            "split_run_ids",
+            "physical_condition_signatures",
+            "sink_observability_label",
+            "model_input_fields",
+            "alignment_only_fields",
+        }
+        if not required_v3_metadata.issubset(metadata):
+            raise ValueError("v3 metadata is missing the observability contract")
+        if metadata["model_input_fields"] != ["pelvis_imu", "foot_fsr"]:
+            raise ValueError("v3 model inputs must contain runtime sensors only")
+        label = metadata["sink_observability_label"]
+        if not (
+            label.get("metric") == "support_surface_spread_m"
+            and label.get("threshold_m") == 0.010
+            and label.get("persistence_ms") == 20
+        ):
+            raise ValueError("v3 metadata changed the frozen Sink oracle")
     if not re.fullmatch(r"[0-9a-f]{40}", metadata["source_commit"]):
         raise ValueError("metadata source_commit is not a full Git SHA")
     if metadata["generator_version"] != metadata["source_commit"]:
@@ -952,6 +1537,31 @@ def validate_dataset(path: Path) -> dict[str, object]:
     run_ids = [row["run_id"] for row in rows]
     if len(set(run_ids)) != len(run_ids):
         raise ValueError("manifest contains duplicate run IDs")
+    if observability_schema:
+        split_ids = metadata["split_run_ids"]
+        assigned = [
+            run_id
+            for name in ("train", "validation", "holdout")
+            for run_id in split_ids.get(name, [])
+        ]
+        if len(assigned) != len(set(assigned)) or set(assigned) != set(run_ids):
+            raise ValueError("v3 metadata split is not disjoint and exhaustive")
+        split_lookup = {
+            run_id: name
+            for name in ("train", "validation", "holdout")
+            for run_id in split_ids[name]
+        }
+        signatures = metadata["physical_condition_signatures"]
+        if set(signatures) != set(run_ids) or len(set(signatures.values())) != len(
+            run_ids
+        ):
+            raise ValueError("v3 physical condition signatures are incomplete or duplicate")
+        for row in rows:
+            run_id = row["run_id"]
+            if row["split"] != split_lookup[run_id]:
+                raise ValueError(f"v3 manifest split mismatch: {run_id}")
+            if row["condition_signature"] != signatures[run_id]:
+                raise ValueError(f"v3 condition signature mismatch: {run_id}")
     declared_files = {row["file"] for row in rows}
     actual_files = {f"runs/{item.name}" for item in runs_path.glob("*.npz")}
     if declared_files != actual_files:
@@ -970,8 +1580,16 @@ def validate_dataset(path: Path) -> dict[str, object]:
             arrays = {name: stored[name] for name in stored.files}
         if sensor_schema != ("foot_fsr" in arrays):
             raise ValueError(f"run sensor schema mismatch: {row['run_id']}")
+        if observability_schema != ("support_surface_displacement_m" in arrays):
+            raise ValueError(f"run deformable schema mismatch: {row['run_id']}")
         expected_samples = int(row["sample_count"])
         validate_run_arrays(arrays, expected_samples)
+        if observability_schema:
+            s1 = int(arrays["first_deformable_sink_onset_sample"])
+            if row["observed_outcome"] == "SINK" and s1 < 0:
+                raise ValueError(f"SINK run has no observed s1: {row['run_id']}")
+            if row["observed_outcome"] == "BENIGN" and s1 >= 0:
+                raise ValueError(f"BENIGN run contains observed s1: {row['run_id']}")
         if int(row["valid_sample_count"]) != expected_samples:
             raise ValueError(f"valid sample count mismatch: {row['run_id']}")
         if int(row["drop_count"]) != 0:
@@ -1074,7 +1692,17 @@ def collect_dataset(
                 result,
                 intended_role=spec.intended_role,
                 include_foot_fsr=(
-                    config.schema_version == "hazard_dataset_contract_v2"
+                    config.schema_version
+                    in {
+                        "hazard_dataset_contract_v2",
+                        "hazard_dataset_contract_v3",
+                    }
+                ),
+                include_deformable_support=(
+                    config.schema_version == "hazard_dataset_contract_v3"
+                ),
+                minimum_post_d0_evaluation_ms=(
+                    config.minimum_post_d0_evaluation_ms
                 ),
             )
             if config.baseline_dataset_path is not None:
@@ -1096,7 +1724,7 @@ def collect_dataset(
                 )
             )
         manifest_path = temporary_path / "manifest.csv"
-        _write_manifest(manifest_path, rows)
+        _write_manifest(manifest_path, rows, config.schema_version)
         _write_metadata(
             temporary_path / "metadata.json",
             config,

@@ -227,14 +227,37 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
-        if experiment_id == "FSR_OBSERVABILITY_PILOT":
+        if experiment_id in {
+            "FSR_OBSERVABILITY_PILOT",
+            "SINK_SENSOR_OBSERVABILITY_STUDY",
+        }:
             from fastreflex.training.sensor_ablation import (
                 run_fsr_observability_pilot,
+                run_sink_sensor_observability_study,
             )
 
-            output_path, metrics = run_fsr_observability_pilot(
-                args.config, REPOSITORY_ROOT
+            runner = (
+                run_fsr_observability_pilot
+                if experiment_id == "FSR_OBSERVABILITY_PILOT"
+                else run_sink_sensor_observability_study
             )
+            output_path, metrics = runner(args.config, REPOSITORY_ROOT)
+            if experiment_id == "SINK_SENSOR_OBSERVABILITY_STUDY":
+                print(
+                    json.dumps(
+                        {
+                            "output_path": str(output_path),
+                            "selected": metrics["selection"]["candidate_id"],
+                            "verdict": metrics["verdict"],
+                            "holdout_macro_f1": metrics["holdout"]["metrics"][
+                                "macro_f1"
+                            ],
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
             print(
                 json.dumps(
                     {

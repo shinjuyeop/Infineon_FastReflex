@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import copy
 import json
 from pathlib import Path
 import subprocess
@@ -9,9 +10,11 @@ import unittest
 from unittest import mock
 
 import numpy as np
+import yaml
 
 from fastreflex.dataset.collector import (
     MANIFEST_FIELDS,
+    OBSERVABILITY_MANIFEST_FIELDS,
     REPOSITORY_ROOT,
     _write_manifest,
     _write_metadata,
@@ -49,6 +52,12 @@ FSR_EXPERIMENT_CONFIG = (
     / "experiment"
     / "20260827_fsr_observability_pilot.yaml"
 )
+SINK_OBSERVABILITY_CONFIG = (
+    REPOSITORY_ROOT
+    / "configs"
+    / "experiment"
+    / "20260827_sink_sensor_observability_study.yaml"
+)
 
 
 def synthetic_result(kind: str) -> SimulationResult:
@@ -67,6 +76,10 @@ def synthetic_result(kind: str) -> SimulationResult:
     fall_active = np.zeros(samples, dtype=bool)
     soft_patch_contact = np.zeros((samples, 2), dtype=bool)
     low_friction_patch_contact = np.zeros((samples, 2), dtype=bool)
+    support_displacement = np.zeros((samples, 2, 4))
+    support_velocity = np.zeros((samples, 2, 4))
+    support_cell_contact = np.zeros((samples, 2, 4), dtype=bool)
+    support_pattern = "balanced_soft"
     if kind == "slip":
         low_friction_patch_contact[10:, 0] = True
         xyz[12:, 0, 0] = SLIP_THRESHOLD_M
@@ -76,6 +89,13 @@ def synthetic_result(kind: str) -> SimulationResult:
         tilt = SINK_HAZARD_TILT_THRESHOLD_RAD + 0.01
         orientation[42:, 0] = np.cos(tilt / 2.0)
         orientation[42:, 1] = np.sin(tilt / 2.0)
+    elif kind in {"deformable_sink", "deformable_no_sink"}:
+        support_pattern = "medial_deformable"
+        soft_patch_contact[10:60, 0] = True
+        support_cell_contact[10:60, 0] = True
+        contact[60:65, 0] = False
+        spread = 0.011 if kind == "deformable_sink" else 0.009
+        support_displacement[20:60, 0, 0] = spread
     else:
         raise ValueError(kind)
     diagnostics = derive_physical_diagnostics(
@@ -93,6 +113,9 @@ def synthetic_result(kind: str) -> SimulationResult:
         fall_active,
         soft_patch_contact=soft_patch_contact,
         low_friction_patch_contact=low_friction_patch_contact,
+        support_surface_displacement_m=support_displacement,
+        support_surface_vertical_velocity_m_s=support_velocity,
+        support_surface_cell_contact=support_cell_contact,
     )
     runtime = RuntimeTrace(
         sequence=np.arange(samples, dtype=np.int64),
@@ -108,6 +131,7 @@ def synthetic_result(kind: str) -> SimulationResult:
             "first_fall_reasons": (),
             "dropped_samples": 0,
             "policy_sha256": TESTED_POLICY_SHA256,
+            "sink_support_pattern": support_pattern,
         },
     )
 
@@ -145,6 +169,41 @@ class DatasetTest(unittest.TestCase):
             tuple(run.run_id for run in sensor_config.runs),
             tuple(run.run_id for run in config.runs),
         )
+
+    def test_sink_observability_matrix_is_deterministic_and_frozen(self) -> None:
+        first = load_collection_config(SINK_OBSERVABILITY_CONFIG)
+        second = load_collection_config(SINK_OBSERVABILITY_CONFIG)
+        self.assertEqual(first.runs, second.runs)
+        self.assertEqual(len(first.runs), 126)
+        self.assertEqual(
+            {name: len(run_ids) for name, run_ids in first.split.items()},
+            {"train": 76, "validation": 25, "holdout": 25},
+        )
+        self.assertEqual(sum(run.patch_start_x_m is None for run in first.runs), 18)
+        self.assertEqual(
+            sum(run.sink_support_pattern == "balanced_deformable" for run in first.runs),
+            42,
+        )
+
+    def test_sink_observability_duplicate_condition_is_rejected(self) -> None:
+        document = yaml.safe_load(SINK_OBSERVABILITY_CONFIG.read_text())
+        duplicate = copy.deepcopy(document["runs"][0])
+        duplicate["run_id"] = document["runs"][1]["run_id"]
+        document["runs"][1] = duplicate
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matrix.yaml"
+            path.write_text(yaml.safe_dump(document), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate physical condition"):
+                load_collection_config(path)
+
+    def test_sink_observability_split_overlap_is_rejected(self) -> None:
+        document = yaml.safe_load(SINK_OBSERVABILITY_CONFIG.read_text())
+        document["split"]["validation"].append(document["split"]["train"][0])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matrix.yaml"
+            path.write_text(yaml.safe_dump(document), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "cover every run exactly once"):
+                load_collection_config(path)
 
     def test_npz_round_trip_dtype_shape_and_sha_reproducibility(self) -> None:
         arrays = build_run_arrays(synthetic_result("slip"))
@@ -210,6 +269,37 @@ class DatasetTest(unittest.TestCase):
         self.assertTrue(np.all(arrays["hazard_class_id"][sink_t2:] == 2))
         self.assertFalse(arrays["training_eligible"][sink_t1:sink_t2].any())
 
+    def test_deformable_s1_labels_exclude_d0_to_s1_and_reset(self) -> None:
+        arrays = build_run_arrays(
+            synthetic_result("deformable_sink"),
+            include_foot_fsr=True,
+            include_deformable_support=True,
+            minimum_post_d0_evaluation_ms=500,
+        )
+        validate_run_arrays(arrays, 80)
+        self.assertEqual(int(arrays["first_deformable_sink_onset_sample"]), 39)
+        np.testing.assert_array_equal(arrays["hazard_class_id"][:10], 0)
+        np.testing.assert_array_equal(arrays["hazard_class_id"][10:39], -1)
+        np.testing.assert_array_equal(arrays["hazard_class_id"][39:60], 2)
+        np.testing.assert_array_equal(arrays["hazard_class_id"][60:], 0)
+        self.assertEqual(arrays["pelvis_imu"].shape, (80, 6))
+        self.assertEqual(arrays["foot_fsr"].shape, (80, 8))
+        self.assertEqual(
+            set(arrays) & {"pelvis_imu", "foot_fsr"},
+            {"pelvis_imu", "foot_fsr"},
+        )
+
+    def test_deformable_no_s1_uneven_run_remains_benign(self) -> None:
+        arrays = build_run_arrays(
+            synthetic_result("deformable_no_sink"),
+            include_foot_fsr=True,
+            include_deformable_support=True,
+            minimum_post_d0_evaluation_ms=500,
+        )
+        validate_run_arrays(arrays, 80)
+        self.assertEqual(int(arrays["first_deformable_sink_onset_sample"]), -1)
+        np.testing.assert_array_equal(arrays["hazard_class_id"], 0)
+
     def test_invalid_runtime_fails_closed(self) -> None:
         arrays = build_run_arrays(synthetic_result("slip"))
         invalid = {name: value.copy() for name, value in arrays.items()}
@@ -239,6 +329,38 @@ class DatasetTest(unittest.TestCase):
             self.assertEqual(parsed_metadata["dataset_id"], config.dataset_id)
             self.assertEqual(parsed_metadata["source_commit"], "a" * 40)
             self.assertFalse(parsed_metadata["diagnostic_fields_are_runtime_input"])
+
+        observability_config = load_collection_config(SINK_OBSERVABILITY_CONFIG)
+        observability_row = {field: "" for field in OBSERVABILITY_MANIFEST_FIELDS}
+        observability_row.update(
+            run_id="train_rigid_concrete_s012",
+            file="runs/train_rigid_concrete_s012.npz",
+            observed_outcome="BENIGN",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.csv"
+            metadata = root / "metadata.json"
+            _write_manifest(
+                manifest,
+                [observability_row],
+                "hazard_dataset_contract_v3",
+            )
+            _write_metadata(
+                metadata,
+                observability_config,
+                "a" * 40,
+                sha256_file(manifest),
+            )
+            parsed_metadata = json.loads(metadata.read_text(encoding="utf-8"))
+            self.assertEqual(
+                parsed_metadata["model_input_fields"],
+                ["pelvis_imu", "foot_fsr"],
+            )
+            self.assertNotIn(
+                "support_surface_spread_m",
+                parsed_metadata["model_input_fields"],
+            )
 
     def test_existing_output_fails_without_overwrite(self) -> None:
         config = load_collection_config(EXPERIMENT_CONFIG)

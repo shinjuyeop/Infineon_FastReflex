@@ -28,6 +28,10 @@ class ManifestRecord:
     speed_mps: float
     patch_start_x: float | None
     sink_side: str | None
+    sink_severity: str | None = None
+    sink_support_pattern: str | None = None
+    sink_pattern: str | None = None
+    split: str | None = None
 
 
 @dataclass(frozen=True)
@@ -109,6 +113,10 @@ def load_manifest(dataset_path: Path) -> dict[str, ManifestRecord]:
                     None if not row["patch_start_x"] else float(row["patch_start_x"])
                 ),
                 sink_side=row["sink_side"] or None,
+                sink_severity=row.get("sink_severity") or None,
+                sink_support_pattern=row.get("sink_support_pattern") or None,
+                sink_pattern=row.get("sink_pattern") or None,
+                split=row.get("split") or None,
             )
     return records
 

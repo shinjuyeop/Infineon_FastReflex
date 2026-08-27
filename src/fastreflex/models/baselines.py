@@ -9,7 +9,12 @@ from torch import nn
 class MLPBaseline(nn.Module):
     """Flattened causal window followed by two small hidden layers."""
 
-    def __init__(self, window_samples: int, input_channels: int = 6) -> None:
+    def __init__(
+        self,
+        window_samples: int,
+        input_channels: int = 6,
+        class_count: int = 3,
+    ) -> None:
         super().__init__()
         self.network = nn.Sequential(
             nn.Flatten(),
@@ -17,7 +22,7 @@ class MLPBaseline(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
-            nn.Linear(32, 3),
+            nn.Linear(32, class_count),
         )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
@@ -27,7 +32,7 @@ class MLPBaseline(nn.Module):
 class GRUBaseline(nn.Module):
     """One-layer unidirectional GRU over raw causal IMU samples."""
 
-    def __init__(self, input_channels: int = 6) -> None:
+    def __init__(self, input_channels: int = 6, class_count: int = 3) -> None:
         super().__init__()
         self.gru = nn.GRU(
             input_size=input_channels,
@@ -37,7 +42,7 @@ class GRUBaseline(nn.Module):
             bidirectional=False,
             dropout=0.0,
         )
-        self.classifier = nn.Linear(32, 3)
+        self.classifier = nn.Linear(32, class_count)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         _, hidden = self.gru(inputs)
@@ -45,12 +50,15 @@ class GRUBaseline(nn.Module):
 
 
 def build_model(
-    family: str, window_samples: int, input_channels: int = 6
+    family: str,
+    window_samples: int,
+    input_channels: int = 6,
+    class_count: int = 3,
 ) -> nn.Module:
     if family == "mlp":
-        return MLPBaseline(window_samples, input_channels)
+        return MLPBaseline(window_samples, input_channels, class_count)
     if family == "gru":
-        return GRUBaseline(input_channels)
+        return GRUBaseline(input_channels, class_count)
     raise ValueError(f"unsupported model family: {family}")
 
 

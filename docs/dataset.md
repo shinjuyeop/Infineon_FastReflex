@@ -2,7 +2,7 @@
 
 ## 상태와 범위
 
-`hazard_dataset_contract_v1`은 historical IMU6 Pilot schema와 frozen raw annotation을 보존한다. `hazard_dataset_contract_v2`는 이를 폐기하거나 label을 바꾸지 않고 candidate `foot_fsr` runtime field와 sensor validity만 확장한다. 기존 `hazard_pilot_20260827`은 read-only이며, 별도 `hazard_sensor_pilot_20260827`이 같은 40 conditions를 담는다.
+`hazard_dataset_contract_v1`은 historical IMU6 Pilot schema와 frozen raw annotation을 보존한다. `hazard_dataset_contract_v2`는 이를 폐기하거나 label을 바꾸지 않고 candidate `foot_fsr` runtime field와 sensor validity만 확장한다. `hazard_dataset_contract_v3`는 Sink-focused observability dataset에 frozen deformable-support s1 진단과 명시적인 run split을 추가한다. v3는 기존 outcome-based Sink history나 v1/v2 dataset을 소급 relabel하지 않는다. 기존 `hazard_pilot_20260827`과 `hazard_sensor_pilot_20260827`은 read-only다.
 
 Primary task는 하나의 3-class classification이다.
 
@@ -16,7 +16,7 @@ Terrain, scenario, contact, exact simulator state와 physical oracle은 label/di
 
 Transition study에서 `SINK_HAZARD_CRITERIA_FROZEN`을 확정했다. Contact penetration만 존재하고 자세와 보행이 안정적인 상태는 primary `SINK`가 아니다. 아래 `sink_physical_active`는 원인 측 precursor diagnostic이며 class label과 동치가 아니다. Frozen effect gate는 patch-linked physical sink 뒤 pelvis tilt가 benign-control envelope를 넘는지를 사용한다. 이 정의와 기존 Pilot raw annotation은 historical contract로 불변이다.
 
-후속 bounded sanity는 passive support joint의 실제 vertical displacement spread를 outcome-independent `UNEVEN_SUPPORT_SINK` physical clock 후보로 검증했다. 이는 향후 observability study에만 적용하며 기존 Pilot을 소급 relabel하지 않는다. 새 clock을 materialize하려면 dataset schema/provenance를 명시적으로 revision해야 한다.
+후속 bounded sanity는 passive support joint의 실제 vertical displacement spread를 outcome-independent `UNEVEN_SUPPORT_SINK` physical clock으로 검증했다. 이 clock은 v3 Sink observability study에만 materialize하며 기존 Pilot을 소급 relabel하지 않는다.
 
 ## Runtime sensor contract
 
@@ -46,7 +46,7 @@ Historical v1 한 sample의 model input은 pelvis에 부착된 IMU 6축이다. �
 
 ### Candidate bilateral virtual FSR
 
-V2 sensor-capable run은 `foot_fsr [N,8] float32`, unit Newton, 1 kHz를 추가한다. Channel order는 다음과 같이 고정한다.
+V2와 v3 sensor-capable run은 `foot_fsr [N,8] float32`, unit Newton, 1 kHz를 추가한다. Channel order는 다음과 같이 고정한다.
 
 | Index | Channel | Foot-local region |
 |---:|---|---|
@@ -118,9 +118,11 @@ Dataset의 authoritative source는 미리 잘린 window가 아니라 simulation 
 - `pre_fall_valid`와 first-fall/censor marker
 - 필요 시 exact root/foot pose와 velocity. 이는 항상 diagnostic-only로 표시한다.
 
-Deformable-support future study는 기존 Pilot NPZ에 없는 simulator-only `support_surface_displacement_m [N,2,4]`, velocity, cell contact, spread와 s1 onset을 추가할 수 있다. 이 배열은 raw IMU/FSR runtime input이 아니며 기존 schema에 조용히 추가하지 않는다.
+V3는 기존 Pilot NPZ에 없는 simulator-only `contact_episode_id [N,2]`, `support_surface_displacement_m [N,2,4]`, cell velocity/contact, `support_surface_spread_m [N,2]`, deformable-patch episode state와 s1 active/onset을 추가한다. 이 배열은 label/alignment/diagnostic 전용이며 raw IMU/FSR model input이 아니다. V3 model input profile은 오직 `imu6`, `fsr8`, `fusion14=[pelvis_imu, foot_fsr]` 중 하나다. Sequence와 timestamp는 alignment 전용이고 terrain, run ID, side/pattern, contact, d0/s1, fall/censor와 old t2를 input tensor에 넣지 않는다.
 
-`hazard_class_id=-1`은 primary class가 아니라 `EXCLUDED/UNRESOLVED` sentinel로 예약한다. Pilot에서는 qualifying Slip run의 `[t0,t1)`, hazardous Sink run의 `[t0,t2)`, censor 이후, invalid/dual run 전체를 `-1`과 `training_eligible=false`로 보존한다. Slip은 t1부터 class 1, Sink는 frozen t2부터 class 2를 기록한다. 이는 raw-state annotation이며 최종 window policy가 아니다.
+`hazard_class_id=-1`은 primary class가 아니라 `EXCLUDED/UNRESOLVED` sentinel로 예약한다. V1/v2 Pilot에서는 qualifying Slip run의 `[t0,t1)`, hazardous Sink run의 `[t0,t2)`, censor 이후, invalid/dual run 전체를 `-1`과 `training_eligible=false`로 보존한다. Slip은 t1부터 class 1, historical Sink는 frozen t2부터 class 2를 기록한다.
+
+V3 Sink observability run은 별도 frozen policy를 쓴다. Observed s1이 있는 run은 pre-d0를 `NORMAL`, `[d0,s1)`을 `-1`, 같은 contact episode의 s1부터 episode 종료 전까지를 `SINK`로 기록하고 이후 `NORMAL`로 reset한다. 유효하지만 s1이 없는 uneven/balanced/rigid run은 scenario 이름과 무관하게 `BENIGN`이며 eligible pre-censor sample은 `NORMAL`이다. Meaningful evaluation 전에 censor되거나 runtime이 손상된 run만 `INVALID`다.
 
 ### Run metadata
 
@@ -213,17 +215,17 @@ Hazardous episode의 future early-detection reference 후보는 결과가 이미
 
 `SINK_HAZARD_CRITERIA_FROZEN`
 
-### Future deformable-support `SINK` proxy
+### V3 deformable-support `SINK` physical clock
 
-`SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY`는 기존 outcome-based contract를 삭제하지 않는 future-study candidate다. Passive vertical slide support의 per-side cell 순서 `[entry_medial, entry_lateral, exit_medial, exit_lateral]`에서 positive-downward displacement `d`를 읽고 다음 metric을 사용한다.
+`SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY`는 기존 outcome-based contract를 삭제하지 않는 v3 study ground truth다. Passive vertical slide support의 per-side cell 순서 `[entry_medial, entry_lateral, exit_medial, exit_lateral]`에서 positive-downward displacement `d`를 읽고 다음 metric을 사용한다.
 
 ```text
 support_surface_spread_m = max(d) - min(d)
 ```
 
-Candidate s1은 같은 foot의 deformable-patch physical contact episode에서 patch contact를 이미 보았고 foot이 loaded/pre-censor인 동안 spread `>= 0.010 m`가 1 kHz에서 20 consecutive samples 지속된 첫 active sample이다. 일부 cell이 unload되어도 그 cell joint displacement를 metric에서 제거하지 않는다. Foot episode 종료/변경 또는 censor에서 persistence를 reset한다.
+s1은 같은 foot의 deformable-patch physical contact episode에서 patch contact를 이미 보았고 foot이 loaded/pre-censor인 동안 spread `>= 0.010 m`가 1 kHz에서 20 consecutive samples 지속된 첫 active sample이다. d0는 그 causal deformable-patch contact episode의 첫 physical patch contact다. 일부 cell이 unload되어도 그 cell joint displacement를 metric에서 제거하지 않는다. Foot episode 종료/변경 또는 censor에서 persistence를 reset한다. Threshold, persistence, severity/speed/side별 변형과 FSR/IMU/fall/old-t2 기반 relabel은 금지한다.
 
-이 clock은 future t2/fall/recovery, pelvis tilt, IMU, FSR, robot joint state와 terrain identity를 사용하지 않는다. Balanced support는 네 geom이 하나의 joint를 공유하므로 level displacement는 `BENIGN_SOFT`, 독립 cell이 공간적으로 비균일하게 내려가 criterion을 만족하면 `UNEVEN_SUPPORT_SINK`다. Fall, recovery와 posture degradation은 outcome diagnostic only다.
+이 clock은 future t2/fall/recovery, pelvis tilt, IMU, FSR, robot joint state와 terrain identity를 사용하지 않는다. Balanced support는 네 geom이 하나의 joint를 공유하므로 level displacement는 `BENIGN_SOFT`, 독립 cell이 공간적으로 비균일하게 내려가 criterion을 만족하면 `UNEVEN_SUPPORT_SINK`다. Fall, recovery와 posture degradation은 outcome diagnostic only다. V3 run-level outcome은 s1 발생 시 `SINK`, 유효한 no-s1 run은 `BENIGN`, meaningful evaluation 전 censor/corruption은 `INVALID`다.
 
 이 구현은 granular soil이나 measured soil mechanics가 아닌 deformable-support engineering proxy다. 32-run sanity에서 rigid/balanced benign firing 0/14, primary moderate uneven detection 11/12와 fall/non-fall diversity를 확인했지만 runtime sensor separability나 hardware validity를 뜻하지 않는다. 근거는 [`20260827_sink_deformable_support_proxy_sanity.md`](../reports/20260827_sink_deformable_support_proxy_sanity.md)에 둔다.
 
@@ -268,7 +270,7 @@ Window random split은 금지한다. 같은 source run의 sample/window는 반�
 
 - `TRAIN`: model parameter와 train-only normalization fitting
 - `VALIDATION`: architecture, window와 hyperparameter 선택
-- `TEST`: 선택이 끝난 frozen model의 최종 평가. Model 선택에 사용하지 않는다.
+- `HOLDOUT`/`TEST`: 선택이 끝난 frozen protocol의 one-shot 최종 평가. Model 선택에 사용하지 않는다.
 
 최소 기준은 run-disjoint다. 가능하면 seed group, variation group, scenario realization, initial gait phase도 validation/test 사이에서 분리한다. 일부 scenario combination 전체를 held out하는 generalization split을 별도로 둘 수 있다. 권장 시작 비율은 coverage가 허용할 때 run 기준 70/15/15지만, 실제 비율과 run count는 pilot 결과 뒤 config revision에서 고정한다.
 

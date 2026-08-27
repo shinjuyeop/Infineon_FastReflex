@@ -25,6 +25,10 @@ from fastreflex.training.trainer import (
     save_checkpoint,
     train_model,
 )
+from fastreflex.training.sensor_ablation import (
+    BINARY_CLASS_NAMES,
+    _assert_holdout_waveforms_sealed,
+)
 
 
 def write_run(
@@ -198,6 +202,39 @@ class TrainingTest(unittest.TestCase):
         self.assertEqual(tuple(gru(inputs).shape), (4, 3))
         self.assertEqual(parameter_count(mlp), 21_443)
         self.assertEqual(parameter_count(gru), 3_939)
+        binary = build_model("mlp", 50, input_channels=14, class_count=2)
+        self.assertEqual(tuple(binary(torch.zeros(4, 50, 14)).shape), (4, 2))
+
+    def test_holdout_waveforms_are_guarded_until_selection(self) -> None:
+        _assert_holdout_waveforms_sealed(("train", "validation"), ("holdout",), False)
+        with self.assertRaisesRegex(RuntimeError, "before selection"):
+            _assert_holdout_waveforms_sealed(("holdout",), ("holdout",), False)
+        _assert_holdout_waveforms_sealed(("holdout",), ("holdout",), True)
+
+    def test_binary_metrics_and_training_protocol(self) -> None:
+        targets = np.tile(np.arange(2), 6)
+        inputs = np.random.default_rng(5).normal(size=(12, 5, 14)).astype(np.float32)
+        inputs += targets[:, None, None]
+        windows = window_set(inputs, targets)
+        model, _ = train_model(
+            "mlp",
+            5,
+            windows,
+            windows,
+            7,
+            batch_size=4,
+            max_epochs=2,
+            patience=1,
+            class_names=BINARY_CLASS_NAMES,
+        )
+        metrics = classification_metrics(
+            targets,
+            predict_model(model, windows),
+            windows.run_ids,
+            BINARY_CLASS_NAMES,
+        )
+        self.assertEqual(tuple(metrics["per_class"]), BINARY_CLASS_NAMES)
+        self.assertIn("run_balanced_macro_f1", metrics)
 
     def test_training_smoke_is_deterministic(self) -> None:
         rng = np.random.default_rng(7)

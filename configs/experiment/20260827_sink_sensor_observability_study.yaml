@@ -1,0 +1,385 @@
+experiment:
+  id: SINK_SENSOR_OBSERVABILITY_STUDY
+  date: 2026-08-27
+  dataset_id: sink_observability_20260827
+  schema_version: hazard_dataset_contract_v3
+  purpose: compare causal runtime-sensor observability of frozen deformable-support Sink s1
+
+source:
+  starting_commit: fcad8f2eafd84d74d57c5ad87bd7479c97026b65
+  simulator_config: configs/simulator/g1.yaml
+  dataset_config: configs/dataset/hazard.yaml
+  require_clean_worktree: true
+
+output:
+  root: data/raw
+  fail_if_exists: true
+  storage_format: npz_per_complete_run
+
+common:
+  duration_s: 8.0
+  patch_width_m: 0.75
+  headless: true
+  simulator_deterministic: true
+  random_seed: null
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+
+mechanics:
+  status: frozen_before_observability_dataset
+  travel_mm: {reference: 4, mild: 20, moderate: 40, severe: 65}
+  stiffness_n_per_m: {reference: 50000, mild: 12000, moderate: 7000, severe: 4500}
+  damping_n_s_per_m: {reference: 1000, mild: 490, moderate: 374, severe: 300}
+  tuning_after_results: prohibited
+
+labeling:
+  physical_metric: support_surface_spread_m
+  spread_threshold_m: 0.010
+  persistence_ms: 20
+  d0: deformable_support_first_physical_contact
+  s1: first_sustained_deformable_sink_active_sample
+  positive_class_id: 2
+  positive_pre_d0: normal
+  positive_d0_to_s1: excluded
+  positive_s1_to_contact_episode_end: sink
+  post_episode: normal_reset
+  no_s1_valid_run: benign
+  minimum_post_d0_evaluation_ms: 500
+  recovery_threshold_m: 0.001
+  recovery_persistence_ms: 20
+  future_outcome_dependency: false
+  fsr_or_imu_dependency: false
+
+sensor:
+  profiles: [imu6, fsr8, fusion14]
+  primary_development_candidate: fusion14
+  final_architecture_frozen: false
+  fusion14_order: [pelvis_imu, foot_fsr]
+
+windowing:
+  primary_ms: 100
+  secondary_diagnostic_ms: 50
+  stride_ms: 10
+  train_max_windows_per_run_class: 200
+  require_same_class_and_eligible: true
+
+models: [mlp, gru]
+
+training:
+  class_names: [NORMAL, SINK]
+  class_weighting: inverse_train_window_frequency
+  optimizer: adam
+  learning_rate: 0.001
+  batch_size: 128
+  max_epochs: 40
+  early_stopping_patience: 6
+  seeds: [20260827, 20260828, 20260829]
+  normalization: per_channel_zscore_train_only
+  deterministic: true
+
+selection:
+  primary: validation_run_balanced_macro_f1
+  secondary: minimum_validation_class_recall
+  near_tie_run_balanced_macro_f1: 0.005
+  holdout_access: once_after_sensor_and_model_selection
+
+replay:
+  stride_ms: 1
+  sustained_ms: 10
+  horizons_ms: [0, 20, 50, 100]
+  decision: argmax
+  future_samples: prohibited
+
+raw_sanity:
+  allowed_splits: [train, validation]
+  horizons_ms: [-100, -50, -20, 0, 20, 50, 100]
+  handcrafted_feature_mining: false
+
+readiness:
+  minimum_sink_runs: 30
+  minimum_benign_runs: 40
+  minimum_sink_per_side: 10
+  minimum_sink_per_pattern: 8
+
+acceptance:
+  holdout:
+    macro_f1_min: 0.80
+    sink_recall_min: 0.80
+    normal_recall_min: 0.90
+    recall_s1_plus_100_min: 0.80
+    median_latency_max_ms: 100
+    benign_fp_run_rate_max: 0.15
+    balanced_fp_run_rate_max: 0.15
+    side_recall_min: 0.70
+    pattern_recall_min: 0.50
+  promising:
+    macro_f1_min: 0.65
+    recall_s1_plus_100_min: 0.50
+  relaxation_after_results: prohibited
+
+artifacts:
+  path: artifacts/runs/20260827_sink_sensor_observability_study
+  gitignored: true
+  committed: false
+
+report:
+  path: reports/20260827_sink_sensor_observability_study.md
+
+runs:
+  - {run_id: train_rigid_concrete_s012, split: train, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.12, sink_support_pattern: balanced_soft}
+  - {run_id: train_rigid_concrete_s018, split: train, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.18, sink_support_pattern: balanced_soft}
+  - {run_id: train_rigid_concrete_s024, split: train, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.24, sink_support_pattern: balanced_soft}
+  - {run_id: train_rigid_marble_s012, split: train, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.12, sink_support_pattern: balanced_soft}
+  - {run_id: train_rigid_marble_s018, split: train, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.18, sink_support_pattern: balanced_soft}
+  - {run_id: train_rigid_marble_s024, split: train, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.24, sink_support_pattern: balanced_soft}
+  - {run_id: train_rigid_sand_s012, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, sink_support_pattern: balanced_soft}
+  - {run_id: train_rigid_sand_s018, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, sink_support_pattern: balanced_soft}
+  - {run_id: train_rigid_sand_s024, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.24, sink_support_pattern: balanced_soft}
+  - {run_id: validation_rigid_concrete_s015, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.15, sink_support_pattern: balanced_soft}
+  - {run_id: validation_rigid_marble_s027, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.27, sink_support_pattern: balanced_soft}
+  - {run_id: validation_rigid_sand_s015, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, sink_support_pattern: balanced_soft}
+  - {run_id: holdout_rigid_concrete_s021, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.21, sink_support_pattern: balanced_soft}
+  - {run_id: holdout_rigid_concrete_s030, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: concrete, speed_mps: 0.30, sink_support_pattern: balanced_soft}
+  - {run_id: holdout_rigid_marble_s021, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.21, sink_support_pattern: balanced_soft}
+  - {run_id: holdout_rigid_marble_s030, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: marble, speed_mps: 0.30, sink_support_pattern: balanced_soft}
+  - {run_id: holdout_rigid_sand_s021, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.21, sink_support_pattern: balanced_soft}
+  - {run_id: holdout_rigid_sand_s030, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.30, sink_support_pattern: balanced_soft}
+  - {run_id: train_balanced_mild_left_s012_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_mild_right_s012_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_moderate_left_s012_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_moderate_right_s012_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_severe_left_s012_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_severe_right_s012_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_mild_left_s012_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: left, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_mild_right_s012_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: right, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_moderate_left_s012_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: left, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_moderate_right_s012_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: right, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_severe_left_s012_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: left, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_severe_right_s012_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: right, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_mild_left_s018_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: left, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_mild_right_s018_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: right, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_moderate_left_s018_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: left, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_moderate_right_s018_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: right, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_severe_left_s018_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: left, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_severe_right_s018_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: right, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_mild_left_s018_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: left, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_mild_right_s018_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: right, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_moderate_left_s018_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: left, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_moderate_right_s018_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: right, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_severe_left_s018_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: left, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_severe_right_s018_p038, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: right, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_mild_left_s024_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.24, patch_start_x: 0.30, sink_side: left, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: train_balanced_mild_right_s024_p030, split: train, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.24, patch_start_x: 0.30, sink_side: right, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: validation_balanced_mild_left_s015_p034, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: left, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: validation_balanced_mild_right_s015_p034, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: right, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: validation_balanced_moderate_left_s015_p034, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: left, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: validation_balanced_moderate_right_s015_p034, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: right, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: validation_balanced_severe_left_s015_p034, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: left, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: validation_balanced_severe_right_s015_p034, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: right, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: validation_balanced_mild_left_s015_p042, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.42, sink_side: left, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: validation_balanced_mild_right_s015_p042, split: validation, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.15, patch_start_x: 0.42, sink_side: right, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: holdout_balanced_mild_left_s021_p032, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: left, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: holdout_balanced_mild_right_s021_p032, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: right, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: holdout_balanced_moderate_left_s021_p032, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: left, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: holdout_balanced_moderate_right_s021_p032, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: right, sink_severity: moderate, sink_support_pattern: balanced_deformable}
+  - {run_id: holdout_balanced_severe_left_s021_p032, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: left, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: holdout_balanced_severe_right_s021_p032, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: right, sink_severity: severe, sink_support_pattern: balanced_deformable}
+  - {run_id: holdout_balanced_mild_left_s021_p040, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.21, patch_start_x: 0.40, sink_side: left, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: holdout_balanced_mild_right_s021_p040, split: holdout, scenario_family: normal, intended_role: NORMAL, terrain: sand, speed_mps: 0.21, patch_start_x: 0.40, sink_side: right, sink_severity: mild, sink_support_pattern: balanced_deformable}
+  - {run_id: train_moderate_medial_left_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: train_moderate_medial_right_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: train_moderate_lateral_left_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: train_moderate_lateral_right_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: train_moderate_localized_left_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: train_moderate_localized_right_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: train_moderate_medial_left_s012_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: left, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: train_moderate_medial_right_s012_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: right, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: train_moderate_lateral_left_s012_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: left, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: train_moderate_lateral_right_s012_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: right, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: train_moderate_localized_left_s012_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: left, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: train_moderate_localized_right_s012_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: right, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: train_moderate_medial_left_s018_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: left, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: train_moderate_medial_right_s018_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: right, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: train_moderate_lateral_left_s018_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: left, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: train_moderate_lateral_right_s018_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: right, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: train_moderate_localized_left_s018_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: left, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: train_moderate_localized_right_s018_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.30, sink_side: right, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: train_moderate_medial_left_s018_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: left, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: train_moderate_medial_right_s018_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: right, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: train_moderate_lateral_left_s018_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: left, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: train_moderate_lateral_right_s018_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: right, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: train_moderate_localized_left_s018_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: left, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: train_moderate_localized_right_s018_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.18, patch_start_x: 0.38, sink_side: right, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: train_moderate_medial_left_s024_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.24, patch_start_x: 0.30, sink_side: left, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: train_moderate_medial_right_s024_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.24, patch_start_x: 0.30, sink_side: right, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: validation_moderate_medial_left_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: left, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: validation_moderate_medial_right_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: right, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: validation_moderate_lateral_left_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: left, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: validation_moderate_lateral_right_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: right, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: validation_moderate_localized_left_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: left, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: validation_moderate_localized_right_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: right, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: validation_moderate_medial_left_s015_p042, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.42, sink_side: left, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: validation_moderate_medial_right_s015_p042, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.42, sink_side: right, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: holdout_moderate_medial_left_s021_p032, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: left, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: holdout_moderate_medial_right_s021_p032, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: right, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: holdout_moderate_lateral_left_s021_p032, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: left, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: holdout_moderate_lateral_right_s021_p032, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: right, sink_severity: moderate, sink_support_pattern: lateral_deformable}
+  - {run_id: holdout_moderate_localized_left_s021_p032, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: left, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: holdout_moderate_localized_right_s021_p032, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: right, sink_severity: moderate, sink_support_pattern: localized_deformable}
+  - {run_id: holdout_moderate_medial_left_s021_p040, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.40, sink_side: left, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: holdout_moderate_medial_right_s021_p040, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.40, sink_side: right, sink_severity: moderate, sink_support_pattern: medial_deformable}
+  - {run_id: train_mild_medial_left_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: mild, sink_support_pattern: medial_deformable}
+  - {run_id: train_severe_medial_left_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: severe, sink_support_pattern: medial_deformable}
+  - {run_id: train_mild_medial_right_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: mild, sink_support_pattern: medial_deformable}
+  - {run_id: train_severe_medial_right_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: severe, sink_support_pattern: medial_deformable}
+  - {run_id: train_mild_lateral_left_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: mild, sink_support_pattern: lateral_deformable}
+  - {run_id: train_severe_lateral_left_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: severe, sink_support_pattern: lateral_deformable}
+  - {run_id: train_mild_lateral_right_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: mild, sink_support_pattern: lateral_deformable}
+  - {run_id: train_severe_lateral_right_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: severe, sink_support_pattern: lateral_deformable}
+  - {run_id: train_mild_localized_left_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: mild, sink_support_pattern: localized_deformable}
+  - {run_id: train_severe_localized_left_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: left, sink_severity: severe, sink_support_pattern: localized_deformable}
+  - {run_id: train_mild_localized_right_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: mild, sink_support_pattern: localized_deformable}
+  - {run_id: train_severe_localized_right_s012_p030, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.30, sink_side: right, sink_severity: severe, sink_support_pattern: localized_deformable}
+  - {run_id: train_mild_medial_left_s012_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: left, sink_severity: mild, sink_support_pattern: medial_deformable}
+  - {run_id: train_severe_medial_left_s012_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: left, sink_severity: severe, sink_support_pattern: medial_deformable}
+  - {run_id: train_mild_medial_right_s012_p038, split: train, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.12, patch_start_x: 0.38, sink_side: right, sink_severity: mild, sink_support_pattern: medial_deformable}
+  - {run_id: validation_mild_medial_left_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: left, sink_severity: mild, sink_support_pattern: medial_deformable}
+  - {run_id: validation_severe_medial_left_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: left, sink_severity: severe, sink_support_pattern: medial_deformable}
+  - {run_id: validation_mild_medial_right_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: right, sink_severity: mild, sink_support_pattern: medial_deformable}
+  - {run_id: validation_severe_medial_right_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: right, sink_severity: severe, sink_support_pattern: medial_deformable}
+  - {run_id: validation_mild_lateral_left_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: left, sink_severity: mild, sink_support_pattern: lateral_deformable}
+  - {run_id: validation_severe_lateral_left_s015_p034, split: validation, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.15, patch_start_x: 0.34, sink_side: left, sink_severity: severe, sink_support_pattern: lateral_deformable}
+  - {run_id: holdout_mild_medial_left_s021_p032, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: left, sink_severity: mild, sink_support_pattern: medial_deformable}
+  - {run_id: holdout_severe_medial_left_s021_p032, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: left, sink_severity: severe, sink_support_pattern: medial_deformable}
+  - {run_id: holdout_mild_medial_right_s021_p032, split: holdout, scenario_family: sink, intended_role: SINK, terrain: sand, speed_mps: 0.21, patch_start_x: 0.32, sink_side: right, sink_severity: mild, sink_support_pattern: medial_deformable}
+
+split:
+  train:
+    - train_rigid_concrete_s012
+    - train_rigid_concrete_s018
+    - train_rigid_concrete_s024
+    - train_rigid_marble_s012
+    - train_rigid_marble_s018
+    - train_rigid_marble_s024
+    - train_rigid_sand_s012
+    - train_rigid_sand_s018
+    - train_rigid_sand_s024
+    - train_balanced_mild_left_s012_p030
+    - train_balanced_mild_right_s012_p030
+    - train_balanced_moderate_left_s012_p030
+    - train_balanced_moderate_right_s012_p030
+    - train_balanced_severe_left_s012_p030
+    - train_balanced_severe_right_s012_p030
+    - train_balanced_mild_left_s012_p038
+    - train_balanced_mild_right_s012_p038
+    - train_balanced_moderate_left_s012_p038
+    - train_balanced_moderate_right_s012_p038
+    - train_balanced_severe_left_s012_p038
+    - train_balanced_severe_right_s012_p038
+    - train_balanced_mild_left_s018_p030
+    - train_balanced_mild_right_s018_p030
+    - train_balanced_moderate_left_s018_p030
+    - train_balanced_moderate_right_s018_p030
+    - train_balanced_severe_left_s018_p030
+    - train_balanced_severe_right_s018_p030
+    - train_balanced_mild_left_s018_p038
+    - train_balanced_mild_right_s018_p038
+    - train_balanced_moderate_left_s018_p038
+    - train_balanced_moderate_right_s018_p038
+    - train_balanced_severe_left_s018_p038
+    - train_balanced_severe_right_s018_p038
+    - train_balanced_mild_left_s024_p030
+    - train_balanced_mild_right_s024_p030
+    - train_moderate_medial_left_s012_p030
+    - train_moderate_medial_right_s012_p030
+    - train_moderate_lateral_left_s012_p030
+    - train_moderate_lateral_right_s012_p030
+    - train_moderate_localized_left_s012_p030
+    - train_moderate_localized_right_s012_p030
+    - train_moderate_medial_left_s012_p038
+    - train_moderate_medial_right_s012_p038
+    - train_moderate_lateral_left_s012_p038
+    - train_moderate_lateral_right_s012_p038
+    - train_moderate_localized_left_s012_p038
+    - train_moderate_localized_right_s012_p038
+    - train_moderate_medial_left_s018_p030
+    - train_moderate_medial_right_s018_p030
+    - train_moderate_lateral_left_s018_p030
+    - train_moderate_lateral_right_s018_p030
+    - train_moderate_localized_left_s018_p030
+    - train_moderate_localized_right_s018_p030
+    - train_moderate_medial_left_s018_p038
+    - train_moderate_medial_right_s018_p038
+    - train_moderate_lateral_left_s018_p038
+    - train_moderate_lateral_right_s018_p038
+    - train_moderate_localized_left_s018_p038
+    - train_moderate_localized_right_s018_p038
+    - train_moderate_medial_left_s024_p030
+    - train_moderate_medial_right_s024_p030
+    - train_mild_medial_left_s012_p030
+    - train_severe_medial_left_s012_p030
+    - train_mild_medial_right_s012_p030
+    - train_severe_medial_right_s012_p030
+    - train_mild_lateral_left_s012_p030
+    - train_severe_lateral_left_s012_p030
+    - train_mild_lateral_right_s012_p030
+    - train_severe_lateral_right_s012_p030
+    - train_mild_localized_left_s012_p030
+    - train_severe_localized_left_s012_p030
+    - train_mild_localized_right_s012_p030
+    - train_severe_localized_right_s012_p030
+    - train_mild_medial_left_s012_p038
+    - train_severe_medial_left_s012_p038
+    - train_mild_medial_right_s012_p038
+  validation:
+    - validation_rigid_concrete_s015
+    - validation_rigid_marble_s027
+    - validation_rigid_sand_s015
+    - validation_balanced_mild_left_s015_p034
+    - validation_balanced_mild_right_s015_p034
+    - validation_balanced_moderate_left_s015_p034
+    - validation_balanced_moderate_right_s015_p034
+    - validation_balanced_severe_left_s015_p034
+    - validation_balanced_severe_right_s015_p034
+    - validation_balanced_mild_left_s015_p042
+    - validation_balanced_mild_right_s015_p042
+    - validation_moderate_medial_left_s015_p034
+    - validation_moderate_medial_right_s015_p034
+    - validation_moderate_lateral_left_s015_p034
+    - validation_moderate_lateral_right_s015_p034
+    - validation_moderate_localized_left_s015_p034
+    - validation_moderate_localized_right_s015_p034
+    - validation_moderate_medial_left_s015_p042
+    - validation_moderate_medial_right_s015_p042
+    - validation_mild_medial_left_s015_p034
+    - validation_severe_medial_left_s015_p034
+    - validation_mild_medial_right_s015_p034
+    - validation_severe_medial_right_s015_p034
+    - validation_mild_lateral_left_s015_p034
+    - validation_severe_lateral_left_s015_p034
+  holdout:
+    - holdout_rigid_concrete_s021
+    - holdout_rigid_concrete_s030
+    - holdout_rigid_marble_s021
+    - holdout_rigid_marble_s030
+    - holdout_rigid_sand_s021
+    - holdout_rigid_sand_s030
+    - holdout_balanced_mild_left_s021_p032
+    - holdout_balanced_mild_right_s021_p032
+    - holdout_balanced_moderate_left_s021_p032
+    - holdout_balanced_moderate_right_s021_p032
+    - holdout_balanced_severe_left_s021_p032
+    - holdout_balanced_severe_right_s021_p032
+    - holdout_balanced_mild_left_s021_p040
+    - holdout_balanced_mild_right_s021_p040
+    - holdout_moderate_medial_left_s021_p032
+    - holdout_moderate_medial_right_s021_p032
+    - holdout_moderate_lateral_left_s021_p032
+    - holdout_moderate_lateral_right_s021_p032
+    - holdout_moderate_localized_left_s021_p032
+    - holdout_moderate_localized_right_s021_p032
+    - holdout_moderate_medial_left_s021_p040
+    - holdout_moderate_medial_right_s021_p040
+    - holdout_mild_medial_left_s021_p032
+    - holdout_severe_medial_left_s021_p032
+    - holdout_mild_medial_right_s021_p032
+

@@ -25,29 +25,33 @@ def confusion_matrix(
     return matrix
 
 
-def metrics_from_confusion(matrix: np.ndarray) -> dict[str, object]:
+def metrics_from_confusion(
+    matrix: np.ndarray,
+    class_names: tuple[str, ...] = CLASS_NAMES,
+) -> dict[str, object]:
     matrix = np.asarray(matrix, dtype=np.int64)
-    if matrix.shape != (3, 3):
-        raise ValueError("expected a 3x3 confusion matrix")
+    class_count = len(class_names)
+    if matrix.shape != (class_count, class_count):
+        raise ValueError("confusion matrix and class names disagree")
     support = matrix.sum(axis=1)
     predicted = matrix.sum(axis=0)
     true_positive = np.diag(matrix)
     precision = np.divide(
         true_positive,
         predicted,
-        out=np.zeros(3, dtype=np.float64),
+        out=np.zeros(class_count, dtype=np.float64),
         where=predicted != 0,
     )
     recall = np.divide(
         true_positive,
         support,
-        out=np.zeros(3, dtype=np.float64),
+        out=np.zeros(class_count, dtype=np.float64),
         where=support != 0,
     )
     f1 = np.divide(
         2.0 * precision * recall,
         precision + recall,
-        out=np.zeros(3, dtype=np.float64),
+        out=np.zeros(class_count, dtype=np.float64),
         where=(precision + recall) != 0,
     )
     total = int(matrix.sum())
@@ -58,7 +62,7 @@ def metrics_from_confusion(matrix: np.ndarray) -> dict[str, object]:
             "f1": float(f1[index]),
             "support": int(support[index]),
         }
-        for index, name in enumerate(CLASS_NAMES)
+        for index, name in enumerate(class_names)
     }
     return {
         "accuracy": float(true_positive.sum() / total) if total else 0.0,
@@ -75,10 +79,14 @@ def classification_metrics(
     targets: np.ndarray,
     predictions: np.ndarray,
     run_ids: Iterable[str] | None = None,
+    class_names: tuple[str, ...] = CLASS_NAMES,
 ) -> dict[str, object]:
     targets = np.asarray(targets, dtype=np.int64)
     predictions = np.asarray(predictions, dtype=np.int64)
-    result = metrics_from_confusion(confusion_matrix(targets, predictions))
+    class_count = len(class_names)
+    result = metrics_from_confusion(
+        confusion_matrix(targets, predictions, class_count), class_names
+    )
     if run_ids is None:
         return result
     sources = np.asarray(list(run_ids), dtype=str)
@@ -86,17 +94,29 @@ def classification_metrics(
         raise ValueError("run_ids shape differs from targets")
     per_run: dict[str, dict[str, object]] = {}
     run_accuracies: list[float] = []
-    recalls_by_class: dict[int, list[float]] = {0: [], 1: [], 2: []}
+    recalls_by_class: dict[int, list[float]] = {
+        class_id: [] for class_id in range(class_count)
+    }
+    f1_by_class: dict[int, list[float]] = {
+        class_id: [] for class_id in range(class_count)
+    }
     for run_id in sorted(set(sources)):
         mask = sources == run_id
-        run_matrix = confusion_matrix(targets[mask], predictions[mask])
-        run_metrics = metrics_from_confusion(run_matrix)
+        run_matrix = confusion_matrix(
+            targets[mask], predictions[mask], class_count
+        )
+        run_metrics = metrics_from_confusion(run_matrix, class_names)
         run_accuracies.append(float(run_metrics["accuracy"]))
-        for class_id in range(3):
+        for class_id in range(class_count):
             class_support = int(run_matrix[class_id].sum())
+            predicted_support = int(run_matrix[:, class_id].sum())
             if class_support:
                 recalls_by_class[class_id].append(
                     float(run_matrix[class_id, class_id] / class_support)
+                )
+            if class_support or predicted_support:
+                f1_by_class[class_id].append(
+                    float(run_metrics["per_class"][class_names[class_id]]["f1"])
                 )
         per_run[run_id] = {
             "accuracy": run_metrics["accuracy"],
@@ -104,10 +124,16 @@ def classification_metrics(
             "confusion_matrix": run_metrics["confusion_matrix"],
         }
     balanced_class_recall = {
-        CLASS_NAMES[class_id]: (
+        class_names[class_id]: (
             float(np.mean(values)) if values else 0.0
         )
         for class_id, values in recalls_by_class.items()
+    }
+    balanced_class_f1 = {
+        class_names[class_id]: (
+            float(np.mean(values)) if values else 0.0
+        )
+        for class_id, values in f1_by_class.items()
     }
     failure_runs = sorted(
         (
@@ -130,6 +156,10 @@ def classification_metrics(
             "run_balanced_per_class_recall": balanced_class_recall,
             "run_balanced_macro_recall": float(
                 np.mean(list(balanced_class_recall.values()))
+            ),
+            "run_balanced_per_class_f1": balanced_class_f1,
+            "run_balanced_macro_f1": float(
+                np.mean(list(balanced_class_f1.values()))
             ),
             "per_run": per_run,
             "failure_runs": failure_runs,

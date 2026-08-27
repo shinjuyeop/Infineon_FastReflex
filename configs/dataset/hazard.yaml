@@ -1,7 +1,9 @@
 dataset:
   name: hazard
-  schema_version: hazard_dataset_contract_v2
-  compatible_historical_schema: hazard_dataset_contract_v1
+  schema_version: hazard_dataset_contract_v3
+  compatible_historical_schemas:
+    - hazard_dataset_contract_v1
+    - hazard_dataset_contract_v2
 
 sensor:
   type: candidate_runtime_sensor_profiles
@@ -42,14 +44,28 @@ storage:
   layout: one_complete_run_per_npz
   v1_runtime_fields: [sequence, timestamp_us, pelvis_imu, sample_valid, channel_valid]
   v2_candidate_runtime_fields: [sequence, timestamp_us, pelvis_imu, foot_fsr, sample_valid, channel_valid, fsr_valid]
+  v3_runtime_fields: [sequence, timestamp_us, pelvis_imu, foot_fsr, sample_valid, channel_valid, fsr_valid]
+  v3_simulator_only_diagnostics:
+    - contact_episode_id
+    - support_surface_displacement_m
+    - support_surface_vertical_velocity_m_s
+    - support_surface_cell_contact
+    - support_surface_spread_m
+    - deformable_patch_episode_active
+    - deformable_sink_active
+    - deformable_sink_onset
   diagnostic_role: simulator_only_not_runtime_input
   generated_root: data/raw
 
 sample_annotation:
   excluded_unresolved_id: -1
   slip_class_start: established_any_slip_onset
-  sink_class_start: frozen_degradation_onset_t2
-  sink_t1_to_t2_training_eligible: false
+  historical_sink_class_start: frozen_degradation_onset_t2
+  deformable_observability_sink_class_start: deformable_sink_onset_s1
+  deformable_observability_pre_d0_class: NORMAL
+  deformable_observability_d0_to_s1_training_eligible: false
+  deformable_observability_post_contact_episode: normal_reset
+  deformable_observability_no_s1_valid_run: BENIGN
   post_censor_training_eligible: false
 
 windows:
@@ -87,6 +103,16 @@ labels:
     effect_onset: first_persistent_threshold_sample
     hazardous_episode_early_detection_reference: sink_physical_onset_t1
     t1_to_t2_interval_training_eligible: false
+  deformable_support_sink:
+    criteria_status: SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY
+    metric: support_surface_spread_m
+    threshold_m: 0.010
+    persistence_ms: 20
+    onset: first_sustained_active_sample_s1
+    d0: deformable_support_first_physical_contact
+    reset: contact_episode_change_or_censor
+    role: v3_label_and_diagnostic_only
+    forbidden_runtime_dependencies: [imu, fsr, terrain, scenario, fall, old_t2]
 
 provenance:
   required_fields:

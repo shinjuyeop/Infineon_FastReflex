@@ -84,9 +84,12 @@ def evaluate_model(
     model: nn.Module,
     windows: WindowSet,
     batch_size: int = 128,
+    class_names: tuple[str, ...] = CLASS_NAMES,
 ) -> dict[str, object]:
     predictions = predict_model(model, windows, batch_size)
-    return classification_metrics(windows.targets, predictions, windows.run_ids)
+    return classification_metrics(
+        windows.targets, predictions, windows.run_ids, class_names
+    )
 
 
 def train_model(
@@ -99,6 +102,7 @@ def train_model(
     max_epochs: int = 40,
     patience: int = 6,
     learning_rate: float = 1.0e-3,
+    class_names: tuple[str, ...] = CLASS_NAMES,
 ) -> tuple[nn.Module, TrainingResult]:
     """Train one seed, selecting epochs by validation macro F1."""
     set_deterministic(seed)
@@ -108,11 +112,16 @@ def train_model(
     input_channels = int(train_windows.inputs.shape[2])
     if validation_windows.inputs.shape[2] != input_channels:
         raise ValueError("training and validation sensor channel counts differ")
-    model = build_model(family, window_samples, input_channels)
-    counts = np.bincount(train_windows.targets, minlength=3).astype(np.float64)
+    class_count = len(class_names)
+    model = build_model(
+        family, window_samples, input_channels, class_count=class_count
+    )
+    counts = np.bincount(
+        train_windows.targets, minlength=class_count
+    ).astype(np.float64)
     if np.any(counts == 0):
         raise ValueError("training windows must cover every class")
-    weights = counts.sum() / (3.0 * counts)
+    weights = counts.sum() / (class_count * counts)
     criterion = nn.CrossEntropyLoss(weight=torch.tensor(weights, dtype=torch.float32))
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     train_loader = _loader(train_windows, batch_size, shuffle=True, seed=seed)
@@ -135,7 +144,9 @@ def train_model(
             optimizer.step()
             loss_total += float(loss.detach()) * len(targets)
             sample_total += len(targets)
-        validation_metrics = evaluate_model(model, validation_windows, batch_size)
+        validation_metrics = evaluate_model(
+            model, validation_windows, batch_size, class_names
+        )
         score = float(validation_metrics["macro_f1"])
         history.append(
             {
@@ -173,6 +184,7 @@ def save_checkpoint(
     seed: int,
     result: TrainingResult,
     input_channels: int | None = None,
+    class_names: tuple[str, ...] = CLASS_NAMES,
 ) -> None:
     if input_channels is None:
         first_weight = next(model.parameters())
@@ -187,6 +199,7 @@ def save_checkpoint(
             "family": family,
             "window_samples": window_samples,
             "input_channels": input_channels,
+            "class_names": list(class_names),
             "seed": seed,
             "best_epoch": result.best_epoch,
             "state_dict": model.state_dict(),
@@ -203,6 +216,7 @@ def load_checkpoint(path: Path) -> tuple[nn.Module, dict[str, object]]:
         checkpoint["family"],
         int(checkpoint["window_samples"]),
         int(checkpoint.get("input_channels", 6)),
+        class_count=len(checkpoint.get("class_names", CLASS_NAMES)),
     )
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
@@ -211,6 +225,7 @@ def load_checkpoint(path: Path) -> tuple[nn.Module, dict[str, object]]:
         for key in ("family", "window_samples", "seed", "best_epoch")
     }
     metadata["input_channels"] = int(checkpoint.get("input_channels", 6))
+    metadata["class_names"] = list(checkpoint.get("class_names", CLASS_NAMES))
     return model, metadata
 
 

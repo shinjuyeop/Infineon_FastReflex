@@ -36,5 +36,35 @@
     <geom name="terrain_transition_post" type="box"
       pos="5.55 0 -1" size="4.45 10 1"
       rgba="0.35 0.35 0.35 0"/>
+
+    <!--
+      Disabled same-height slots for bounded uneven-support experiments.
+      terrain.py activates one affected side and assigns frozen moderate/severe
+      contact profiles. The four cells tile that side of the finite patch.
+    -->
+    <geom name="terrain_uneven_left_entry_medial" type="box"
+      pos="0.5375 0.05925 -1" size="0.1875 0.05925 1"
+      rgba="0.45 0.25 0.75 0"/>
+    <geom name="terrain_uneven_left_entry_lateral" type="box"
+      pos="0.5375 5.05925 -1" size="0.1875 4.94075 1"
+      rgba="0.45 0.25 0.75 0"/>
+    <geom name="terrain_uneven_left_exit_medial" type="box"
+      pos="0.9125 0.05925 -1" size="0.1875 0.05925 1"
+      rgba="0.45 0.25 0.75 0"/>
+    <geom name="terrain_uneven_left_exit_lateral" type="box"
+      pos="0.9125 5.05925 -1" size="0.1875 4.94075 1"
+      rgba="0.45 0.25 0.75 0"/>
+    <geom name="terrain_uneven_right_entry_medial" type="box"
+      pos="0.5375 -0.05925 -1" size="0.1875 0.05925 1"
+      rgba="0.75 0.25 0.45 0"/>
+    <geom name="terrain_uneven_right_entry_lateral" type="box"
+      pos="0.5375 -5.05925 -1" size="0.1875 4.94075 1"
+      rgba="0.75 0.25 0.45 0"/>
+    <geom name="terrain_uneven_right_exit_medial" type="box"
+      pos="0.9125 -0.05925 -1" size="0.1875 0.05925 1"
+      rgba="0.75 0.25 0.45 0"/>
+    <geom name="terrain_uneven_right_exit_lateral" type="box"
+      pos="0.9125 -5.05925 -1" size="0.1875 4.94075 1"
+      rgba="0.75 0.25 0.45 0"/>
   </worldbody>
 </mujoco>

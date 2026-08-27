@@ -148,6 +148,7 @@ class SimulationConfig:
     patch_start_x_m: float
     patch_width_m: float
     headless: bool
+    sink_support_pattern: str = "balanced_soft"
 
     @property
     def physics_steps_per_sample(self) -> int:
@@ -182,7 +183,12 @@ class SimulationConfig:
             raise ValueError("walking command speed must be in [0.1, 0.5] m/s")
         get_terrain_profile(self.terrain)
         validate_slip_scenario(self.terrain, self.slip_pattern, self.sink_pattern)
-        validate_sink_scenario(self.terrain, self.sink_pattern, self.sink_severity)
+        validate_sink_scenario(
+            self.terrain,
+            self.sink_pattern,
+            self.sink_severity,
+            self.sink_support_pattern,
+        )
         validate_transition_geometry(self.patch_start_x_m, self.patch_width_m)
 
 
@@ -237,6 +243,9 @@ def load_simulation_config(path: Path) -> SimulationConfig:
                 transition_patch.get("width_m", TRANSITION_PATCH_WIDTH_M)
             ),
             headless=bool(output["headless"]),
+            sink_support_pattern=str(
+                sink.get("support_pattern", "balanced_soft")
+            ),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("invalid canonical G1 simulator config") from exc
@@ -299,10 +308,16 @@ def load_g1_model(
     slip_pattern: str = "uniform",
     patch_start_x_m: float = TRANSITION_PATCH_START_X_M,
     patch_width_m: float = TRANSITION_PATCH_WIDTH_M,
+    sink_support_pattern: str = "balanced_soft",
 ) -> tuple[mujoco.MjModel, frozenset[int]]:
     """Load the baseline or one validated finite/full-lane patch scene."""
     validate_slip_scenario(terrain_name, slip_pattern, sink_pattern)
-    validate_sink_scenario(terrain_name, sink_pattern, sink_severity)
+    validate_sink_scenario(
+        terrain_name,
+        sink_pattern,
+        sink_severity,
+        sink_support_pattern,
+    )
     validate_transition_geometry(patch_start_x_m, patch_width_m)
     use_patch_scene = sink_pattern != "uniform" or slip_pattern == "transition"
     scene_path = SINK_SCENE_PATH if use_patch_scene else SCENE_PATH
@@ -325,6 +340,7 @@ def load_g1_model(
             sink_severity,
             patch_start_x_m,
             patch_width_m,
+            sink_support_pattern,
         )
     return model, ground_ids
 
@@ -544,6 +560,7 @@ def run_simulation(
         config.slip_pattern,
         config.patch_start_x_m,
         config.patch_width_m,
+        config.sink_support_pattern,
     )
     data = mujoco.MjData(model)
     controller = UnitreeG1Controller(
@@ -557,7 +574,11 @@ def run_simulation(
         for names in FOOT_CONTACT_GEOM_NAMES.values()
         for name in names
     )
-    soft_patch_geom_ids = soft_sink_geom_ids(model, config.sink_pattern)
+    soft_patch_geom_ids = soft_sink_geom_ids(
+        model,
+        config.sink_pattern,
+        config.sink_support_pattern,
+    )
     low_friction_geom_ids = low_friction_patch_geom_ids(
         model,
         config.slip_pattern,
@@ -571,6 +592,9 @@ def run_simulation(
     foot_xyz: list[np.ndarray] = []
     foot_velocity: list[np.ndarray] = []
     penetration: list[np.ndarray] = []
+    quadrant_contact: list[np.ndarray] = []
+    quadrant_normal_force: list[np.ndarray] = []
+    quadrant_penetration: list[np.ndarray] = []
     soft_patch_contact: list[np.ndarray] = []
     low_friction_patch_contact: list[np.ndarray] = []
     pre_fall: list[bool] = []
@@ -597,6 +621,7 @@ def run_simulation(
             config.slip_pattern,
             config.patch_start_x_m,
             config.patch_width_m,
+            config.sink_support_pattern,
         )
         viewer_data = mujoco.MjData(viewer_model)
         _copy_integration_state(model, data, viewer_model, viewer_data)
@@ -663,6 +688,9 @@ def run_simulation(
             foot_xyz.append(exact.world_xyz)
             foot_velocity.append(exact.world_velocity_xyz)
             penetration.append(exact.contact_penetration_m)
+            quadrant_contact.append(exact.quadrant_contact)
+            quadrant_normal_force.append(exact.quadrant_normal_force_n)
+            quadrant_penetration.append(exact.quadrant_penetration_m)
             soft_patch_contact.append(exact.soft_patch_contact)
             low_friction_patch_contact.append(exact.low_friction_patch_contact)
             pre_fall.append(first_fall_sample is None)
@@ -711,12 +739,20 @@ def run_simulation(
             low_friction_patch_contact,
             dtype=bool,
         ).reshape(-1, 2),
+        quadrant_contact=np.asarray(quadrant_contact, dtype=bool).reshape(-1, 2, 4),
+        quadrant_normal_force_n=np.asarray(
+            quadrant_normal_force, dtype=np.float64
+        ).reshape(-1, 2, 4),
+        quadrant_penetration_m=np.asarray(
+            quadrant_penetration, dtype=np.float64
+        ).reshape(-1, 2, 4),
     )
     metadata: dict[str, object] = {
         "terrain": config.terrain,
         "slip_pattern": config.slip_pattern,
         "sink_pattern": config.sink_pattern,
         "sink_severity": config.sink_severity,
+        "sink_support_pattern": config.sink_support_pattern,
         "patch_start_x_m": (
             config.patch_start_x_m
             if config.slip_pattern == "transition"
@@ -903,6 +939,15 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
             "max_bilateral_loaded_penetration_asymmetry_m": _finite_max(
                 diagnostics.bilateral_loaded_penetration_asymmetry_m
             ),
+            "max_support_penetration_spread_m": _finite_max(
+                diagnostics.support_penetration_spread_m
+            ),
+            "max_support_penetration_spread_m_per_foot": _finite_max_per_foot(
+                diagnostics.support_penetration_spread_m
+            ),
+            "valid_support_spread_samples_per_foot": np.count_nonzero(
+                np.isfinite(diagnostics.support_penetration_spread_m), axis=0
+            ).tolist(),
             "established_slip_samples": int(
                 np.count_nonzero(diagnostics.established_slip)
             ),

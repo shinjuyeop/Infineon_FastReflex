@@ -37,7 +37,9 @@ from fastreflex.simulation.hazards import (
     SLIP_THRESHOLD_M,
     TOUCHDOWN_TRANSIENT_SAMPLES,
     derive_physical_diagnostics,
+    support_penetration_diagnostics,
     read_exact_foot_sample,
+    uneven_support_oracle,
 )
 from fastreflex.simulation.sensors import (
     FSR_CHANNELS,
@@ -49,6 +51,7 @@ from fastreflex.simulation.terrain import (
     SINK_PATTERNS,
     SINK_SEVERITIES,
     SINK_SEVERITY_PROFILES,
+    SINK_SUPPORT_PATTERNS,
     SLIP_PATTERNS,
     TERRAIN_PROFILES,
     TRANSITION_GROUND_GEOM_NAMES,
@@ -71,6 +74,19 @@ SINK_TRANSITION_EXPERIMENT_CONFIG = (
 )
 SLIP_TRANSITION_EXPERIMENT_CONFIG = (
     ROOT / "configs" / "experiment" / "20260826_slip_transition_sanity.yaml"
+)
+SINK_PHYSICAL_REDEFINITION_CONFIG = (
+    ROOT
+    / "configs"
+    / "experiment"
+    / "20260827_sink_physical_hazard_redefinition.yaml"
+)
+LOCAL_POLICY = (
+    ROOT
+    / "artifacts"
+    / "external"
+    / "unitree_g1"
+    / "g1_velocity_policy.onnx"
 )
 
 
@@ -98,6 +114,269 @@ class FakeViewer:
 
 
 class SimulationTest(unittest.TestCase):
+    def test_uneven_support_geometry_profiles_and_no_step_or_hole(self) -> None:
+        self.assertEqual(
+            SINK_SUPPORT_PATTERNS,
+            (
+                "balanced_soft",
+                "medial_soft",
+                "lateral_soft",
+                "localized_soft",
+            ),
+        )
+        for side in ("left", "right"):
+            for pattern in SINK_SUPPORT_PATTERNS[1:]:
+                with self.subTest(side=side, pattern=pattern):
+                    model, ground_ids = load_g1_model(
+                        "sand",
+                        f"transition_{side}",
+                        "severe",
+                        sink_support_pattern=pattern,
+                    )
+                    enabled_names = {model.geom(geom_id).name for geom_id in ground_ids}
+                    cells = tuple(
+                        f"terrain_uneven_{side}_{segment}_{region}"
+                        for segment in ("entry", "exit")
+                        for region in ("medial", "lateral")
+                    )
+                    self.assertTrue(set(cells).issubset(enabled_names))
+                    self.assertNotIn(f"terrain_transition_{side}", enabled_names)
+                    for geom_id in ground_ids:
+                        self.assertEqual(
+                            float(
+                                model.geom_pos[geom_id, 2]
+                                + model.geom_size[geom_id, 2]
+                            ),
+                            0.0,
+                        )
+                    entry = model.geom(cells[0]).id
+                    exit_cell = model.geom(cells[2]).id
+                    self.assertAlmostEqual(
+                        float(model.geom_pos[entry, 0] - model.geom_size[entry, 0]),
+                        TRANSITION_PATCH_START_X_M,
+                    )
+                    self.assertAlmostEqual(
+                        float(model.geom_pos[entry, 0] + model.geom_size[entry, 0]),
+                        float(
+                            model.geom_pos[exit_cell, 0]
+                            - model.geom_size[exit_cell, 0]
+                        ),
+                    )
+                    self.assertAlmostEqual(
+                        float(
+                            model.geom_pos[exit_cell, 0]
+                            + model.geom_size[exit_cell, 0]
+                        ),
+                        TRANSITION_PATCH_END_X_M,
+                    )
+                    for segment in ("entry", "exit"):
+                        medial = model.geom(
+                            f"terrain_uneven_{side}_{segment}_medial"
+                        ).id
+                        lateral = model.geom(
+                            f"terrain_uneven_{side}_{segment}_lateral"
+                        ).id
+                        medial_bounds = sorted(
+                            (
+                                float(
+                                    model.geom_pos[medial, 1]
+                                    - model.geom_size[medial, 1]
+                                ),
+                                float(
+                                    model.geom_pos[medial, 1]
+                                    + model.geom_size[medial, 1]
+                                ),
+                            )
+                        )
+                        lateral_bounds = sorted(
+                            (
+                                float(
+                                    model.geom_pos[lateral, 1]
+                                    - model.geom_size[lateral, 1]
+                                ),
+                                float(
+                                    model.geom_pos[lateral, 1]
+                                    + model.geom_size[lateral, 1]
+                                ),
+                            )
+                        )
+                        self.assertAlmostEqual(
+                            min(
+                                abs(medial_bounds[0] - lateral_bounds[1]),
+                                abs(medial_bounds[1] - lateral_bounds[0]),
+                            ),
+                            0.0,
+                        )
+                    severe_cells = {
+                        "medial_soft": {"entry_medial", "exit_medial"},
+                        "lateral_soft": {"entry_lateral", "exit_lateral"},
+                        "localized_soft": {"entry_medial"},
+                    }[pattern]
+                    for name in cells:
+                        suffix = name.removeprefix(f"terrain_uneven_{side}_")
+                        expected = SINK_SEVERITY_PROFILES[
+                            "severe" if suffix in severe_cells else "moderate"
+                        ]
+                        geom_id = model.geom(name).id
+                        np.testing.assert_array_equal(
+                            model.geom_solref[geom_id], expected.solref
+                        )
+                        np.testing.assert_array_equal(
+                            model.geom_solimp[geom_id], expected.solimp
+                        )
+        balanced, _ = load_g1_model("sand", "transition_left", "severe")
+        explicit, _ = load_g1_model(
+            "sand",
+            "transition_left",
+            "severe",
+            sink_support_pattern="balanced_soft",
+        )
+        for name in TRANSITION_GROUND_GEOM_NAMES:
+            np.testing.assert_array_equal(
+                balanced.geom_solref[balanced.geom(name).id],
+                explicit.geom_solref[explicit.geom(name).id],
+            )
+            np.testing.assert_array_equal(
+                balanced.geom_solimp[balanced.geom(name).id],
+                explicit.geom_solimp[explicit.geom(name).id],
+            )
+
+    def test_exact_quadrant_penetration_mapping_and_load_sum(self) -> None:
+        model, ground_ids = load_g1_model("concrete")
+        data = mujoco.MjData(model)
+        data.qpos[:] = model.qpos0
+        data.qpos[2] = 0.78
+        mujoco.mj_forward(model, data)
+        exact = read_exact_foot_sample(model, data, ground_ids)
+        self.assertEqual(exact.quadrant_contact.shape, (2, 4))
+        self.assertEqual(exact.quadrant_normal_force_n.shape, (2, 4))
+        self.assertEqual(exact.quadrant_penetration_m.shape, (2, 4))
+        self.assertTrue(np.all(exact.quadrant_contact))
+        np.testing.assert_allclose(
+            exact.quadrant_normal_force_n.sum(axis=1),
+            exact.normal_force_n,
+            rtol=1.0e-12,
+            atol=1.0e-12,
+        )
+        np.testing.assert_allclose(
+            np.nanmax(exact.quadrant_penetration_m, axis=1),
+            exact.contact_penetration_m,
+        )
+        for side in ("left", "right"):
+            body = model.body(f"{side}_ankle_roll_link").id
+            expected_quadrants = set()
+            for index in range(1, 5):
+                geom = model.geom(f"{side}_foot_contact_{index}").id
+                world_delta = data.geom_xpos[geom] - data.xpos[body]
+                local = data.xmat[body].reshape(3, 3).T @ world_delta
+                expected_quadrants.add(fsr_quadrant_index(local[0], local[1]))
+            self.assertEqual(expected_quadrants, {0, 1, 2, 3})
+
+    def test_loaded_only_support_spread_and_causal_persistence(self) -> None:
+        samples = 40
+        contact = np.ones((samples, 2, 4), dtype=bool)
+        load = np.full((samples, 2, 4), 10.0)
+        penetration = np.tile(
+            np.asarray((0.001, 0.002, 0.004, 0.005)),
+            (samples, 2, 1),
+        )
+        loaded = np.ones((samples, 2), dtype=bool)
+        episodes = np.zeros((samples, 2), dtype=np.int32)
+        pre_fall = np.ones(samples, dtype=bool)
+        support = support_penetration_diagnostics(
+            contact, load, penetration, loaded, episodes, pre_fall
+        )
+        self.assertTrue(
+            np.isnan(
+                support["support_penetration_spread_m"][
+                    :TOUCHDOWN_TRANSIENT_SAMPLES
+                ]
+            ).all()
+        )
+        np.testing.assert_allclose(
+            support["support_penetration_spread_m"][TOUCHDOWN_TRANSIENT_SAMPLES:],
+            0.004,
+        )
+        unloaded = loaded.copy()
+        unloaded[20, 0] = False
+        invalid = support_penetration_diagnostics(
+            contact, load, penetration, unloaded, episodes, pre_fall
+        )
+        self.assertTrue(
+            np.isnan(invalid["support_penetration_spread_m"][20, 0])
+        )
+
+        spread = np.zeros((40, 2), dtype=float)
+        valid = np.zeros((40, 2), dtype=bool)
+        spread[10:, 0] = 0.006
+        valid[10:, 0] = True
+        active, onset = uneven_support_oracle(
+            spread, valid, episodes, threshold_m=0.005, persistence_samples=20
+        )
+        self.assertEqual(np.flatnonzero(onset[:, 0]).tolist(), [29])
+        self.assertFalse(active[:29, 0].any())
+        future_changed = spread.copy()
+        future_changed[30:, 0] = 0.0
+        _, changed_onset = uneven_support_oracle(
+            future_changed,
+            valid,
+            episodes,
+            threshold_m=0.005,
+            persistence_samples=20,
+        )
+        np.testing.assert_array_equal(changed_onset[:30], onset[:30])
+
+    def test_sink_physical_redefinition_config_is_bounded(self) -> None:
+        with SINK_PHYSICAL_REDEFINITION_CONFIG.open("r", encoding="utf-8") as stream:
+            config = yaml.safe_load(stream)
+        self.assertEqual(
+            config["experiment"]["id"], "SINK_PHYSICAL_HAZARD_REDEFINITION"
+        )
+        runs = config["runs"]
+        self.assertEqual(len(runs), 26)
+        self.assertEqual(sum(run["role"] == "benign" for run in runs), 14)
+        self.assertEqual(sum(run["role"] == "uneven" for run in runs), 12)
+        self.assertEqual(len({run["id"] for run in runs}), 26)
+        self.assertEqual(
+            config["support_metric"]["freeze_status"],
+            "criterion_not_freezable",
+        )
+        self.assertFalse(config["support_metric"]["future_outcome_dependency"])
+
+    @unittest.skipUnless(LOCAL_POLICY.is_file(), "local verified policy is absent")
+    def test_balanced_control_and_one_uneven_candidate_smoke(self) -> None:
+        with SINK_PHYSICAL_REDEFINITION_CONFIG.open("r", encoding="utf-8") as stream:
+            experiment = yaml.safe_load(stream)
+        base = load_simulation_config(SIMULATOR_CONFIG)
+        threshold = float(experiment["support_metric"]["candidate_threshold_m"])
+        for pattern, expected in (("balanced_soft", False), ("medial_soft", True)):
+            with self.subTest(pattern=pattern):
+                result = run_simulation(
+                    replace(
+                        base,
+                        duration_s=8.0,
+                        command_speed_mps=0.15,
+                        policy_path=LOCAL_POLICY,
+                        terrain="sand",
+                        sink_pattern="transition_right",
+                        sink_severity=(
+                            "moderate" if pattern == "balanced_soft" else "severe"
+                        ),
+                        sink_support_pattern=pattern,
+                        headless=True,
+                    )
+                )
+                spread = result.diagnostics.support_penetration_spread_m
+                active, _ = uneven_support_oracle(
+                    spread,
+                    np.isfinite(spread),
+                    result.diagnostics.contact_episode_id,
+                    threshold,
+                    20,
+                )
+                self.assertEqual(bool(np.any(active)), expected)
+                self.assertEqual(result.metadata["dropped_samples"], 0)
+
     def test_virtual_fsr_channel_order_quadrants_and_contact_force_sum(self) -> None:
         self.assertEqual(
             FSR_CHANNELS,
@@ -152,6 +431,7 @@ class SimulationTest(unittest.TestCase):
         self.assertEqual(config.slip_pattern, "uniform")
         self.assertEqual(config.sink_pattern, "uniform")
         self.assertEqual(config.sink_severity, "moderate")
+        self.assertEqual(config.sink_support_pattern, "balanced_soft")
         self.assertEqual(config.patch_start_x_m, TRANSITION_PATCH_START_X_M)
         self.assertEqual(config.patch_width_m, TRANSITION_PATCH_WIDTH_M)
 
@@ -473,9 +753,18 @@ class SimulationTest(unittest.TestCase):
         self.assertEqual(sink_args.sink_pattern, "asymmetric_right")
         self.assertEqual(sink_args.sink_severity, "severe")
         transition_args = parser.parse_args(
-            ["simulate", "--terrain", "sand", "--sink-pattern", "transition_left"]
+            [
+                "simulate",
+                "--terrain",
+                "sand",
+                "--sink-pattern",
+                "transition_left",
+                "--sink-support-pattern",
+                "medial_soft",
+            ]
         )
         self.assertEqual(transition_args.sink_pattern, "transition_left")
+        self.assertEqual(transition_args.sink_support_pattern, "medial_soft")
         slip_transition_args = parser.parse_args(
             ["simulate", "--terrain", "ice", "--slip-pattern", "transition"]
         )

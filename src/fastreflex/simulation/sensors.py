@@ -5,7 +5,12 @@ from __future__ import annotations
 import mujoco
 import numpy as np
 
-from .hazards import FOOT_BODY_NAMES, FOOT_CONTACT_GEOM_NAMES, SIDES
+from .hazards import (
+    FOOT_BODY_NAMES,
+    FOOT_CONTACT_GEOM_NAMES,
+    SIDES,
+    foot_quadrant_index,
+)
 
 
 FSR_CHANNELS = (
@@ -23,9 +28,7 @@ FSR_UNIT = "N"
 
 def fsr_quadrant_index(local_x_m: float, local_y_m: float) -> int:
     """Map foot-local +x front and +y left to the frozen four-channel order."""
-    front_offset = 0 if local_x_m >= 0.0 else 2
-    lateral_offset = 0 if local_y_m >= 0.0 else 1
-    return front_offset + lateral_offset
+    return foot_quadrant_index(local_x_m, local_y_m)
 
 
 def read_virtual_fsr(

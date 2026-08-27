@@ -76,6 +76,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="select the synthetic compliance of the asymmetric lane",
     )
     simulate.add_argument(
+        "--sink-support-pattern",
+        choices=(
+            "balanced_soft",
+            "medial_soft",
+            "lateral_soft",
+            "localized_soft",
+        ),
+        help="select balanced or spatially heterogeneous finite Sink support",
+    )
+    simulate.add_argument(
         "--policy",
         type=Path,
         help=(
@@ -165,6 +175,11 @@ def main() -> int:
                 config.sink_severity
                 if args.sink_severity is None
                 else args.sink_severity
+            ),
+            sink_support_pattern=(
+                config.sink_support_pattern
+                if args.sink_support_pattern is None
+                else args.sink_support_pattern
             ),
             patch_start_x_m=(
                 config.patch_start_x_m

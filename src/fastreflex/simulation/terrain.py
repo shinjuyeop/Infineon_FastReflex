@@ -61,6 +61,12 @@ SINK_PATTERNS = (
 )
 SLIP_PATTERNS = ("uniform", "transition")
 SINK_SEVERITIES = ("mild", "moderate", "severe")
+SINK_SUPPORT_PATTERNS = (
+    "balanced_soft",
+    "medial_soft",
+    "lateral_soft",
+    "localized_soft",
+)
 SINK_PATCH_GEOM_NAMES = ("terrain_left", "terrain_right")
 TRANSITION_PATCH_GEOM_NAMES = (
     "terrain_transition_left",
@@ -70,6 +76,12 @@ TRANSITION_GROUND_GEOM_NAMES = (
     "terrain_transition_pre",
     *TRANSITION_PATCH_GEOM_NAMES,
     "terrain_transition_post",
+)
+UNEVEN_CELL_GEOM_NAMES = tuple(
+    f"terrain_uneven_{side}_{segment}_{region}"
+    for side in ("left", "right")
+    for segment in ("entry", "exit")
+    for region in ("medial", "lateral")
 )
 TRANSITION_PATCH_START_X_M = 0.35
 TRANSITION_PATCH_END_X_M = 1.10
@@ -126,11 +138,25 @@ def get_sink_severity_profile(name: str) -> TerrainProfile:
         ) from exc
 
 
-def validate_sink_scenario(terrain: str, pattern: str, severity: str) -> None:
+def validate_sink_scenario(
+    terrain: str,
+    pattern: str,
+    severity: str,
+    support_pattern: str = "balanced_soft",
+) -> None:
     """Validate the config-only sink scenario selection."""
     if pattern not in SINK_PATTERNS:
-        raise ValueError(f"unknown sink pattern {pattern!r}; choose from {SINK_PATTERNS}")
+        raise ValueError(
+            f"unknown sink pattern {pattern!r}; choose from {SINK_PATTERNS}"
+        )
     get_sink_severity_profile(severity)
+    if support_pattern not in SINK_SUPPORT_PATTERNS:
+        raise ValueError(
+            f"unknown sink support pattern {support_pattern!r}; "
+            f"choose from {SINK_SUPPORT_PATTERNS}"
+        )
+    if support_pattern != "balanced_soft" and not pattern.startswith("transition_"):
+        raise ValueError("uneven sink support requires a finite transition pattern")
     if pattern != "uniform" and terrain != "sand":
         raise ValueError("non-uniform sink patterns require terrain='sand'")
 
@@ -193,9 +219,10 @@ def apply_sink_patch_profiles(
     severity: str,
     patch_start_x_m: float = TRANSITION_PATCH_START_X_M,
     patch_width_m: float = TRANSITION_PATCH_WIDTH_M,
+    support_pattern: str = "balanced_soft",
 ) -> frozenset[int]:
     """Configure the canonical sink scene for a full-lane or finite patch."""
-    validate_sink_scenario("sand", pattern, severity)
+    validate_sink_scenario("sand", pattern, severity, support_pattern)
     if pattern == "uniform":
         raise ValueError("the uniform control must use the canonical baseline scene")
 
@@ -239,6 +266,37 @@ def apply_sink_patch_profiles(
         for name in TRANSITION_GROUND_GEOM_NAMES
     }
     soft_side = pattern.removeprefix("transition_")
+    if support_pattern != "balanced_soft":
+        affected_name = f"terrain_transition_{soft_side}"
+        affected_id = model.geom(affected_name).id
+        model.geom_contype[affected_id] = 0
+        model.geom_conaffinity[affected_id] = 0
+        model.geom_rgba[affected_id, 3] = 0.0
+        ground_ids.pop(affected_name)
+        selected_soft_cells = {
+            "medial_soft": {("entry", "medial"), ("exit", "medial")},
+            "lateral_soft": {("entry", "lateral"), ("exit", "lateral")},
+            "localized_soft": {("entry", "medial")},
+        }[support_pattern]
+        for segment in ("entry", "exit"):
+            for region in ("medial", "lateral"):
+                name = f"terrain_uneven_{soft_side}_{segment}_{region}"
+                geom_id = model.geom(name).id
+                model.geom_contype[geom_id] = 1
+                model.geom_conaffinity[geom_id] = 1
+                model.geom_rgba[geom_id] = (
+                    0.55,
+                    0.20 if (segment, region) in selected_soft_cells else 0.55,
+                    0.75,
+                    1.0,
+                )
+                profile = (
+                    get_sink_severity_profile(severity)
+                    if (segment, region) in selected_soft_cells
+                    else get_sink_severity_profile("moderate")
+                )
+                ground_ids[name] = apply_terrain_profile(model, profile, name)
+        return frozenset(ground_ids.values())
     apply_terrain_profile(
         model,
         get_sink_severity_profile(severity),
@@ -266,6 +324,9 @@ def _select_patch_topology(
         set_enabled(name, not is_transition, rgba)
     for name, rgba in transition_colors.items():
         set_enabled(name, is_transition, rgba)
+    for name in UNEVEN_CELL_GEOM_NAMES:
+        if mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name) != -1:
+            set_enabled(name, False, (0.45, 0.25, 0.75, 0.0))
 
 
 def validate_transition_geometry(
@@ -307,6 +368,19 @@ def configure_transition_geometry(
     )
     for name in TRANSITION_PATCH_GEOM_NAMES:
         set_x_extent(name, patch_start_x_m, patch_end_x_m)
+    patch_midpoint_x_m = (patch_start_x_m + patch_end_x_m) / 2.0
+    for side in ("left", "right"):
+        for region in ("medial", "lateral"):
+            set_x_extent(
+                f"terrain_uneven_{side}_entry_{region}",
+                patch_start_x_m,
+                patch_midpoint_x_m,
+            )
+            set_x_extent(
+                f"terrain_uneven_{side}_exit_{region}",
+                patch_midpoint_x_m,
+                patch_end_x_m,
+            )
     set_x_extent(
         "terrain_transition_post",
         patch_end_x_m,
@@ -350,15 +424,26 @@ def apply_slip_patch_profiles(
 def soft_sink_geom_ids(
     model: mujoco.MjModel,
     pattern: str,
+    support_pattern: str = "balanced_soft",
 ) -> frozenset[int]:
     """Return the finite soft-patch ids used by transition event timing."""
     if pattern == "uniform" or pattern.startswith("asymmetric_"):
         return frozenset()
     if pattern.startswith("transition_"):
-        name = f"terrain_transition_{pattern.removeprefix('transition_')}"
+        side = pattern.removeprefix("transition_")
+        if support_pattern == "balanced_soft":
+            names = (f"terrain_transition_{side}",)
+        else:
+            names = tuple(
+                f"terrain_uneven_{side}_{segment}_{region}"
+                for segment in ("entry", "exit")
+                for region in ("medial", "lateral")
+            )
     else:
-        raise ValueError(f"unknown sink pattern {pattern!r}; choose from {SINK_PATTERNS}")
-    return frozenset((int(model.geom(name).id),))
+        raise ValueError(
+            f"unknown sink pattern {pattern!r}; choose from {SINK_PATTERNS}"
+        )
+    return frozenset(int(model.geom(name).id) for name in names)
 
 
 def low_friction_patch_geom_ids(

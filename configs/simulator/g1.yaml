@@ -16,6 +16,7 @@ slip:
 sink:
   pattern: uniform
   severity: moderate
+  support_pattern: balanced_soft
 
 transition_patch:
   start_x_m: 0.35

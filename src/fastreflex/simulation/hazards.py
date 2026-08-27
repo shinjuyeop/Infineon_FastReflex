@@ -35,6 +35,9 @@ class ExactFootSample:
     world_xyz: np.ndarray
     world_velocity_xyz: np.ndarray
     contact_penetration_m: np.ndarray
+    quadrant_contact: np.ndarray
+    quadrant_normal_force_n: np.ndarray
+    quadrant_penetration_m: np.ndarray
     soft_patch_contact: np.ndarray
     low_friction_patch_contact: np.ndarray
 
@@ -59,6 +62,15 @@ class PhysicalDiagnostics:
     loaded_reference_penetration_m: np.ndarray
     loaded_penetration_change_m: np.ndarray
     bilateral_loaded_penetration_asymmetry_m: np.ndarray
+    quadrant_contact: np.ndarray
+    quadrant_normal_force_n: np.ndarray
+    quadrant_penetration_m: np.ndarray
+    quadrant_loaded: np.ndarray
+    loaded_quadrant_count: np.ndarray
+    support_penetration_spread_m: np.ndarray
+    support_penetration_max_m: np.ndarray
+    support_penetration_load_weighted_std_m: np.ndarray
+    support_load_concentration: np.ndarray
     pre_fall_valid: np.ndarray
     established_slip: np.ndarray
     established_slip_onset: np.ndarray
@@ -109,6 +121,13 @@ def _foot_ids(
     return body_ids, geom_ids
 
 
+def foot_quadrant_index(local_x_m: float, local_y_m: float) -> int:
+    """Map foot-local +x front and +y left to four sole regions."""
+    front_offset = 0 if local_x_m >= 0.0 else 2
+    lateral_offset = 0 if local_y_m >= 0.0 else 1
+    return front_offset + lateral_offset
+
+
 def read_exact_foot_sample(
     model: mujoco.MjModel,
     data: mujoco.MjData,
@@ -123,6 +142,9 @@ def read_exact_foot_sample(
     low_friction_patch_contact = np.zeros(2, dtype=bool)
     normal_force = np.zeros(2, dtype=np.float64)
     penetration = np.zeros(2, dtype=np.float64)
+    quadrant_contact = np.zeros((2, 4), dtype=bool)
+    quadrant_force = np.zeros((2, 4), dtype=np.float64)
+    quadrant_penetration = np.full((2, 4), np.nan, dtype=np.float64)
     wrench = np.zeros(6, dtype=np.float64)
     for contact_id in range(data.ncon):
         item = data.contact[contact_id]
@@ -144,9 +166,25 @@ def read_exact_foot_sample(
             penetration[side_index] = max(
                 penetration[side_index], max(0.0, -float(item.dist))
             )
+            body_id = body_ids[side_index]
+            world_delta = np.asarray(item.pos) - data.xpos[body_id]
+            local_position = data.xmat[body_id].reshape(3, 3).T @ world_delta
+            quadrant = foot_quadrant_index(
+                float(local_position[0]), float(local_position[1])
+            )
+            physical_penetration = max(0.0, -float(item.dist))
+            quadrant_contact[side_index, quadrant] = True
+            previous_penetration = quadrant_penetration[side_index, quadrant]
+            quadrant_penetration[side_index, quadrant] = (
+                physical_penetration
+                if not np.isfinite(previous_penetration)
+                else max(previous_penetration, physical_penetration)
+            )
             wrench.fill(0.0)
             mujoco.mj_contactForce(model, data, contact_id, wrench)
-            normal_force[side_index] += max(0.0, float(wrench[0]))
+            contact_force = max(0.0, float(wrench[0]))
+            normal_force[side_index] += contact_force
+            quadrant_force[side_index, quadrant] += contact_force
 
     velocity = np.zeros(6, dtype=np.float64)
     world_velocity = []
@@ -166,6 +204,9 @@ def read_exact_foot_sample(
         world_xyz=np.stack(tuple(data.xpos[body_id].copy() for body_id in body_ids)),
         world_velocity_xyz=np.asarray(world_velocity, dtype=np.float64),
         contact_penetration_m=penetration,
+        quadrant_contact=quadrant_contact,
+        quadrant_normal_force_n=quadrant_force,
+        quadrant_penetration_m=quadrant_penetration,
         soft_patch_contact=soft_patch_contact,
         low_friction_patch_contact=low_friction_patch_contact,
     )
@@ -220,6 +261,112 @@ def persistent_oracle(
         previous_episode = int(episode)
         active[index] = passes and count >= persistence_samples
     return active
+
+
+def support_penetration_diagnostics(
+    quadrant_contact: np.ndarray,
+    quadrant_normal_force_n: np.ndarray,
+    quadrant_penetration_m: np.ndarray,
+    loaded_contact: np.ndarray,
+    contact_episode_id: np.ndarray,
+    pre_fall_valid: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Derive direction-independent loaded-support penetration statistics."""
+    contact = np.asarray(quadrant_contact, dtype=bool)
+    load = np.asarray(quadrant_normal_force_n, dtype=np.float64)
+    penetration = np.asarray(quadrant_penetration_m, dtype=np.float64)
+    loaded = np.asarray(loaded_contact, dtype=bool)
+    episodes = np.asarray(contact_episode_id, dtype=np.int64)
+    pre_fall = np.asarray(pre_fall_valid, dtype=bool)
+    if (
+        contact.ndim != 3
+        or contact.shape[1:] != (2, 4)
+        or load.shape != contact.shape
+        or penetration.shape != contact.shape
+        or loaded.shape != contact.shape[:2]
+        or episodes.shape != contact.shape[:2]
+        or pre_fall.shape != (contact.shape[0],)
+        or np.any(load < 0.0)
+    ):
+        raise ValueError("quadrant support arrays have inconsistent shapes")
+    sample_count = contact.shape[0]
+    transient = np.zeros((sample_count, 2), dtype=bool)
+    for side in range(2):
+        for start in np.flatnonzero(
+            np.diff(np.r_[False, episodes[:, side] >= 0].astype(np.int8)) == 1
+        ):
+            episode = episodes[start, side]
+            end = start
+            while end < sample_count and episodes[end, side] == episode:
+                end += 1
+            transient[
+                start : min(start + TOUCHDOWN_TRANSIENT_SAMPLES, end), side
+            ] = True
+    foot_valid = loaded & ~transient & pre_fall[:, None]
+    quadrant_loaded = (
+        contact
+        & np.isfinite(penetration)
+        & (load >= LOAD_OFF_N)
+        & foot_valid[:, :, None]
+    )
+    count = np.count_nonzero(quadrant_loaded, axis=2).astype(np.int8)
+    spread = np.full((sample_count, 2), np.nan, dtype=np.float64)
+    maximum = np.full((sample_count, 2), np.nan, dtype=np.float64)
+    weighted_std = np.full((sample_count, 2), np.nan, dtype=np.float64)
+    concentration = np.full((sample_count, 2), np.nan, dtype=np.float64)
+    for sample in range(sample_count):
+        for side in range(2):
+            valid = quadrant_loaded[sample, side]
+            if np.count_nonzero(valid) < 2:
+                continue
+            values = penetration[sample, side, valid]
+            weights = load[sample, side, valid]
+            spread[sample, side] = float(np.max(values) - np.min(values))
+            maximum[sample, side] = float(np.max(values))
+            mean = float(np.average(values, weights=weights))
+            weighted_std[sample, side] = float(
+                np.sqrt(np.average(np.square(values - mean), weights=weights))
+            )
+            concentration[sample, side] = float(np.max(weights) / np.sum(weights))
+    return {
+        "quadrant_loaded": quadrant_loaded,
+        "loaded_quadrant_count": count,
+        "support_penetration_spread_m": spread,
+        "support_penetration_max_m": maximum,
+        "support_penetration_load_weighted_std_m": weighted_std,
+        "support_load_concentration": concentration,
+    }
+
+
+def uneven_support_oracle(
+    support_penetration_spread_m: np.ndarray,
+    support_valid: np.ndarray,
+    contact_episode_id: np.ndarray,
+    threshold_m: float,
+    persistence_samples: int = 20,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply a causal per-foot spread threshold with contact-local persistence."""
+    spread = np.asarray(support_penetration_spread_m, dtype=np.float64)
+    valid = np.asarray(support_valid, dtype=bool)
+    episodes = np.asarray(contact_episode_id, dtype=np.int64)
+    if spread.ndim != 2 or spread.shape[1] != 2:
+        raise ValueError("support spread must have shape (samples, 2)")
+    if valid.shape != spread.shape or episodes.shape != spread.shape:
+        raise ValueError("uneven-support oracle arrays must be aligned")
+    active = np.column_stack(
+        tuple(
+            persistent_oracle(
+                spread[:, side],
+                valid[:, side],
+                episodes[:, side],
+                threshold_m,
+                persistence_samples,
+            )
+            for side in range(2)
+        )
+    )
+    onset = active & ~np.vstack((np.zeros((1, 2), dtype=bool), active[:-1]))
+    return active, onset
 
 
 def _derive_one_foot(
@@ -314,6 +461,9 @@ def derive_physical_diagnostics(
     fall_active: np.ndarray,
     soft_patch_contact: np.ndarray | None = None,
     low_friction_patch_contact: np.ndarray | None = None,
+    quadrant_contact: np.ndarray | None = None,
+    quadrant_normal_force_n: np.ndarray | None = None,
+    quadrant_penetration_m: np.ndarray | None = None,
 ) -> PhysicalDiagnostics:
     """Derive simulator-only cause/effect diagnostics, never terrain labels."""
     contact = np.asarray(physical_contact, dtype=bool)
@@ -338,6 +488,21 @@ def derive_physical_diagnostics(
         if low_friction_patch_contact is None
         else np.asarray(low_friction_patch_contact, dtype=bool)
     )
+    quadrant_contact_array = (
+        np.zeros((sample_count, 2, 4), dtype=bool)
+        if quadrant_contact is None
+        else np.asarray(quadrant_contact, dtype=bool)
+    )
+    quadrant_force_array = (
+        np.zeros((sample_count, 2, 4), dtype=np.float64)
+        if quadrant_normal_force_n is None
+        else np.asarray(quadrant_normal_force_n, dtype=np.float64)
+    )
+    quadrant_penetration_array = (
+        np.full((sample_count, 2, 4), np.nan, dtype=np.float64)
+        if quadrant_penetration_m is None
+        else np.asarray(quadrant_penetration_m, dtype=np.float64)
+    )
     if (
         contact.shape != (sample_count, 2)
         or patch_contact.shape != (sample_count, 2)
@@ -352,6 +517,9 @@ def derive_physical_diagnostics(
         or angular_velocity.shape != (sample_count, 3)
         or linear_velocity.shape != (sample_count, 3)
         or fallen.shape != (sample_count,)
+        or quadrant_contact_array.shape != (sample_count, 2, 4)
+        or quadrant_force_array.shape != (sample_count, 2, 4)
+        or quadrant_penetration_array.shape != (sample_count, 2, 4)
     ):
         raise ValueError("physical diagnostic arrays have inconsistent shapes")
     if not (
@@ -417,6 +585,14 @@ def derive_physical_diagnostics(
         (np.zeros((1, 2), dtype=bool), friction_patch_contact[:-1])
     )
     contact_episode_id = stack("episode_id").astype(np.int32)
+    support = support_penetration_diagnostics(
+        quadrant_contact_array,
+        quadrant_force_array,
+        quadrant_penetration_array,
+        loaded,
+        contact_episode_id,
+        pre_fall,
+    )
     established_slip = stack("slip")
     established_slip_onset = established_slip & ~np.vstack(
         (np.zeros((1, 2), dtype=bool), established_slip[:-1])
@@ -520,6 +696,23 @@ def derive_physical_diagnostics(
         loaded_penetration_change_m=stack("penetration_change").astype(np.float32),
         bilateral_loaded_penetration_asymmetry_m=(
             penetration_asymmetry.astype(np.float32)
+        ),
+        quadrant_contact=quadrant_contact_array,
+        quadrant_normal_force_n=quadrant_force_array.astype(np.float32),
+        quadrant_penetration_m=quadrant_penetration_array.astype(np.float32),
+        quadrant_loaded=support["quadrant_loaded"],
+        loaded_quadrant_count=support["loaded_quadrant_count"],
+        support_penetration_spread_m=(
+            support["support_penetration_spread_m"].astype(np.float32)
+        ),
+        support_penetration_max_m=(
+            support["support_penetration_max_m"].astype(np.float32)
+        ),
+        support_penetration_load_weighted_std_m=(
+            support["support_penetration_load_weighted_std_m"].astype(np.float32)
+        ),
+        support_load_concentration=(
+            support["support_load_concentration"].astype(np.float32)
         ),
         pre_fall_valid=pre_fall,
         established_slip=established_slip,

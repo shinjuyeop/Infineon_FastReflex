@@ -1,0 +1,81 @@
+experiment:
+  id: SINK_PHYSICAL_HAZARD_REDEFINITION
+  date: 2026-08-27
+  purpose: validate a causal uneven-support Sink ground-truth candidate
+
+source:
+  simulator_config: configs/simulator/g1.yaml
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  historical_sink_contract: SINK_HAZARD_CRITERIA_FROZEN
+
+common:
+  duration_s: 8.0
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  initial_condition: canonical_fixed_stand
+  patch_start_x_m: 0.35
+  patch_width_m: 0.75
+  headless: true
+  simulator_deterministic: true
+  random_seed: null
+
+support_metric:
+  aggregation: maximum_exact_contact_penetration_per_foot_local_quadrant
+  primary: max_loaded_quadrant_penetration_minus_min_loaded_quadrant_penetration
+  foot_load_hysteresis_n: {on: 5.0, off: 2.5}
+  quadrant_min_load_n: 2.5
+  minimum_loaded_quadrants: 2
+  touchdown_transient_ms: 10
+  threshold_selection: maximum_benign_control_envelope_plus_fixed_margin
+  fixed_margin_m: 0.001
+  observed_benign_envelope_m: 0.022655311971902847
+  candidate_threshold_m: 0.023655311971902848
+  persistence_ms: 20
+  future_outcome_dependency: false
+  freeze_status: criterion_not_freezable
+
+runs:
+  - {id: concrete_s015, role: benign, terrain: concrete, speed_mps: 0.15, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: concrete_s025, role: benign, terrain: concrete, speed_mps: 0.25, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: marble_s015, role: benign, terrain: marble, speed_mps: 0.15, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: marble_s025, role: benign, terrain: marble, speed_mps: 0.25, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: uniform_sand_s015, role: benign, terrain: sand, speed_mps: 0.15, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: uniform_sand_s025, role: benign, terrain: sand, speed_mps: 0.25, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: balanced_left_mild_s015, role: benign, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_soft}
+  - {id: balanced_left_mild_s025, role: benign, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_soft}
+  - {id: balanced_right_mild_s015, role: benign, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_soft}
+  - {id: balanced_right_mild_s025, role: benign, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_soft}
+  - {id: balanced_left_moderate_s015, role: benign, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: balanced_left_moderate_s025, role: benign, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: balanced_right_moderate_s015, role: benign, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: balanced_right_moderate_s025, role: benign, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: medial_left_s015, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: severe, support_pattern: medial_soft}
+  - {id: medial_left_s025, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: severe, support_pattern: medial_soft}
+  - {id: medial_right_s015, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: severe, support_pattern: medial_soft}
+  - {id: medial_right_s025, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: severe, support_pattern: medial_soft}
+  - {id: lateral_left_s015, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: severe, support_pattern: lateral_soft}
+  - {id: lateral_left_s025, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: severe, support_pattern: lateral_soft}
+  - {id: lateral_right_s015, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: severe, support_pattern: lateral_soft}
+  - {id: lateral_right_s025, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: severe, support_pattern: lateral_soft}
+  - {id: localized_left_s015, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: severe, support_pattern: localized_soft}
+  - {id: localized_left_s025, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: severe, support_pattern: localized_soft}
+  - {id: localized_right_s015, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: severe, support_pattern: localized_soft}
+  - {id: localized_right_s025, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: severe, support_pattern: localized_soft}
+
+outcome_audit:
+  posture_degradation: historical_frozen_t2_diagnostic_only
+  fall: censor_diagnostic_only
+  recovery: uneven_support_detected_without_fall
+
+fsr_descriptive_audit:
+  enabled_if_ground_truth_freezable: true
+  horizons_ms: [0, 20, 50, 100]
+  training: false
+
+artifacts:
+  path: artifacts/runs/20260827_sink_physical_hazard_redefinition
+  gitignored: true
+  committed: false
+
+report:
+  path: reports/20260827_sink_physical_hazard_redefinition.md

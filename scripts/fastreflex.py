@@ -82,6 +82,10 @@ def build_parser() -> argparse.ArgumentParser:
             "medial_soft",
             "lateral_soft",
             "localized_soft",
+            "balanced_deformable",
+            "medial_deformable",
+            "lateral_deformable",
+            "localized_deformable",
         ),
         help="select balanced or spatially heterogeneous finite Sink support",
     )

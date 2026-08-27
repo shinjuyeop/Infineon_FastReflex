@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`, frozen criteria, 40-run IMU/FSR Pilot, Time-to-Separation, static 및 temporal FSR distribution analysis까지 완료했다. 현재 상태는 `FSR_TEMPORAL_REDISTRIBUTION_ANALYZED`다. Temporal은 t1+20 ms 한 horizon을 개선했지만 반복되지 않았고 late path는 Uniform Sand에 confounded되어 static보다 meaningful early advantage가 없다. Sim-to-real 한계가 남아 sensor architecture와 detector readiness는 unfrozen이다.
+`MINIMAL_G1_MUJOCO_MIGRATION`, frozen criteria, 40-run IMU/FSR Pilot과 기존 FSR analysis를 보존한 상태에서 passive deformable-support Sink proxy sanity를 완료했다. 현재 상태는 `SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY`다. Support displacement spread는 rigid/balanced benign 0/14와 primary uneven 11/12를 보였고 outcome과 독립된 future observability clock 후보가 됐다. 기존 Pilot label은 불변이며 sim-to-real 한계, sensor architecture와 detector readiness는 unfrozen이다.
 
 ## 고정 연구 원칙
 
@@ -45,6 +45,17 @@
 - 미확정: `[t1,t2)` training label/window timing과 IMU-only observability
 
 현재 상태는 `SINK_HAZARD_CRITERIA_FROZEN`이다. `sink_physical_active`만으로 primary `SINK`를 만들지 않는다. Full-lane history는 [`20260826_sink_scenario_sanity.md`](../reports/20260826_sink_scenario_sanity.md), finite transition과 freeze 근거는 [`20260826_sink_transition_criteria.md`](../reports/20260826_sink_transition_criteria.md)에 기록한다.
+
+### Deformable-support proxy sanity — future observability clock
+
+- 보존: 기존 same-height penetration/support-loss 실패, outcome-based Sink contract와 Pilot annotation은 소급 변경하지 않음
+- 완료: one-slide balanced plate와 four-cell uneven plate의 passive load-driven vertical motion, initial top parity와 unloaded drift 0 검증
+- 완료: support joint displacement spread `>= 10 mm`, 20 ms persistence, same-foot patch episode/load/pre-censor gating 고정
+- 결과: rigid/balanced benign `0/14`, primary moderate uneven `11/12`; left/right `6/6`, `5/6`; medial/lateral/localized `4/4`, `3/4`, `4/4`
+- 결과: detected fall 1과 detected non-fall 10으로 physical onset과 outcome 분리
+- 제한: soil model이나 real-world depth calibration이 아닌 deformable-support engineering proxy이며 runtime sensor observability는 미검증
+
+Verdict는 `SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY`다. 새 clock을 사용하는 future dataset은 새 schema/provenance로 생성해야 하며 기존 Pilot을 relabel하지 않는다. Config와 결과는 [`20260827_sink_deformable_support_proxy_sanity.yaml`](../configs/experiment/20260827_sink_deformable_support_proxy_sanity.yaml), [`20260827_sink_deformable_support_proxy_sanity.md`](../reports/20260827_sink_deformable_support_proxy_sanity.md)에 기록한다.
 
 ### Slip transition sanity — Pilot 이전 단계
 
@@ -160,7 +171,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. �
 - Research repository에는 검토된 Float contract artifact만 export
 - Quantization 이후 작업은 `Infineon_FastReflex_E84` repository로 넘김
 
-연구 순서는 `MuJoCo baseline → Sink transition/criteria freeze → Slip transition sanity → Pilot Dataset → First established-state PoC → Time-to-Separation → Full Dataset → full PyTorch model comparison`이다. Time-to-Separation까지 분석했다. 다음 단계는 별도 승인 뒤 Phase 5 Full Dataset design이며 continuous benign soft-ground coverage, onset-relative provenance와 fresh test reservation을 먼저 다룬다. Dataset 생성이나 full model comparison을 자동으로 시작하지 않는다.
+연구 순서는 `MuJoCo baseline → historical Sink/Slip criteria → Pilot Dataset → first PoC/Time-to-Separation → FSR analyses → deformable-support proxy sanity → causal observability decision → Full Dataset → full PyTorch model comparison`이다. 다음 단계 후보는 별도 승인된 matched balanced/uneven observability study이며 새 s1의 schema/provenance와 fresh test reservation을 먼저 다룬다. Dataset 생성이나 classifier training을 자동으로 시작하지 않는다.
 
 ## Split과 leakage protocol
 

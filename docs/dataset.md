@@ -14,7 +14,9 @@ Primary task는 하나의 3-class classification이다.
 
 Terrain, scenario, contact, exact simulator state와 physical oracle은 label/diagnostic/metadata 전용이다. Runtime model input에는 넣지 않는다.
 
-Transition study에서 `SINK_HAZARD_CRITERIA_FROZEN`을 확정했다. Contact penetration만 존재하고 자세와 보행이 안정적인 상태는 primary `SINK`가 아니다. 아래 `sink_physical_active`는 원인 측 precursor diagnostic이며 class label과 동치가 아니다. Frozen effect gate는 patch-linked physical sink 뒤 pelvis tilt가 benign-control envelope를 넘는지를 사용한다.
+Transition study에서 `SINK_HAZARD_CRITERIA_FROZEN`을 확정했다. Contact penetration만 존재하고 자세와 보행이 안정적인 상태는 primary `SINK`가 아니다. 아래 `sink_physical_active`는 원인 측 precursor diagnostic이며 class label과 동치가 아니다. Frozen effect gate는 patch-linked physical sink 뒤 pelvis tilt가 benign-control envelope를 넘는지를 사용한다. 이 정의와 기존 Pilot raw annotation은 historical contract로 불변이다.
+
+후속 bounded sanity는 passive support joint의 실제 vertical displacement spread를 outcome-independent `UNEVEN_SUPPORT_SINK` physical clock 후보로 검증했다. 이는 향후 observability study에만 적용하며 기존 Pilot을 소급 relabel하지 않는다. 새 clock을 materialize하려면 dataset schema/provenance를 명시적으로 revision해야 한다.
 
 ## Runtime sensor contract
 
@@ -116,6 +118,8 @@ Dataset의 authoritative source는 미리 잘린 window가 아니라 simulation 
 - `pre_fall_valid`와 first-fall/censor marker
 - 필요 시 exact root/foot pose와 velocity. 이는 항상 diagnostic-only로 표시한다.
 
+Deformable-support future study는 기존 Pilot NPZ에 없는 simulator-only `support_surface_displacement_m [N,2,4]`, velocity, cell contact, spread와 s1 onset을 추가할 수 있다. 이 배열은 raw IMU/FSR runtime input이 아니며 기존 schema에 조용히 추가하지 않는다.
+
 `hazard_class_id=-1`은 primary class가 아니라 `EXCLUDED/UNRESOLVED` sentinel로 예약한다. Pilot에서는 qualifying Slip run의 `[t0,t1)`, hazardous Sink run의 `[t0,t2)`, censor 이후, invalid/dual run 전체를 `-1`과 `training_eligible=false`로 보존한다. Slip은 t1부터 class 1, Sink는 frozen t2부터 class 2를 기록한다. 이는 raw-state annotation이며 최종 window policy가 아니다.
 
 ### Run metadata
@@ -208,6 +212,20 @@ Tilt threshold는 concrete, uniform sand, left/right mild transition의 8초 ben
 Hazardous episode의 future early-detection reference 후보는 결과가 이미 드러난 t2가 아니라 원인 onset t1이다. `[t1,t2)` sample/window eligibility와 latency gate는 Raw IMU sanity/Time-to-Separation에서 검증하기 전까지 `training_eligible=false`로 유지한다. Pilot materialization은 이 원칙을 적용했으며 training label/window가 확정됐다는 뜻은 아니다.
 
 `SINK_HAZARD_CRITERIA_FROZEN`
+
+### Future deformable-support `SINK` proxy
+
+`SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY`는 기존 outcome-based contract를 삭제하지 않는 future-study candidate다. Passive vertical slide support의 per-side cell 순서 `[entry_medial, entry_lateral, exit_medial, exit_lateral]`에서 positive-downward displacement `d`를 읽고 다음 metric을 사용한다.
+
+```text
+support_surface_spread_m = max(d) - min(d)
+```
+
+Candidate s1은 같은 foot의 deformable-patch physical contact episode에서 patch contact를 이미 보았고 foot이 loaded/pre-censor인 동안 spread `>= 0.010 m`가 1 kHz에서 20 consecutive samples 지속된 첫 active sample이다. 일부 cell이 unload되어도 그 cell joint displacement를 metric에서 제거하지 않는다. Foot episode 종료/변경 또는 censor에서 persistence를 reset한다.
+
+이 clock은 future t2/fall/recovery, pelvis tilt, IMU, FSR, robot joint state와 terrain identity를 사용하지 않는다. Balanced support는 네 geom이 하나의 joint를 공유하므로 level displacement는 `BENIGN_SOFT`, 독립 cell이 공간적으로 비균일하게 내려가 criterion을 만족하면 `UNEVEN_SUPPORT_SINK`다. Fall, recovery와 posture degradation은 outcome diagnostic only다.
+
+이 구현은 granular soil이나 measured soil mechanics가 아닌 deformable-support engineering proxy다. 32-run sanity에서 rigid/balanced benign firing 0/14, primary moderate uneven detection 11/12와 fall/non-fall diversity를 확인했지만 runtime sensor separability나 hardware validity를 뜻하지 않는다. 근거는 [`20260827_sink_deformable_support_proxy_sanity.md`](../reports/20260827_sink_deformable_support_proxy_sanity.md)에 둔다.
 
 ### Terrain shortcut과 dual hazard
 

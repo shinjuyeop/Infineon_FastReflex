@@ -55,9 +55,9 @@ MuJoCo
 
 ## Current Status
 
-`FSR_TEMPORAL_REDISTRIBUTION_ANALYZED`
+`SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY`
 
-같은 40개 physical condition의 observer-only virtual FSR8 Pilot에서 static load distribution에 이어 temporal redistribution을 run-level로 분석했다. t1+20 ms front absolute change는 한 horizon에서 분리됐지만 +30 ms에 유지되지 않았고, t1+100 ms CoP path는 Uniform Sand에서 더 크게 나타났다. Static보다 반복적인 early advantage가 없어 결론은 `FSR_TEMPORAL_REDISTRIBUTION_NO_ADDED_VALUE`다. 이는 idealized virtual-FSR Pilot evidence일 뿐 trained distribution detector, actual FSR hardware validation, final sensor architecture, Full Dataset 또는 deployment readiness를 뜻하지 않는다. Walking policy ONNX, raw data와 generated analysis/training artifacts는 Git에 포함하지 않는다.
+기존 Pilot과 outcome-based Sink history를 소급 변경하지 않고 passive vertical support joint의 spatial displacement spread를 새 physical clock 후보로 검증했다. Predeclared 10 mm/20 ms criterion은 rigid/balanced benign `0/14`, primary moderate uneven `11/12`를 보였고 left/right, 세 pattern, 두 speed와 detected fall/non-fall coverage를 통과했다. 이는 granular soil model이나 real-world depth calibration이 아닌 deformable-support engineering proxy이며 runtime sensor separability, trained detector, actual FSR hardware, Full Dataset 또는 deployment readiness를 뜻하지 않는다. Walking policy ONNX, raw runs와 generated audit artifact는 Git에 포함하지 않는다.
 
 ## 구조
 

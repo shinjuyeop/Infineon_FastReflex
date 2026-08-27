@@ -1,6 +1,6 @@
 # Architecture
 
-현재 repository는 `FSR_TEMPORAL_REDISTRIBUTION_ANALYZED` 상태다. 기존 IMU6/FSR Pilot과 static load-distribution evidence를 보존한 채 raw 1 ms FSR redistribution의 causal path를 read-only로 분석했다. t1+20 ms transient는 반복되지 않았고 t1+100 ms path는 Uniform Sand에서 더 커 `NO_ADDED_VALUE`로 결론냈다. Actual FSR hardware, final sensor architecture, Full Dataset과 final detector는 아직 검증하지 않았다.
+현재 repository는 `SINK_DEFORMABLE_SUPPORT_PROXY_SUPPORTED_FOR_OBSERVABILITY_STUDY` 상태다. 기존 Pilot과 outcome-based Sink history를 변경하지 않고, passive vertical support joint의 spatial displacement spread를 향후 Sink observability용 physical clock 후보로 검증했다. Moderate uneven support는 11/12, rigid/balanced benign은 0/14였고 fall/non-fall outcome도 분리됐다. 이 support-cell 구조는 soil model이 아닌 engineering proxy이며 Actual FSR hardware, final sensor architecture, Full Dataset과 final detector는 아직 검증하지 않았다.
 
 ## MuJoCo Baseline
 
@@ -21,8 +21,8 @@ Unitree G1 MJCF/meshes + user-supplied walking ONNX + terrain profile
 
 - `simulation/g1.py`: 29-DOF model/actuator contract, fixed policy adapter, 0.5 ms physics step, 1 kHz raw pelvis IMU/observer sampling과 in-memory smoke
 - `simulation/sensors.py`: 기존 sole-terrain contact normal load를 foot-local quadrant에 합산하는 observer-only virtual FSR8
-- `simulation/terrain.py`: concrete, marble, ice, sand와 same-height asymmetric compliance profile
-- `simulation/hazards.py`: bilateral contact/touchdown, foot cause metric, established Slip, `sink_physical` precursor와 pelvis effect diagnostic 계산
+- `simulation/terrain.py`: concrete, marble, ice, sand, historical same-height compliance와 passive vertical-DOF deformable-support profile
+- `simulation/hazards.py`: bilateral contact/touchdown, established Slip, historical Sink diagnostics와 causal support-surface displacement spread 계산
 - `dataset/collector.py`: experiment matrix 실행, conservative raw annotation, one-run-per-NPZ 저장, manifest/metadata와 SHA/structure validation
 - `configs/simulator/g1.yaml`: 하나의 canonical simulator config
 - `configs/dataset/hazard.yaml`: canonical raw schema와 frozen label contract
@@ -44,7 +44,7 @@ Physics는 0.5 ms(2 kHz)이고 두 step마다 raw MuJoCo pelvis accelerometer/gy
 | ice | 0.05 | hard, very low friction |
 | sand | 0.70 | softer, damped contact impedance |
 
-Ice가 자동으로 `SLIP`이거나 sand가 자동으로 `SINK`인 규칙은 없다. Established Slip은 frozen physical metric으로 계산하고, penetration persistence는 `sink_physical` precursor로만 사용한다. Primary `SINK`는 patch-linked physical sink 뒤 frozen pelvis-tilt degradation gate까지 발생한 episode다.
+Ice가 자동으로 `SLIP`이거나 sand가 자동으로 `SINK`인 규칙은 없다. Established Slip은 frozen physical metric으로 계산한다. 기존 Pilot의 primary `SINK`는 penetration precursor 뒤 frozen pelvis-tilt degradation gate까지 발생한 episode로 불변이다. 향후 observability study용 candidate clock은 실제 support joint displacement 네 개의 spread가 10 mm 이상으로 20 ms 지속된 시점이며 outcome을 사용하지 않는다. 이 새 의미로 dataset을 만들 경우 기존 Pilot을 고치지 않고 새 schema/provenance로 materialize해야 한다.
 
 ### Asset and policy boundary
 
@@ -100,7 +100,8 @@ Virtual FSR은 기존 sole collision contact에서만 읽으므로 geom, mass, f
 5. FSR load distribution의 t0/t1 physical observability와 terrain/phase shortcut을 분석한다.
 6. Temporal redistribution이 static evidence를 앞당기는지 causal path로 검증한다.
 7. Pilot evidence를 review해 sensor architecture를 결정한다.
-8. 그 뒤에만 Full Dataset을 생성하고 동일 validation protocol로 full candidate family를 비교한다.
-9. 검증된 Float model과 계약 artifact만 export한다.
+8. Passive deformable-support proxy의 새 physical clock으로 matched balanced/uneven causal observability를 검증한다.
+9. 그 뒤에만 Full Dataset을 생성하고 동일 validation protocol로 full candidate family를 비교한다.
+10. 검증된 Float model과 계약 artifact만 export한다.
 
 첫 설계에서는 복잡한 handcrafted feature pipeline을 사용하지 않는다. Research 경계 뒤의 quantization, Vela, firmware, HIL은 E84 deployment repository가 담당한다.

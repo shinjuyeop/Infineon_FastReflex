@@ -1,0 +1,131 @@
+experiment:
+  id: SINK_DEFORMABLE_SUPPORT_PROXY_SANITY
+  date: 2026-08-27
+  purpose: validate a causal passive surface-displacement Sink proxy
+
+source:
+  simulator_config: configs/simulator/g1.yaml
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  prior_penetration_experiment: configs/experiment/20260827_sink_physical_hazard_redefinition.yaml
+  prior_support_loss_experiment: configs/experiment/20260827_sink_support_loss_oracle_sanity.yaml
+
+common:
+  duration_s: 8.0
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  initial_condition: canonical_fixed_stand
+  patch_start_x_m: 0.35
+  patch_width_m: 0.75
+  headless: true
+  simulator_deterministic: true
+  random_seed: null
+
+mechanics:
+  interpretation: passive_deformable_support_engineering_proxy
+  parameter_status: frozen_after_mechanical_stabilization_before_robot_matrix
+  robot_results_used_for_selection: false
+  structure:
+    balanced: one_vertical_slide_body_with_four_contact_geoms_per_side
+    uneven: four_independent_vertical_slide_bodies_per_side
+  vertical_axis: [0.0, 0.0, 1.0]
+  initial_joint_position_m: 0.0
+  initial_surface_top_z_m: 0.0
+  body_gravity_compensation: 1.0
+  tile_mass_kg: 5.0
+  contact_profile: hard_contact_with_sand_friction
+  joint_limit_solref: [0.002, 1.0]
+  joint_limit_solimp: [0.99, 0.999, 0.0001, 0.5, 2.0]
+  reference_loads_n: [100.0, 250.0, 400.0]
+  load_hold_s: 1.0
+  unload_recovery_s: 1.0
+  profiles:
+    reference: {travel_m: 0.004, stiffness_n_per_m: 50000.0, damping_n_s_per_m: 1000.0}
+    mild: {travel_m: 0.020, stiffness_n_per_m: 12000.0, damping_n_s_per_m: 490.0}
+    moderate: {travel_m: 0.040, stiffness_n_per_m: 7000.0, damping_n_s_per_m: 374.0}
+    severe: {travel_m: 0.065, stiffness_n_per_m: 4500.0, damping_n_s_per_m: 300.0}
+  tuning_after_robot_results: prohibited
+
+surface_displacement_oracle:
+  cell_order: [entry_medial, entry_lateral, exit_medial, exit_lateral]
+  displacement_sign: positive_downward
+  primary_metric: max_cell_displacement_minus_min_cell_displacement
+  spread_threshold_m: 0.010
+  persistence_ms: 20
+  gating:
+    - deformable_patch_physical_contact_seen_in_current_foot_contact_episode
+    - meaningful_foot_loaded_state
+    - pre_censor
+  reset_on:
+    - foot_contact_episode_end_or_change
+    - fall_or_censor
+  future_outcome_dependency: false
+  fsr_or_imu_dependency: false
+  robot_joint_state_dependency: false
+  tuning_after_results: prohibited
+
+provisional_physical_acceptance:
+  benign_firing_max: 0
+  primary_uneven_detection_min: 9
+  primary_uneven_run_count: 12
+  left_detection_min: 4
+  left_run_count: 6
+  right_detection_min: 4
+  right_run_count: 6
+  per_pattern_detection_min: 2
+  per_pattern_run_count: 4
+  each_speed_requires_detection: true
+  causality_required: true
+  geometry_and_mechanics_required: true
+
+outcome_diversity:
+  detected_nonfall_or_recovery_desired_min: 1
+  detected_fall_desired_min: 1
+  affects_physical_oracle_gate: false
+
+runs:
+  - {id: concrete_s015, group: rigid_benign, role: benign, terrain: concrete, speed_mps: 0.15, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: concrete_s025, group: rigid_benign, role: benign, terrain: concrete, speed_mps: 0.25, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: marble_s015, group: rigid_benign, role: benign, terrain: marble, speed_mps: 0.15, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: marble_s025, group: rigid_benign, role: benign, terrain: marble, speed_mps: 0.25, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: uniform_sand_s015, group: rigid_benign, role: benign, terrain: sand, speed_mps: 0.15, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: uniform_sand_s025, group: rigid_benign, role: benign, terrain: sand, speed_mps: 0.25, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  - {id: balanced_mild_left_s015, group: balanced_benign, role: benign, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable}
+  - {id: balanced_mild_left_s025, group: balanced_benign, role: benign, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable}
+  - {id: balanced_mild_right_s015, group: balanced_benign, role: benign, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+  - {id: balanced_mild_right_s025, group: balanced_benign, role: benign, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+  - {id: balanced_moderate_left_s015, group: balanced_benign, role: benign, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: moderate, support_pattern: balanced_deformable}
+  - {id: balanced_moderate_left_s025, group: balanced_benign, role: benign, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: moderate, support_pattern: balanced_deformable}
+  - {id: balanced_moderate_right_s015, group: balanced_benign, role: benign, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: moderate, support_pattern: balanced_deformable}
+  - {id: balanced_moderate_right_s025, group: balanced_benign, role: benign, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: moderate, support_pattern: balanced_deformable}
+  - {id: moderate_medial_left_s015, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: moderate, support_pattern: medial_deformable}
+  - {id: moderate_medial_left_s025, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: moderate, support_pattern: medial_deformable}
+  - {id: moderate_medial_right_s015, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: moderate, support_pattern: medial_deformable}
+  - {id: moderate_medial_right_s025, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: moderate, support_pattern: medial_deformable}
+  - {id: moderate_lateral_left_s015, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+  - {id: moderate_lateral_left_s025, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+  - {id: moderate_lateral_right_s015, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: moderate, support_pattern: lateral_deformable}
+  - {id: moderate_lateral_right_s025, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: moderate, support_pattern: lateral_deformable}
+  - {id: moderate_localized_left_s015, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: moderate, support_pattern: localized_deformable}
+  - {id: moderate_localized_left_s025, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: moderate, support_pattern: localized_deformable}
+  - {id: moderate_localized_right_s015, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: moderate, support_pattern: localized_deformable}
+  - {id: moderate_localized_right_s025, group: primary_uneven, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: moderate, support_pattern: localized_deformable}
+  - {id: mild_localized_left_s015, group: outcome_diversity, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: mild, support_pattern: localized_deformable}
+  - {id: mild_localized_right_s015, group: outcome_diversity, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: mild, support_pattern: localized_deformable}
+  - {id: mild_medial_left_s025, group: outcome_diversity, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_left, sink_severity: mild, support_pattern: medial_deformable}
+  - {id: mild_medial_right_s025, group: outcome_diversity, role: uneven, terrain: sand, speed_mps: 0.25, sink_pattern: transition_right, sink_severity: mild, support_pattern: medial_deformable}
+  - {id: severe_lateral_left_s015, group: outcome_diversity, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_left, sink_severity: severe, support_pattern: lateral_deformable}
+  - {id: severe_lateral_right_s015, group: outcome_diversity, role: uneven, terrain: sand, speed_mps: 0.15, sink_pattern: transition_right, sink_severity: severe, support_pattern: lateral_deformable}
+
+sensor_descriptive_audit:
+  enabled_only_if_physical_oracle_gate_passes: true
+  horizons_ms: [-20, 0, 20, 50, 100]
+  classifier_training: false
+  handcrafted_feature_mining: false
+
+artifacts:
+  path: artifacts/runs/20260827_sink_deformable_support_proxy_sanity
+  gitignored: true
+  committed: false
+
+report:
+  path: reports/20260827_sink_deformable_support_proxy_sanity.md

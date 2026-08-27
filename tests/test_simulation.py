@@ -41,11 +41,14 @@ from fastreflex.simulation.hazards import (
     SUPPORT_LOSS_PERSISTENCE_SAMPLES,
     SUPPORT_LOSS_THRESHOLD_RATIO,
     SUPPORT_TOTAL_LOAD_MIN_RATIO,
+    SURFACE_SPREAD_PERSISTENCE_SAMPLES,
+    SURFACE_SPREAD_THRESHOLD_M,
     TOUCHDOWN_TRANSIENT_SAMPLES,
     derive_physical_diagnostics,
     support_penetration_diagnostics,
     read_exact_foot_sample,
     support_loss_diagnostics,
+    surface_displacement_diagnostics,
     uneven_support_oracle,
 )
 from fastreflex.simulation.sensors import (
@@ -54,6 +57,9 @@ from fastreflex.simulation.sensors import (
     read_virtual_fsr,
 )
 from fastreflex.simulation.terrain import (
+    DEFORMABLE_CELL_ORDER,
+    DEFORMABLE_SUPPORT_PATTERNS,
+    DEFORMABLE_SUPPORT_PROFILES,
     SINK_PATCH_GEOM_NAMES,
     SINK_PATTERNS,
     SINK_SEVERITIES,
@@ -66,6 +72,8 @@ from fastreflex.simulation.terrain import (
     TRANSITION_PATCH_GEOM_NAMES,
     TRANSITION_PATCH_START_X_M,
     TRANSITION_PATCH_WIDTH_M,
+    deformable_support_layout,
+    read_deformable_support_sample,
 )
 from scripts.fastreflex import build_parser
 
@@ -93,6 +101,12 @@ SINK_SUPPORT_LOSS_CONFIG = (
     / "configs"
     / "experiment"
     / "20260827_sink_support_loss_oracle_sanity.yaml"
+)
+SINK_DEFORMABLE_SUPPORT_CONFIG = (
+    ROOT
+    / "configs"
+    / "experiment"
+    / "20260827_sink_deformable_support_proxy_sanity.yaml"
 )
 LOCAL_POLICY = (
     ROOT
@@ -127,6 +141,230 @@ class FakeViewer:
 
 
 class SimulationTest(unittest.TestCase):
+    def test_deformable_support_geometry_joint_and_pattern_contract(self) -> None:
+        selected_by_pattern = {
+            "medial_deformable": {"entry_medial", "exit_medial"},
+            "lateral_deformable": {"entry_lateral", "exit_lateral"},
+            "localized_deformable": {"entry_medial"},
+        }
+        for side_index, side in enumerate(("left", "right")):
+            for pattern in DEFORMABLE_SUPPORT_PATTERNS:
+                with self.subTest(side=side, pattern=pattern):
+                    model, ground_ids = load_g1_model(
+                        "sand",
+                        f"transition_{side}",
+                        "moderate",
+                        sink_support_pattern=pattern,
+                    )
+                    self.assertEqual((model.nq, model.nv, model.nu), (46, 45, 29))
+                    layout = deformable_support_layout(model, pattern)
+                    self.assertEqual(
+                        np.count_nonzero(layout.geom_ids[side_index] >= 0), 4
+                    )
+                    self.assertFalse(
+                        np.any(layout.geom_ids[1 - side_index] >= 0)
+                    )
+                    data = mujoco.MjData(model)
+                    mujoco.mj_forward(model, data)
+                    for cell_index, cell in enumerate(DEFORMABLE_CELL_ORDER):
+                        geom_id = int(layout.geom_ids[side_index, cell_index])
+                        self.assertIn(geom_id, ground_ids)
+                        self.assertAlmostEqual(
+                            float(
+                                data.geom_xpos[geom_id, 2]
+                                + model.geom_size[geom_id, 2]
+                            ),
+                            0.0,
+                        )
+                        qpos_address = int(
+                            layout.qpos_addresses[side_index, cell_index]
+                        )
+                        joint_ids = np.flatnonzero(
+                            model.jnt_qposadr == qpos_address
+                        )
+                        self.assertEqual(joint_ids.size, 1)
+                        joint_id = int(joint_ids[0])
+                        self.assertEqual(
+                            int(model.jnt_type[joint_id]),
+                            int(mujoco.mjtJoint.mjJNT_SLIDE),
+                        )
+                        np.testing.assert_array_equal(
+                            model.jnt_axis[joint_id], (0.0, 0.0, 1.0)
+                        )
+                        body_id = int(model.jnt_bodyid[joint_id])
+                        self.assertEqual(model.body_gravcomp[body_id], 1.0)
+                        expected_profile = DEFORMABLE_SUPPORT_PROFILES["moderate"]
+                        if pattern != "balanced_deformable" and cell not in (
+                            selected_by_pattern[pattern]
+                        ):
+                            expected_profile = DEFORMABLE_SUPPORT_PROFILES[
+                                "reference"
+                            ]
+                        self.assertAlmostEqual(
+                            -float(model.jnt_range[joint_id, 0]),
+                            expected_profile.travel_m,
+                        )
+                        self.assertEqual(float(model.jnt_range[joint_id, 1]), 0.0)
+                        self.assertEqual(
+                            float(model.jnt_stiffness[joint_id]),
+                            expected_profile.stiffness_n_per_m,
+                        )
+                    unique_joints = np.unique(layout.qpos_addresses[side_index])
+                    self.assertEqual(
+                        len(unique_joints),
+                        1 if pattern == "balanced_deformable" else 4,
+                    )
+
+                    model.body_gravcomp[:] = 1.0
+                    for _ in range(200):
+                        mujoco.mj_step(model, data)
+                    unloaded = read_deformable_support_sample(data, layout)
+                    np.testing.assert_allclose(
+                        unloaded.displacement_m, 0.0, atol=1.0e-12
+                    )
+
+    def test_passive_deformable_support_load_and_recovery(self) -> None:
+        steady_displacement = []
+        for severity in ("mild", "moderate", "severe"):
+            model, _ = load_g1_model(
+                "sand",
+                "transition_left",
+                severity,
+                sink_support_pattern="balanced_deformable",
+            )
+            joint_id = model.joint("deformable_balanced_left_slide").id
+            qpos_address = int(model.jnt_qposadr[joint_id])
+            dof_address = int(model.jnt_dofadr[joint_id])
+            model.body_gravcomp[:] = 1.0
+            for geom_id in range(model.ngeom):
+                model.geom_contype[geom_id] = 0
+                model.geom_conaffinity[geom_id] = 0
+            data = mujoco.MjData(model)
+            response = []
+            for _ in range(2000):
+                data.qfrc_applied[dof_address] = -100.0
+                mujoco.mj_step(model, data)
+                response.append(-float(data.qpos[qpos_address]))
+            travel = -float(model.jnt_range[joint_id, 0])
+            self.assertGreater(response[-1], 0.0)
+            self.assertLessEqual(max(response), travel + 0.0005)
+            steady_displacement.append(float(np.mean(response[-100:])))
+            for _ in range(2000):
+                data.qfrc_applied[dof_address] = 0.0
+                mujoco.mj_step(model, data)
+            self.assertLess(abs(float(data.qpos[qpos_address])), 1.0e-8)
+        self.assertEqual(steady_displacement, sorted(steady_displacement))
+
+    def test_surface_displacement_oracle_gating_persistence_and_causality(
+        self,
+    ) -> None:
+        samples = 70
+        displacement = np.zeros((samples, 2, 4), dtype=np.float64)
+        displacement[10:, 0, 2] = 0.012
+        velocity = np.zeros_like(displacement)
+        velocity[10, 0, 2] = 0.25
+        cell_contact = np.zeros_like(displacement, dtype=bool)
+        cell_contact[5:15, 0, 2] = True
+        patch_contact = np.zeros((samples, 2), dtype=bool)
+        patch_contact[5:15, 0] = True
+        loaded = np.ones((samples, 2), dtype=bool)
+        episodes = np.zeros((samples, 2), dtype=np.int32)
+        pre_fall = np.ones(samples, dtype=bool)
+        diagnostics = surface_displacement_diagnostics(
+            displacement,
+            velocity,
+            cell_contact,
+            patch_contact,
+            loaded,
+            episodes,
+            pre_fall,
+        )
+        np.testing.assert_allclose(
+            diagnostics["support_surface_spread_m"][10:, 0], 0.012
+        )
+        self.assertEqual(
+            np.flatnonzero(diagnostics["deformable_sink_onset"][:, 0]).tolist(),
+            [29],
+        )
+        self.assertTrue(diagnostics["deformable_patch_episode_active"][20, 0])
+        self.assertTrue(diagnostics["deformable_sink_active"][40, 0])
+        self.assertEqual(
+            diagnostics["support_surface_max_downward_velocity_m_s"][10, 0],
+            0.25,
+        )
+
+        no_patch = surface_displacement_diagnostics(
+            displacement,
+            velocity,
+            cell_contact,
+            np.zeros_like(patch_contact),
+            loaded,
+            episodes,
+            pre_fall,
+        )
+        self.assertFalse(no_patch["deformable_sink_active"].any())
+        future = displacement.copy()
+        future[40:] = 0.0
+        changed = surface_displacement_diagnostics(
+            future,
+            velocity,
+            cell_contact,
+            patch_contact,
+            loaded,
+            episodes,
+            pre_fall,
+        )
+        np.testing.assert_array_equal(
+            diagnostics["deformable_sink_onset"][:40],
+            changed["deformable_sink_onset"][:40],
+        )
+        changed_episode = episodes.copy()
+        changed_episode[20:, 0] = 1
+        reset = surface_displacement_diagnostics(
+            displacement,
+            velocity,
+            cell_contact,
+            patch_contact,
+            loaded,
+            changed_episode,
+            pre_fall,
+        )
+        self.assertFalse(reset["deformable_sink_active"][20:, 0].any())
+
+    def test_deformable_support_experiment_config_is_predeclared(self) -> None:
+        with SINK_DEFORMABLE_SUPPORT_CONFIG.open(
+            "r", encoding="utf-8"
+        ) as stream:
+            config = yaml.safe_load(stream)
+        self.assertEqual(
+            config["experiment"]["id"],
+            "SINK_DEFORMABLE_SUPPORT_PROXY_SANITY",
+        )
+        self.assertEqual(
+            config["mechanics"]["parameter_status"],
+            "frozen_after_mechanical_stabilization_before_robot_matrix",
+        )
+        self.assertFalse(config["mechanics"]["robot_results_used_for_selection"])
+        oracle = config["surface_displacement_oracle"]
+        self.assertEqual(oracle["spread_threshold_m"], SURFACE_SPREAD_THRESHOLD_M)
+        self.assertEqual(
+            oracle["persistence_ms"], SURFACE_SPREAD_PERSISTENCE_SAMPLES
+        )
+        runs = config["runs"]
+        self.assertEqual(len(runs), 32)
+        self.assertEqual(
+            sum(run["group"] == "rigid_benign" for run in runs), 6
+        )
+        self.assertEqual(
+            sum(run["group"] == "balanced_benign" for run in runs), 8
+        )
+        self.assertEqual(
+            sum(run["group"] == "primary_uneven" for run in runs), 12
+        )
+        self.assertEqual(
+            sum(run["group"] == "outcome_diversity" for run in runs), 6
+        )
+
     def test_uneven_support_geometry_profiles_and_no_step_or_hole(self) -> None:
         self.assertEqual(
             SINK_SUPPORT_PATTERNS,
@@ -546,6 +784,53 @@ class SimulationTest(unittest.TestCase):
                 )
                 self.assertEqual(result.metadata["dropped_samples"], 0)
 
+    @unittest.skipUnless(LOCAL_POLICY.is_file(), "local verified policy is absent")
+    def test_deformable_support_runtime_and_viewer_physics_parity(self) -> None:
+        base = load_simulation_config(SIMULATOR_CONFIG)
+        config = replace(
+            base,
+            duration_s=2.2,
+            command_speed_mps=0.15,
+            policy_path=LOCAL_POLICY,
+            terrain="sand",
+            sink_pattern="transition_left",
+            sink_severity="moderate",
+            sink_support_pattern="medial_deformable",
+            headless=True,
+        )
+        headless = run_simulation(config)
+        self.assertEqual(headless.runtime.pelvis_imu.shape, (2200, 6))
+        self.assertEqual(headless.runtime.foot_fsr.shape, (2200, 8))
+        np.testing.assert_array_equal(
+            np.diff(headless.runtime.timestamp_us), np.full(2199, 1000)
+        )
+        self.assertEqual(headless.metadata["dropped_samples"], 0)
+        displacement = headless.diagnostics.support_surface_displacement_m
+        self.assertEqual(displacement.shape, (2200, 2, 4))
+        d0 = np.flatnonzero(
+            headless.diagnostics.soft_patch_contact_onset[:, 0]
+        )
+        self.assertTrue(d0.size)
+        np.testing.assert_allclose(displacement[: d0[0], 0], 0.0, atol=1.0e-12)
+        self.assertGreater(float(np.max(displacement[d0[0] :, 0])), 0.0)
+
+        fake_viewer = FakeViewer()
+        with mock.patch(
+            "fastreflex.simulation.g1.launch_passive_viewer",
+            return_value=fake_viewer,
+        ), mock.patch("fastreflex.simulation.g1._pace_viewer"):
+            viewer = run_simulation(replace(config, headless=False))
+        self.assertGreater(fake_viewer.sync_count, 1)
+        for field in RuntimeTrace.__dataclass_fields__:
+            np.testing.assert_equal(
+                getattr(headless.runtime, field), getattr(viewer.runtime, field)
+            )
+        for field in type(headless.diagnostics).__dataclass_fields__:
+            np.testing.assert_equal(
+                getattr(headless.diagnostics, field),
+                getattr(viewer.diagnostics, field),
+            )
+
     def test_virtual_fsr_channel_order_quadrants_and_contact_force_sum(self) -> None:
         self.assertEqual(
             FSR_CHANNELS,
@@ -934,6 +1219,20 @@ class SimulationTest(unittest.TestCase):
         )
         self.assertEqual(transition_args.sink_pattern, "transition_left")
         self.assertEqual(transition_args.sink_support_pattern, "medial_soft")
+        deformable_args = parser.parse_args(
+            [
+                "simulate",
+                "--terrain",
+                "sand",
+                "--sink-pattern",
+                "transition_right",
+                "--sink-support-pattern",
+                "lateral_deformable",
+            ]
+        )
+        self.assertEqual(
+            deformable_args.sink_support_pattern, "lateral_deformable"
+        )
         slip_transition_args = parser.parse_args(
             ["simulate", "--terrain", "ice", "--slip-pattern", "transition"]
         )

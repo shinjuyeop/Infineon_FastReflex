@@ -21,6 +21,34 @@ class TerrainProfile:
     condim: int = 3
 
 
+@dataclass(frozen=True)
+class DeformableSupportProfile:
+    """Passive vertical-joint parameters for an engineering support proxy."""
+
+    name: str
+    travel_m: float
+    stiffness_n_per_m: float
+    damping_n_s_per_m: float
+
+
+@dataclass(frozen=True)
+class DeformableSupportLayout:
+    """Compiled joint/geom addresses for the active deformable support."""
+
+    qpos_addresses: np.ndarray
+    dof_addresses: np.ndarray
+    geom_ids: np.ndarray
+
+
+@dataclass(frozen=True)
+class DeformableSupportSample:
+    """One simulator-only sample of support mechanics."""
+
+    displacement_m: np.ndarray
+    vertical_velocity_m_s: np.ndarray
+    cell_contact: np.ndarray
+
+
 TERRAIN_PROFILES = {
     "concrete": TerrainProfile(
         name="concrete",
@@ -67,6 +95,22 @@ SINK_SUPPORT_PATTERNS = (
     "lateral_soft",
     "localized_soft",
 )
+DEFORMABLE_SUPPORT_PATTERNS = (
+    "balanced_deformable",
+    "medial_deformable",
+    "lateral_deformable",
+    "localized_deformable",
+)
+ALL_SINK_SUPPORT_PATTERNS = (
+    *SINK_SUPPORT_PATTERNS,
+    *DEFORMABLE_SUPPORT_PATTERNS,
+)
+DEFORMABLE_CELL_ORDER = (
+    "entry_medial",
+    "entry_lateral",
+    "exit_medial",
+    "exit_lateral",
+)
 SINK_PATCH_GEOM_NAMES = ("terrain_left", "terrain_right")
 TRANSITION_PATCH_GEOM_NAMES = (
     "terrain_transition_left",
@@ -82,6 +126,20 @@ UNEVEN_CELL_GEOM_NAMES = tuple(
     for side in ("left", "right")
     for segment in ("entry", "exit")
     for region in ("medial", "lateral")
+)
+DEFORMABLE_BALANCED_GEOM_NAMES = tuple(
+    f"terrain_deformable_balanced_{side}_{cell}"
+    for side in ("left", "right")
+    for cell in DEFORMABLE_CELL_ORDER
+)
+DEFORMABLE_CELL_GEOM_NAMES = tuple(
+    f"terrain_deformable_{side}_{cell}"
+    for side in ("left", "right")
+    for cell in DEFORMABLE_CELL_ORDER
+)
+DEFORMABLE_GEOM_NAMES = (
+    *DEFORMABLE_BALANCED_GEOM_NAMES,
+    *DEFORMABLE_CELL_GEOM_NAMES,
 )
 TRANSITION_PATCH_START_X_M = 0.35
 TRANSITION_PATCH_END_X_M = 1.10
@@ -117,6 +175,44 @@ SINK_SEVERITY_PROFILES = {
     ),
 }
 
+# These passive-joint values are bounded simulator engineering parameters, not
+# measured soil mechanics. The independent-cell reference is intentionally
+# low-travel so selected mild/moderate/severe cells can become non-level.
+DEFORMABLE_SUPPORT_PROFILES = {
+    "reference": DeformableSupportProfile(
+        name="reference",
+        travel_m=0.004,
+        stiffness_n_per_m=50_000.0,
+        damping_n_s_per_m=1_000.0,
+    ),
+    "mild": DeformableSupportProfile(
+        name="mild",
+        travel_m=0.020,
+        stiffness_n_per_m=12_000.0,
+        damping_n_s_per_m=490.0,
+    ),
+    "moderate": DeformableSupportProfile(
+        name="moderate",
+        travel_m=0.040,
+        stiffness_n_per_m=7_000.0,
+        damping_n_s_per_m=374.0,
+    ),
+    "severe": DeformableSupportProfile(
+        name="severe",
+        travel_m=0.065,
+        stiffness_n_per_m=4_500.0,
+        damping_n_s_per_m=300.0,
+    ),
+}
+
+DEFORMABLE_CONTACT_PROFILE = TerrainProfile(
+    name="deformable_support_contact",
+    friction=TERRAIN_PROFILES["sand"].friction,
+    solref=TERRAIN_PROFILES["concrete"].solref,
+    solimp=TERRAIN_PROFILES["concrete"].solimp,
+    description="hard contact on a passive vertically moving support body",
+)
+
 
 def get_terrain_profile(name: str) -> TerrainProfile:
     """Return one of the four contract terrain profiles."""
@@ -138,6 +234,21 @@ def get_sink_severity_profile(name: str) -> TerrainProfile:
         ) from exc
 
 
+def get_deformable_support_profile(name: str) -> DeformableSupportProfile:
+    """Return one predeclared passive vertical-support profile."""
+    try:
+        return DEFORMABLE_SUPPORT_PROFILES[name]
+    except KeyError as exc:
+        raise ValueError(
+            f"unknown deformable support profile {name!r}; choose from "
+            f"{tuple(DEFORMABLE_SUPPORT_PROFILES)}"
+        ) from exc
+
+
+def is_deformable_support_pattern(pattern: str) -> bool:
+    return pattern in DEFORMABLE_SUPPORT_PATTERNS
+
+
 def validate_sink_scenario(
     terrain: str,
     pattern: str,
@@ -150,10 +261,10 @@ def validate_sink_scenario(
             f"unknown sink pattern {pattern!r}; choose from {SINK_PATTERNS}"
         )
     get_sink_severity_profile(severity)
-    if support_pattern not in SINK_SUPPORT_PATTERNS:
+    if support_pattern not in ALL_SINK_SUPPORT_PATTERNS:
         raise ValueError(
             f"unknown sink support pattern {support_pattern!r}; "
-            f"choose from {SINK_SUPPORT_PATTERNS}"
+            f"choose from {ALL_SINK_SUPPORT_PATTERNS}"
         )
     if support_pattern != "balanced_soft" and not pattern.startswith("transition_"):
         raise ValueError("uneven sink support requires a finite transition pattern")
@@ -266,6 +377,28 @@ def apply_sink_patch_profiles(
         for name in TRANSITION_GROUND_GEOM_NAMES
     }
     soft_side = pattern.removeprefix("transition_")
+    if is_deformable_support_pattern(support_pattern):
+        # Robot geoms use bit 1. Static transition geoms use type bit 2 and
+        # moving tiles type bit 4, both with affinity bit 1. This keeps both
+        # surfaces collidable with the robot while preventing tile/world and
+        # tile/tile edge contacts from constraining vertical motion.
+        for geom_id in ground_ids.values():
+            model.geom_contype[geom_id] = 2
+        affected_name = f"terrain_transition_{soft_side}"
+        affected_id = model.geom(affected_name).id
+        model.geom_contype[affected_id] = 0
+        model.geom_conaffinity[affected_id] = 0
+        model.geom_rgba[affected_id, 3] = 0.0
+        ground_ids.pop(affected_name)
+        ground_ids.update(
+            _configure_deformable_support(
+                model,
+                soft_side,
+                support_pattern,
+                severity,
+            )
+        )
+        return frozenset(ground_ids.values())
     if support_pattern != "balanced_soft":
         affected_name = f"terrain_transition_{soft_side}"
         affected_id = model.geom(affected_name).id
@@ -305,6 +438,72 @@ def apply_sink_patch_profiles(
     return frozenset(ground_ids.values())
 
 
+def _set_deformable_joint_profile(
+    model: mujoco.MjModel,
+    joint_name: str,
+    profile: DeformableSupportProfile,
+) -> None:
+    joint_id = model.joint(joint_name).id
+    qpos_address = int(model.jnt_qposadr[joint_id])
+    dof_address = int(model.jnt_dofadr[joint_id])
+    model.jnt_range[joint_id] = (-profile.travel_m, 0.0)
+    model.jnt_stiffness[joint_id] = profile.stiffness_n_per_m
+    model.jnt_solref[joint_id] = (0.002, 1.0)
+    model.jnt_solimp[joint_id] = (0.99, 0.999, 0.0001, 0.5, 2.0)
+    model.dof_damping[dof_address] = profile.damping_n_s_per_m
+    model.qpos0[qpos_address] = 0.0
+    model.qpos_spring[qpos_address] = 0.0
+
+
+def _configure_deformable_support(
+    model: mujoco.MjModel,
+    side: str,
+    support_pattern: str,
+    severity: str,
+) -> dict[str, int]:
+    """Enable one passive coupled plate or four passive independent cells."""
+    selected_profile = get_deformable_support_profile(severity)
+    reference_profile = get_deformable_support_profile("reference")
+    active: dict[str, int] = {}
+
+    def enable_geom(name: str, selected: bool) -> None:
+        geom_id = model.geom(name).id
+        model.geom_contype[geom_id] = 4
+        model.geom_conaffinity[geom_id] = 1
+        body_id = int(model.geom_bodyid[geom_id])
+        model.body_contype[body_id] = 4
+        model.body_conaffinity[body_id] = 1
+        model.geom_rgba[geom_id] = (
+            (0.65, 0.18, 0.72, 1.0)
+            if selected
+            else (0.35, 0.62, 0.42, 1.0)
+        )
+        apply_terrain_profile(model, DEFORMABLE_CONTACT_PROFILE, name)
+        active[name] = int(geom_id)
+
+    if support_pattern == "balanced_deformable":
+        joint_name = f"deformable_balanced_{side}_slide"
+        _set_deformable_joint_profile(model, joint_name, selected_profile)
+        for cell in DEFORMABLE_CELL_ORDER:
+            enable_geom(f"terrain_deformable_balanced_{side}_{cell}", True)
+        return active
+
+    selected_cells = {
+        "medial_deformable": {"entry_medial", "exit_medial"},
+        "lateral_deformable": {"entry_lateral", "exit_lateral"},
+        "localized_deformable": {"entry_medial"},
+    }[support_pattern]
+    for cell in DEFORMABLE_CELL_ORDER:
+        profile = selected_profile if cell in selected_cells else reference_profile
+        _set_deformable_joint_profile(
+            model,
+            f"deformable_{side}_{cell}_slide",
+            profile,
+        )
+        enable_geom(f"terrain_deformable_{side}_{cell}", cell in selected_cells)
+    return active
+
+
 def _select_patch_topology(
     model: mujoco.MjModel,
     *,
@@ -327,6 +526,9 @@ def _select_patch_topology(
     for name in UNEVEN_CELL_GEOM_NAMES:
         if mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name) != -1:
             set_enabled(name, False, (0.45, 0.25, 0.75, 0.0))
+    for name in DEFORMABLE_GEOM_NAMES:
+        if mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name) != -1:
+            set_enabled(name, False, (0.35, 0.45, 0.55, 0.0))
 
 
 def validate_transition_geometry(
@@ -371,16 +573,21 @@ def configure_transition_geometry(
     patch_midpoint_x_m = (patch_start_x_m + patch_end_x_m) / 2.0
     for side in ("left", "right"):
         for region in ("medial", "lateral"):
-            set_x_extent(
-                f"terrain_uneven_{side}_entry_{region}",
-                patch_start_x_m,
-                patch_midpoint_x_m,
-            )
-            set_x_extent(
-                f"terrain_uneven_{side}_exit_{region}",
-                patch_midpoint_x_m,
-                patch_end_x_m,
-            )
+            for prefix in (
+                "terrain_uneven",
+                "terrain_deformable",
+                "terrain_deformable_balanced",
+            ):
+                set_x_extent(
+                    f"{prefix}_{side}_entry_{region}",
+                    patch_start_x_m,
+                    patch_midpoint_x_m,
+                )
+                set_x_extent(
+                    f"{prefix}_{side}_exit_{region}",
+                    patch_midpoint_x_m,
+                    patch_end_x_m,
+                )
     set_x_extent(
         "terrain_transition_post",
         patch_end_x_m,
@@ -433,6 +640,16 @@ def soft_sink_geom_ids(
         side = pattern.removeprefix("transition_")
         if support_pattern == "balanced_soft":
             names = (f"terrain_transition_{side}",)
+        elif support_pattern == "balanced_deformable":
+            names = tuple(
+                f"terrain_deformable_balanced_{side}_{cell}"
+                for cell in DEFORMABLE_CELL_ORDER
+            )
+        elif support_pattern in DEFORMABLE_SUPPORT_PATTERNS:
+            names = tuple(
+                f"terrain_deformable_{side}_{cell}"
+                for cell in DEFORMABLE_CELL_ORDER
+            )
         else:
             names = tuple(
                 f"terrain_uneven_{side}_{segment}_{region}"
@@ -444,6 +661,77 @@ def soft_sink_geom_ids(
             f"unknown sink pattern {pattern!r}; choose from {SINK_PATTERNS}"
         )
     return frozenset(int(model.geom(name).id) for name in names)
+
+
+def deformable_support_layout(
+    model: mujoco.MjModel,
+    support_pattern: str,
+) -> DeformableSupportLayout:
+    """Resolve active support joint and geom addresses in canonical cell order."""
+    qpos_addresses = np.full((2, 4), -1, dtype=np.int32)
+    dof_addresses = np.full((2, 4), -1, dtype=np.int32)
+    geom_ids = np.full((2, 4), -1, dtype=np.int32)
+    if not is_deformable_support_pattern(support_pattern):
+        return DeformableSupportLayout(qpos_addresses, dof_addresses, geom_ids)
+
+    for side_index, side in enumerate(("left", "right")):
+        balanced = support_pattern == "balanced_deformable"
+        for cell_index, cell in enumerate(DEFORMABLE_CELL_ORDER):
+            geom_name = (
+                f"terrain_deformable_balanced_{side}_{cell}"
+                if balanced
+                else f"terrain_deformable_{side}_{cell}"
+            )
+            geom_id = model.geom(geom_name).id
+            if int(model.geom_contype[geom_id]) == 0:
+                continue
+            joint_name = (
+                f"deformable_balanced_{side}_slide"
+                if balanced
+                else f"deformable_{side}_{cell}_slide"
+            )
+            joint_id = model.joint(joint_name).id
+            qpos_addresses[side_index, cell_index] = int(
+                model.jnt_qposadr[joint_id]
+            )
+            dof_addresses[side_index, cell_index] = int(
+                model.jnt_dofadr[joint_id]
+            )
+            geom_ids[side_index, cell_index] = int(geom_id)
+    return DeformableSupportLayout(qpos_addresses, dof_addresses, geom_ids)
+
+
+def read_deformable_support_sample(
+    data: mujoco.MjData,
+    layout: DeformableSupportLayout,
+) -> DeformableSupportSample:
+    """Read positive-down joint motion and exact per-cell contact presence."""
+    displacement = np.zeros((2, 4), dtype=np.float64)
+    velocity = np.zeros((2, 4), dtype=np.float64)
+    cell_contact = np.zeros((2, 4), dtype=bool)
+    active = layout.qpos_addresses >= 0
+    displacement[active] = np.maximum(
+        0.0,
+        -data.qpos[layout.qpos_addresses[active]],
+    )
+    velocity[active] = -data.qvel[layout.dof_addresses[active]]
+    geom_to_cell = {
+        int(geom_id): (side, cell)
+        for side in range(2)
+        for cell, geom_id in enumerate(layout.geom_ids[side])
+        if geom_id >= 0
+    }
+    for contact_id in range(data.ncon):
+        contact = data.contact[contact_id]
+        for geom_id in (int(contact.geom1), int(contact.geom2)):
+            location = geom_to_cell.get(geom_id)
+            if location is not None:
+                cell_contact[location] = True
+    return DeformableSupportSample(
+        displacement_m=displacement,
+        vertical_velocity_m_s=velocity,
+        cell_contact=cell_contact,
+    )
 
 
 def low_friction_patch_geom_ids(

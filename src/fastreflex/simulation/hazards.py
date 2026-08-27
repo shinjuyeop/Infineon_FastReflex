@@ -23,6 +23,8 @@ SUPPORT_BASELINE_MIN_QUADRANTS = 2
 SUPPORT_LOSS_THRESHOLD_RATIO = 0.5
 SUPPORT_LOSS_PERSISTENCE_SAMPLES = 20
 SUPPORT_TOTAL_LOAD_MIN_RATIO = 0.30
+SURFACE_SPREAD_THRESHOLD_M = 0.010
+SURFACE_SPREAD_PERSISTENCE_SAMPLES = 20
 SLIP_THRESHOLD_M = 0.050
 SLIP_PERSISTENCE_SAMPLES = 3
 SINK_PHYSICAL_THRESHOLD_M = 0.0055
@@ -87,6 +89,16 @@ class PhysicalDiagnostics:
     support_loss_valid: np.ndarray
     support_loss_active: np.ndarray
     support_loss_onset: np.ndarray
+    support_surface_displacement_m: np.ndarray
+    support_surface_vertical_velocity_m_s: np.ndarray
+    support_surface_cell_contact: np.ndarray
+    support_surface_spread_m: np.ndarray
+    support_surface_max_displacement_m: np.ndarray
+    support_surface_mean_displacement_m: np.ndarray
+    support_surface_max_downward_velocity_m_s: np.ndarray
+    deformable_patch_episode_active: np.ndarray
+    deformable_sink_active: np.ndarray
+    deformable_sink_onset: np.ndarray
     support_penetration_spread_m: np.ndarray
     support_penetration_max_m: np.ndarray
     support_penetration_load_weighted_std_m: np.ndarray
@@ -536,6 +548,91 @@ def support_loss_diagnostics(
     }
 
 
+def surface_displacement_diagnostics(
+    support_surface_displacement_m: np.ndarray,
+    support_surface_vertical_velocity_m_s: np.ndarray,
+    support_surface_cell_contact: np.ndarray,
+    patch_contact: np.ndarray,
+    loaded_contact: np.ndarray,
+    contact_episode_id: np.ndarray,
+    pre_fall_valid: np.ndarray,
+    *,
+    threshold_m: float = SURFACE_SPREAD_THRESHOLD_M,
+    persistence_samples: int = SURFACE_SPREAD_PERSISTENCE_SAMPLES,
+) -> dict[str, np.ndarray]:
+    """Derive a causal Sink clock from passive support-body joint state."""
+    displacement = np.asarray(support_surface_displacement_m, dtype=np.float64)
+    velocity = np.asarray(
+        support_surface_vertical_velocity_m_s, dtype=np.float64
+    )
+    cell_contact = np.asarray(support_surface_cell_contact, dtype=bool)
+    patch = np.asarray(patch_contact, dtype=bool)
+    loaded = np.asarray(loaded_contact, dtype=bool)
+    episodes = np.asarray(contact_episode_id, dtype=np.int64)
+    pre_fall = np.asarray(pre_fall_valid, dtype=bool)
+    if (
+        displacement.ndim != 3
+        or displacement.shape[1:] != (2, 4)
+        or velocity.shape != displacement.shape
+        or cell_contact.shape != displacement.shape
+        or patch.shape != displacement.shape[:2]
+        or loaded.shape != displacement.shape[:2]
+        or episodes.shape != displacement.shape[:2]
+        or pre_fall.shape != (displacement.shape[0],)
+        or not np.all(np.isfinite(displacement))
+        or not np.all(np.isfinite(velocity))
+        or np.any(displacement < 0.0)
+        or threshold_m < 0.0
+        or persistence_samples <= 0
+    ):
+        raise ValueError("surface-displacement arrays or criteria are invalid")
+
+    spread = np.max(displacement, axis=2) - np.min(displacement, axis=2)
+    maximum = np.max(displacement, axis=2)
+    mean = np.mean(displacement, axis=2)
+    max_downward_velocity = np.maximum(0.0, np.max(velocity, axis=2))
+    patch_episode_active = np.zeros(patch.shape, dtype=bool)
+    sink_active = np.zeros(patch.shape, dtype=bool)
+    sink_onset = np.zeros(patch.shape, dtype=bool)
+    for side in range(2):
+        active_episode = -1
+        patch_seen = False
+        persistence_count = 0
+        previous_active = False
+        for sample in range(displacement.shape[0]):
+            episode = int(episodes[sample, side])
+            if episode != active_episode:
+                active_episode = episode
+                patch_seen = False
+                persistence_count = 0
+                previous_active = False
+            if episode < 0 or not pre_fall[sample]:
+                patch_seen = False
+                persistence_count = 0
+                previous_active = False
+                continue
+            if patch[sample, side]:
+                patch_seen = True
+            patch_episode_active[sample, side] = patch_seen
+            valid = bool(patch_seen and loaded[sample, side])
+            passes = bool(valid and spread[sample, side] >= threshold_m)
+            persistence_count = persistence_count + 1 if passes else 0
+            current_active = passes and persistence_count >= persistence_samples
+            sink_active[sample, side] = current_active
+            sink_onset[sample, side] = current_active and not previous_active
+            previous_active = current_active
+
+    return {
+        "support_surface_spread_m": spread,
+        "support_surface_max_displacement_m": maximum,
+        "support_surface_mean_displacement_m": mean,
+        "support_surface_max_downward_velocity_m_s": max_downward_velocity,
+        "deformable_patch_episode_active": patch_episode_active,
+        "deformable_sink_active": sink_active,
+        "deformable_sink_onset": sink_onset,
+    }
+
+
 def uneven_support_oracle(
     support_penetration_spread_m: np.ndarray,
     support_valid: np.ndarray,
@@ -662,6 +759,9 @@ def derive_physical_diagnostics(
     quadrant_contact: np.ndarray | None = None,
     quadrant_normal_force_n: np.ndarray | None = None,
     quadrant_penetration_m: np.ndarray | None = None,
+    support_surface_displacement_m: np.ndarray | None = None,
+    support_surface_vertical_velocity_m_s: np.ndarray | None = None,
+    support_surface_cell_contact: np.ndarray | None = None,
 ) -> PhysicalDiagnostics:
     """Derive simulator-only cause/effect diagnostics, never terrain labels."""
     contact = np.asarray(physical_contact, dtype=bool)
@@ -701,6 +801,21 @@ def derive_physical_diagnostics(
         if quadrant_penetration_m is None
         else np.asarray(quadrant_penetration_m, dtype=np.float64)
     )
+    surface_displacement_array = (
+        np.zeros((sample_count, 2, 4), dtype=np.float64)
+        if support_surface_displacement_m is None
+        else np.asarray(support_surface_displacement_m, dtype=np.float64)
+    )
+    surface_velocity_array = (
+        np.zeros((sample_count, 2, 4), dtype=np.float64)
+        if support_surface_vertical_velocity_m_s is None
+        else np.asarray(support_surface_vertical_velocity_m_s, dtype=np.float64)
+    )
+    surface_cell_contact_array = (
+        np.zeros((sample_count, 2, 4), dtype=bool)
+        if support_surface_cell_contact is None
+        else np.asarray(support_surface_cell_contact, dtype=bool)
+    )
     if (
         contact.shape != (sample_count, 2)
         or patch_contact.shape != (sample_count, 2)
@@ -718,6 +833,9 @@ def derive_physical_diagnostics(
         or quadrant_contact_array.shape != (sample_count, 2, 4)
         or quadrant_force_array.shape != (sample_count, 2, 4)
         or quadrant_penetration_array.shape != (sample_count, 2, 4)
+        or surface_displacement_array.shape != (sample_count, 2, 4)
+        or surface_velocity_array.shape != (sample_count, 2, 4)
+        or surface_cell_contact_array.shape != (sample_count, 2, 4)
     ):
         raise ValueError("physical diagnostic arrays have inconsistent shapes")
     if not (
@@ -794,6 +912,15 @@ def derive_physical_diagnostics(
     support_loss = support_loss_diagnostics(
         quadrant_contact_array,
         quadrant_force_array,
+        loaded,
+        contact_episode_id,
+        pre_fall,
+    )
+    surface_displacement = surface_displacement_diagnostics(
+        surface_displacement_array,
+        surface_velocity_array,
+        surface_cell_contact_array,
+        patch_contact,
         loaded,
         contact_episode_id,
         pre_fall,
@@ -935,6 +1062,36 @@ def derive_physical_diagnostics(
         support_loss_valid=support_loss["support_loss_valid"],
         support_loss_active=support_loss["support_loss_active"],
         support_loss_onset=support_loss["support_loss_onset"],
+        support_surface_displacement_m=(
+            surface_displacement_array.astype(np.float32)
+        ),
+        support_surface_vertical_velocity_m_s=(
+            surface_velocity_array.astype(np.float32)
+        ),
+        support_surface_cell_contact=surface_cell_contact_array,
+        support_surface_spread_m=(
+            surface_displacement["support_surface_spread_m"].astype(np.float32)
+        ),
+        support_surface_max_displacement_m=(
+            surface_displacement[
+                "support_surface_max_displacement_m"
+            ].astype(np.float32)
+        ),
+        support_surface_mean_displacement_m=(
+            surface_displacement[
+                "support_surface_mean_displacement_m"
+            ].astype(np.float32)
+        ),
+        support_surface_max_downward_velocity_m_s=(
+            surface_displacement[
+                "support_surface_max_downward_velocity_m_s"
+            ].astype(np.float32)
+        ),
+        deformable_patch_episode_active=(
+            surface_displacement["deformable_patch_episode_active"]
+        ),
+        deformable_sink_active=surface_displacement["deformable_sink_active"],
+        deformable_sink_onset=surface_displacement["deformable_sink_onset"],
         support_penetration_spread_m=(
             support["support_penetration_spread_m"].astype(np.float32)
         ),

@@ -24,8 +24,10 @@ from .terrain import (
     apply_slip_patch_profiles,
     apply_sink_patch_profiles,
     apply_terrain_profile,
+    deformable_support_layout,
     get_terrain_profile,
     low_friction_patch_geom_ids,
+    read_deformable_support_sample,
     soft_sink_geom_ids,
     TRANSITION_PATCH_START_X_M,
     TRANSITION_PATCH_WIDTH_M,
@@ -271,8 +273,15 @@ def _sensor_slice(model: mujoco.MjModel, data: mujoco.MjData, name: str) -> np.n
 def validate_model_contract(model: mujoco.MjModel) -> None:
     """Fail closed if the migrated model no longer matches the baseline."""
     actuators = tuple(model.actuator(index).name for index in range(model.nu))
-    if actuators != ACTUATOR_NAMES or model.nq != 36 or model.nv != 35:
+    if actuators != ACTUATOR_NAMES or model.nq < 36 or model.nv < 35:
         raise ValueError("G1 29-DOF actuator or state layout changed")
+    actuator_joint_ids = model.actuator_trnid[:, 0].astype(np.int32)
+    if not np.array_equal(
+        model.jnt_qposadr[actuator_joint_ids], np.arange(7, 36)
+    ) or not np.array_equal(
+        model.jnt_dofadr[actuator_joint_ids], np.arange(6, 35)
+    ):
+        raise ValueError("G1 actuator joint state addresses changed")
     if not np.isclose(float(model.opt.timestep), PHYSICS_TIMESTEP_S):
         raise ValueError("G1 scene physics timestep changed")
 
@@ -465,6 +474,9 @@ class UnitreeG1Controller:
 
         self.model = model
         self.data = data
+        actuator_joint_ids = model.actuator_trnid[:, 0].astype(np.int32)
+        self.joint_qpos_indices = model.jnt_qposadr[actuator_joint_ids].copy()
+        self.joint_dof_indices = model.jnt_dofadr[actuator_joint_ids].copy()
         self.policy_sha256 = policy_hash
         self.command = np.asarray((forward_speed_mps, 0.0, 0.0), dtype=np.float64)
         self.action = np.zeros(29, dtype=np.float32)
@@ -474,13 +486,13 @@ class UnitreeG1Controller:
 
         # Match the fixed stand pose reached by the official deployment FSM,
         # avoiding that unrelated startup transient in short smoke runs.
-        self.data.qpos[7:] = DEFAULT_ANGLES
+        self.data.qpos[self.joint_qpos_indices] = DEFAULT_ANGLES
         mujoco.mj_forward(self.model, self.data)
 
     def apply(self) -> None:
         torque = (
-            (self.target_position - self.data.qpos[7:]) * KPS
-            - self.data.qvel[6:] * KDS
+            (self.target_position - self.data.qpos[self.joint_qpos_indices]) * KPS
+            - self.data.qvel[self.joint_dof_indices] * KDS
         )
         self.data.ctrl[:] = np.clip(
             torque,
@@ -504,8 +516,8 @@ class UnitreeG1Controller:
                     np.sin(2.0 * np.pi * self.global_phase),
                     np.cos(2.0 * np.pi * self.global_phase),
                 ),
-                self.data.qpos[7:] - DEFAULT_ANGLES,
-                self.data.qvel[6:],
+                self.data.qpos[self.joint_qpos_indices] - DEFAULT_ANGLES,
+                self.data.qvel[self.joint_dof_indices],
                 self.action,
             )
         ).astype(np.float32)
@@ -579,6 +591,10 @@ def run_simulation(
         config.sink_pattern,
         config.sink_support_pattern,
     )
+    support_layout = deformable_support_layout(
+        model,
+        config.sink_support_pattern,
+    )
     low_friction_geom_ids = low_friction_patch_geom_ids(
         model,
         config.slip_pattern,
@@ -595,6 +611,9 @@ def run_simulation(
     quadrant_contact: list[np.ndarray] = []
     quadrant_normal_force: list[np.ndarray] = []
     quadrant_penetration: list[np.ndarray] = []
+    support_displacement: list[np.ndarray] = []
+    support_vertical_velocity: list[np.ndarray] = []
+    support_cell_contact: list[np.ndarray] = []
     soft_patch_contact: list[np.ndarray] = []
     low_friction_patch_contact: list[np.ndarray] = []
     pre_fall: list[bool] = []
@@ -670,6 +689,7 @@ def run_simulation(
                 soft_patch_geom_ids,
                 low_friction_geom_ids,
             )
+            support_sample = read_deformable_support_sample(data, support_layout)
             pelvis_velocity = np.zeros(6, dtype=np.float64)
             mujoco.mj_objectVelocity(
                 model,
@@ -691,6 +711,11 @@ def run_simulation(
             quadrant_contact.append(exact.quadrant_contact)
             quadrant_normal_force.append(exact.quadrant_normal_force_n)
             quadrant_penetration.append(exact.quadrant_penetration_m)
+            support_displacement.append(support_sample.displacement_m)
+            support_vertical_velocity.append(
+                support_sample.vertical_velocity_m_s
+            )
+            support_cell_contact.append(support_sample.cell_contact)
             soft_patch_contact.append(exact.soft_patch_contact)
             low_friction_patch_contact.append(exact.low_friction_patch_contact)
             pre_fall.append(first_fall_sample is None)
@@ -745,6 +770,15 @@ def run_simulation(
         ).reshape(-1, 2, 4),
         quadrant_penetration_m=np.asarray(
             quadrant_penetration, dtype=np.float64
+        ).reshape(-1, 2, 4),
+        support_surface_displacement_m=np.asarray(
+            support_displacement, dtype=np.float64
+        ).reshape(-1, 2, 4),
+        support_surface_vertical_velocity_m_s=np.asarray(
+            support_vertical_velocity, dtype=np.float64
+        ).reshape(-1, 2, 4),
+        support_surface_cell_contact=np.asarray(
+            support_cell_contact, dtype=bool
         ).reshape(-1, 2, 4),
     )
     metadata: dict[str, object] = {
@@ -968,6 +1002,21 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
             ),
             "max_weighted_support_loss": _finite_max(
                 diagnostics.weighted_support_loss
+            ),
+            "max_support_surface_displacement_m": _finite_max(
+                diagnostics.support_surface_max_displacement_m
+            ),
+            "max_support_surface_spread_m": _finite_max(
+                diagnostics.support_surface_spread_m
+            ),
+            "max_support_surface_downward_velocity_m_s": _finite_max(
+                diagnostics.support_surface_max_downward_velocity_m_s
+            ),
+            "deformable_sink_samples": int(
+                np.count_nonzero(diagnostics.deformable_sink_active)
+            ),
+            "first_deformable_sink_sample_per_foot": _first_true_per_foot(
+                diagnostics.deformable_sink_onset
             ),
             "established_slip_samples": int(
                 np.count_nonzero(diagnostics.established_slip)

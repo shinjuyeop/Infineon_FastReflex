@@ -1,0 +1,74 @@
+experiment:
+  id: FSR_LOAD_DISTRIBUTION_ANALYSIS
+  date: 2026-08-27
+  purpose: describe when unilateral Sink severity separates in virtual-FSR load distribution
+  analysis_only: true
+  simulation: forbidden
+  training: forbidden
+
+dataset:
+  id: hazard_sensor_pilot_20260827
+  path: data/raw/hazard_sensor_pilot_20260827
+  manifest_sha256: 3b15ed5412682fe6a233334caf202b271b6a8d89155bd817568d28a73f54a3e3
+  sample_rate_hz: 1000
+  foot_fsr_unit: N
+  primary_groups:
+    benign: [mild, moderate]
+    hazardous: [severe]
+  secondary_controls: [uniform_sand, concrete, marble]
+
+events:
+  t0: affected_foot_first_soft_patch_physical_contact
+  t1: affected_foot_patch_linked_sink_physical_onset
+  t2: frozen_sink_degradation_onset_hazardous_only
+  affected_foot_canonicalization: true
+
+horizons_ms: [0, 20, 50, 100, 150, 200, 300]
+trailing_summary_ms: 10
+baseline_ms: {start: -100, stop: -20}
+minimum_baseline_valid_samples: 20
+
+derived_metrics:
+  absolute: [affected_total_n, unaffected_total_n, bilateral_total_n]
+  foot_distribution:
+    - front_ratio
+    - rear_ratio
+    - local_left_ratio
+    - local_right_ratio
+    - medial_ratio
+    - lateral_ratio
+    - affected_quadrant_shares
+    - cop_x_proxy
+    - cop_y_proxy
+    - cop_radius_proxy
+    - max_quadrant_share
+    - load_concentration
+  bilateral:
+    - affected_load_share
+    - bilateral_asymmetry
+    - signed_bilateral_shift
+  foot_distribution_valid_above_n: 2.5
+  cop_sensor_centers: {front: 1, rear: -1, local_left: 1, local_right: -1}
+  runtime_feature_status: analysis_only_not_adopted
+
+separation:
+  statistical_unit: physical_run
+  metrics: [median, range, absolute_median_difference, range_overlap, run_level_auroc]
+  orientation_correct_auc: true
+  p_value_primary: false
+  perfect_separation_label: PILOT_SEPARATION_CANDIDATE
+
+benign_envelope:
+  primary: mild_and_moderate_event_aligned_observed_range
+  secondary: mild_moderate_plus_uniform_sand_worst_case_pseudo_foot
+  persistence_ms: 10
+  threshold_status: descriptive_not_frozen
+
+shortcut_audit:
+  horizon: t1_plus_100_ms
+  metadata: [affected_side, speed_mps, first_contact_policy_phase]
+  concrete_marble_status: general_symmetric_reference_only
+
+artifacts:
+  path: artifacts/runs/20260827_fsr_load_distribution_analysis
+  gitignored: true

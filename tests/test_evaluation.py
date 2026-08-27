@@ -9,6 +9,14 @@ import torch
 import yaml
 
 from fastreflex.dataset.loader import Normalizer, sha256_file
+from fastreflex.evaluation.fsr_distribution import (
+    canonicalize_affected_foot,
+    causal_trailing_median,
+    derive_distribution_trace,
+    event_aligned_series,
+    pre_event_baseline_median,
+    run_level_auc,
+)
 from fastreflex.evaluation.time_to_separation import (
     audit_false_positives,
     causal_window_indices,
@@ -30,6 +38,64 @@ class EndpointModel(torch.nn.Module):
 
 
 class TimeToSeparationTest(unittest.TestCase):
+    def test_fsr_affected_foot_canonicalization_and_distribution(self) -> None:
+        fsr = np.asarray([[4, 2, 1, 1, 1, 1, 1, 1]], dtype=np.float32)
+        affected, unaffected = canonicalize_affected_foot(fsr, "left")
+        np.testing.assert_array_equal(affected, [[4, 2, 1, 1]])
+        np.testing.assert_array_equal(unaffected, [[1, 1, 1, 1]])
+        trace = derive_distribution_trace(fsr, "left")
+        self.assertAlmostEqual(trace.metrics["front_ratio"][0], 0.75)
+        self.assertAlmostEqual(trace.metrics["rear_ratio"][0], 0.25)
+        self.assertAlmostEqual(trace.metrics["local_left_ratio"][0], 5 / 8)
+        self.assertAlmostEqual(trace.metrics["local_right_ratio"][0], 3 / 8)
+        self.assertAlmostEqual(trace.metrics["medial_ratio"][0], 3 / 8)
+        self.assertAlmostEqual(trace.metrics["lateral_ratio"][0], 5 / 8)
+        self.assertAlmostEqual(trace.metrics["cop_x_proxy"][0], 0.5)
+        self.assertAlmostEqual(trace.metrics["cop_y_proxy"][0], 0.25)
+        self.assertAlmostEqual(trace.metrics["affected_load_share"][0], 2 / 3)
+        self.assertAlmostEqual(trace.metrics["bilateral_asymmetry"][0], 1 / 3)
+        self.assertAlmostEqual(trace.metrics["signed_bilateral_shift"][0], 1 / 3)
+        self.assertAlmostEqual(trace.metrics["max_quadrant_share"][0], 0.5)
+        self.assertAlmostEqual(trace.metrics["load_concentration"][0], 22 / 64)
+        self.assertAlmostEqual(
+            sum(trace.metrics[name][0] for name in (
+                "front_left_share", "front_right_share",
+                "rear_left_share", "rear_right_share",
+            )),
+            1.0,
+        )
+
+        right_fsr = np.asarray([[1, 1, 1, 1, 4, 2, 1, 1]], dtype=np.float32)
+        right = derive_distribution_trace(right_fsr, "right")
+        self.assertAlmostEqual(right.metrics["medial_ratio"][0], 5 / 8)
+        self.assertAlmostEqual(right.metrics["lateral_ratio"][0], 3 / 8)
+        self.assertAlmostEqual(right.metrics["cop_y_proxy"][0], 0.25)
+
+    def test_fsr_low_load_is_invalid_not_zero_filled(self) -> None:
+        fsr = np.asarray([[0.5, 0.5, 0.5, 0.4, 0, 0, 0, 0]], dtype=np.float32)
+        trace = derive_distribution_trace(fsr, "left")
+        self.assertFalse(trace.affected_distribution_valid[0])
+        self.assertTrue(np.isnan(trace.metrics["front_ratio"][0]))
+        self.assertTrue(np.isnan(trace.metrics["cop_x_proxy"][0]))
+        self.assertAlmostEqual(trace.metrics["affected_total_n"][0], 1.9)
+
+    def test_fsr_horizon_and_baseline_are_causal_and_run_level(self) -> None:
+        values = np.arange(200, dtype=np.float64)
+        value, count, used = causal_trailing_median(values, 100, 0, 10)
+        self.assertEqual((value, count, used), (100.0, 1, (100, 101)))
+        value, count, used = causal_trailing_median(values, 100, 20, 10)
+        self.assertEqual((value, count, used), (115.5, 10, (111, 121)))
+        self.assertLessEqual(used[1] - 1, 120)
+        baseline, count, used = pre_event_baseline_median(values, 120)
+        self.assertEqual((baseline, count, used), (60.0, 81, (20, 101)))
+        self.assertLess(used[1] - 1, 120)
+        aligned = event_aligned_series(values, 100, -2, 2)
+        np.testing.assert_array_equal(aligned, [98, 99, 100, 101, 102])
+        raw_auc, oriented_auc, direction = run_level_auc(
+            [1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0]
+        )
+        self.assertEqual((raw_auc, oriented_auc, direction), (1.0, 1.0, "higher_is_hazardous"))
+
     def test_evaluate_cli_uses_canonical_config(self) -> None:
         args = build_parser().parse_args(["evaluate"])
         self.assertEqual(args.command, "evaluate")

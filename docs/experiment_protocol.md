@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`, Sink/Slip criteria freeze와 40-run `hazard_pilot_20260827` materialization 뒤 첫 established-state MLP/GRU PoC까지 완료했으며 현재 상태는 `FIRST_CLASSIFICATION_POC_COMPLETE`다. 이는 Pilot 내부에서 100 ms MLP의 established `NORMAL/SLIP/SINK` separability evidence를 얻었다는 뜻이며 early detection, Full Dataset, final model 또는 deployment readiness를 뜻하지 않는다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
+`MINIMAL_G1_MUJOCO_MIGRATION`, Sink/Slip criteria freeze, 40-run Pilot과 first established-state PoC 뒤 frozen MLP 100 ms의 1 ms causal Time-to-Separation replay까지 완료했다. 현재 상태는 `TIME_TO_SEPARATION_ANALYZED`다. SLIP early-signal candidate는 있었지만 SINK 20~100 ms recall과 benign soft-ground false firing이 detector readiness를 지지하지 않으므로 final latency, Full Dataset, final model 또는 deployment readiness를 뜻하지 않는다. 다음 단계에서도 [`dataset.md`](dataset.md)의 sensor, physical label, raw-run, split contract를 변경 review 없이 깨뜨리지 않는다.
 
 ## 고정 연구 원칙
 
@@ -79,11 +79,15 @@ Config와 실제 결과는 [`20260827_first_classification_poc.yaml`](../configs
 
 ### Phase 4 — Time-to-Separation
 
-- IMU6와 exact continuous physical metrics를 동일 timeline에 표시
-- 20/30/50/100 ms causal history의 관측 가능성 확인
-- Stable established onset과 최초 physical motion onset을 구분
-- Legacy에서 실패한 incipient Slip 정의를 재사용하거나 새 threshold를 임의로 만들지 않음
-- Early interval, endpoint label과 latency anchor는 검증 결과를 근거로 별도 contract revision에서 결정
+- 완료: first-PoC split, train normalizer와 MLP 100 ms 3-seed checkpoint SHA를 고정하고 재학습 없이 replay
+- 완료: 33 valid run full trace를 future sample 없이 1 ms stride로 argmax/probability/logit 기록
+- 완료: 10 ms diagnostic persistence와 t1+0/20/30/50/100 ms event recall, benign/pre-t0 FP audit
+- 결과: SLIP Recall@100 ms 0.8333 ± 0.0589, SINK 0.1111 ± 0.0000
+- 결과: positive-margin SINK 7/7은 결국 t2 전에 검출되지만 median t1 latency는 seed별 296/425/435 ms
+- 결과: BENIGN sustained hazard FP 8/16, 8/16, 7/16이며 Uniform Sand는 모든 seed에서 4/4
+- 제한: joint promising 20~100 ms horizon 없음; persistence/threshold/early label을 freeze하지 않음
+
+Config와 실제 결과는 [`20260827_time_to_separation.yaml`](../configs/experiment/20260827_time_to_separation.yaml), [`20260827_time_to_separation.md`](../reports/20260827_time_to_separation.md)에 기록한다.
 
 ### Phase 5 — Full dataset generation
 
@@ -119,7 +123,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. �
 - Research repository에는 검토된 Float contract artifact만 export
 - Quantization 이후 작업은 `Infineon_FastReflex_E84` repository로 넘김
 
-연구 순서는 `MuJoCo baseline → Sink transition/criteria freeze → Slip transition sanity → Pilot Dataset → First established-state PoC → Time-to-Separation → Full Dataset → full PyTorch model comparison`이다. First established-state PoC까지 완료했다. 다음 단계는 별도 승인 뒤 Phase 4 Time-to-Separation이며 onset-crossing causal history와 Slip t1/Sink t1·t2 기준 관측 시점을 검증한다. Full Dataset이나 full model comparison을 자동으로 시작하지 않는다.
+연구 순서는 `MuJoCo baseline → Sink transition/criteria freeze → Slip transition sanity → Pilot Dataset → First established-state PoC → Time-to-Separation → Full Dataset → full PyTorch model comparison`이다. Time-to-Separation까지 분석했다. 다음 단계는 별도 승인 뒤 Phase 5 Full Dataset design이며 continuous benign soft-ground coverage, onset-relative provenance와 fresh test reservation을 먼저 다룬다. Dataset 생성이나 full model comparison을 자동으로 시작하지 않는다.
 
 ## Split과 leakage protocol
 
@@ -138,7 +142,7 @@ Legacy 연구의 중요한 교훈은 normal domain이 좁으면 touchdown, gait 
 
 ## Evaluation boundary
 
-구체적인 metric acceptance threshold는 pilot과 Phase 4 결과 뒤 고정한다. 단, 향후 모든 family에 동일한 정의를 적용하고 다음을 함께 보고한다.
+Pilot과 Phase 4 결과만으로 metric acceptance threshold를 고정하지 않는다. Full Dataset에서 fresh test와 normal-domain coverage가 준비된 뒤 향후 모든 family에 동일한 정의를 적용하고 다음을 함께 보고한다.
 
 - overall accuracy와 macro metric
 - NORMAL/SLIP/SINK별 precision, recall, F1와 support
@@ -164,4 +168,4 @@ E84 deployment repository 범위:
 - Vela, firmware integration
 - E84 runtime, HIL과 target validation
 
-현재 milestone은 smoke simulation, Sink/Slip finite transition, bounded raw Pilot Dataset과 첫 Pilot-only established-state PyTorch PoC까지 실행했다. Time-to-Separation, Full Dataset, CNN/LSTM을 포함한 full model comparison, quantization, E84 또는 HIL은 수행하지 않았다.
+현재 milestone은 smoke simulation, Sink/Slip finite transition, bounded raw Pilot, 첫 established-state PoC와 frozen-classifier Time-to-Separation replay까지 실행했다. Full Dataset, retraining, CNN/LSTM을 포함한 full model comparison, quantization, E84 또는 HIL은 수행하지 않았다.

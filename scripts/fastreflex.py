@@ -16,7 +16,7 @@ SOURCE_ROOT = REPOSITORY_ROOT / "src"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-PLACEHOLDER_COMMANDS = ("evaluate", "export")
+PLACEHOLDER_COMMANDS = ("export",)
 DEFAULT_SIMULATOR_CONFIG = REPOSITORY_ROOT / "configs" / "simulator" / "g1.yaml"
 DEFAULT_COLLECTION_CONFIG = (
     REPOSITORY_ROOT
@@ -29,6 +29,12 @@ DEFAULT_TRAINING_CONFIG = (
     / "configs"
     / "experiment"
     / "20260827_first_classification_poc.yaml"
+)
+DEFAULT_EVALUATION_CONFIG = (
+    REPOSITORY_ROOT
+    / "configs"
+    / "experiment"
+    / "20260827_time_to_separation.yaml"
 )
 
 
@@ -104,6 +110,10 @@ def build_parser() -> argparse.ArgumentParser:
         "train", help="run the bounded first pelvis IMU classification PoC"
     )
     train.add_argument("--config", type=Path, default=DEFAULT_TRAINING_CONFIG)
+    evaluate = subparsers.add_parser(
+        "evaluate", help="replay a frozen classifier around physical hazard events"
+    )
+    evaluate.add_argument("--config", type=Path, default=DEFAULT_EVALUATION_CONFIG)
     for command in PLACEHOLDER_COMMANDS:
         subparsers.add_parser(command, help="reserved for a later milestone")
     return parser
@@ -205,6 +215,25 @@ def main() -> int:
                     "output_path": str(output_path),
                     "selected_candidate": metrics["selection"]["candidate_id"],
                     "holdout_macro_f1": metrics["holdout"]["metrics"]["macro_f1"],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+
+    if args.command == "evaluate":
+        from fastreflex.evaluation.time_to_separation import run_time_to_separation
+
+        output_path, metrics = run_time_to_separation(
+            args.config, REPOSITORY_ROOT
+        )
+        print(
+            json.dumps(
+                {
+                    "output_path": str(output_path),
+                    "model": metrics["replay"]["model"],
+                    "seeds": metrics["replay"]["seeds"],
                 },
                 indent=2,
                 sort_keys=True,

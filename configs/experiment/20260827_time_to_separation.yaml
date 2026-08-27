@@ -1,0 +1,64 @@
+experiment:
+  id: TIME_TO_SEPARATION
+  date: 2026-08-27
+  purpose: replay the frozen first-PoC classifier around physical hazard events
+
+dataset:
+  dataset_id: hazard_pilot_20260827
+  path: data/raw/hazard_pilot_20260827
+  manifest_sha256: 2a539abe122f8d4e06429d39db2dc37ec6f7569a8360959e64681d9f0ac1cf3e
+  sample_rate_hz: 1000
+  input: pelvis_imu
+  class_order: [NORMAL, SLIP, SINK]
+
+first_poc:
+  artifact_path: artifacts/runs/20260827_first_classification_poc
+  split:
+    path: artifacts/runs/20260827_first_classification_poc/split.json
+    sha256: 3b1b29a5e009783da2db0d1bdd198df24695d44c4b0cc55228bf28dfefda2a75
+  normalization:
+    path: artifacts/runs/20260827_first_classification_poc/normalization.json
+    sha256: ec9f20140f34a27eb21e82f72b78240114e371a95180020df7066336ceb1bcb9
+  selection_metrics:
+    path: artifacts/runs/20260827_first_classification_poc/metrics.json
+    sha256: a0ba6a995281850dd5eaaca689deb8b1181e8db8ff9a2fcca9da2513d8c9b573
+
+primary_model:
+  family: mlp
+  window_ms: 100
+  window_samples: 100
+  model_config: configs/model/mlp.yaml
+  checkpoints:
+    - seed: 20260827
+      path: artifacts/runs/20260827_first_classification_poc/checkpoints/mlp_100ms_seed_20260827.pt
+      sha256: 73049b44bbeca71018d7dc6109e5f0ec9bd00707d6ac8ddd39add29fc4cafc5a
+    - seed: 20260828
+      path: artifacts/runs/20260827_first_classification_poc/checkpoints/mlp_100ms_seed_20260828.pt
+      sha256: e3211531d1cc93c7a146667b1ede0879c947c0c10ed2a91193eef1c2a9c5c05e
+    - seed: 20260829
+      path: artifacts/runs/20260827_first_classification_poc/checkpoints/mlp_100ms_seed_20260829.pt
+      sha256: c321f2d3d3dbbb1a8c68aa1a486aac2f23371c0ca06f46db64ea2b31dc6e4db4
+
+replay:
+  stride_ms: 1
+  sustained_correct_ms: 10
+  horizons_ms: [0, 20, 30, 50, 100]
+  descriptive_extended_horizons_ms: [150, 200, 300]
+  batch_size: 512
+  primary_prediction: argmax
+
+plots:
+  probability_runs:
+    - slip_ice_s020_p035
+    - slip_ice_s025_p035
+    - sink_left_severe_s020_p035
+    - sink_right_severe_s020_p035
+    - sink_right_severe_s025_p035
+    - normal_sand_s010_p000
+  imu_probability_runs:
+    - slip_ice_s020_p035
+    - sink_right_severe_s025_p035
+
+artifacts:
+  path: artifacts/runs/20260827_time_to_separation
+  gitignored: true

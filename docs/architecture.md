@@ -1,6 +1,6 @@
 # Architecture
 
-현재 repository는 `FIRST_CLASSIFICATION_POC_COMPLETE` 상태다. 최소 Unitree G1 simulator, Hazard Dataset Contract와 bounded raw collector로 `hazard_pilot_20260827`을 local materialize했고, Pilot-only established-state MLP/GRU PoC를 완료했다. Early detection, Full Dataset과 final model은 아직 검증하지 않았다.
+현재 repository는 `TIME_TO_SEPARATION_ANALYZED` 상태다. 최소 Unitree G1 simulator, Hazard Dataset Contract와 bounded raw collector로 `hazard_pilot_20260827`을 local materialize하고 first established-state PoC와 frozen MLP causal replay를 완료했다. Pilot replay는 SLIP early-signal candidate와 SINK/benign-FP 한계를 함께 보였으며 final early detector, Full Dataset과 final model은 아직 검증하지 않았다.
 
 ## MuJoCo Baseline
 

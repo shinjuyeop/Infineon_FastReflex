@@ -55,9 +55,9 @@ MuJoCo
 
 ## Current Status
 
-`FIRST_CLASSIFICATION_POC_COMPLETE`
+`TIME_TO_SEPARATION_ANALYZED`
 
-40-run `hazard_pilot_20260827` 중 33 valid run을 metadata-only 20/6/7 run-disjoint split로 고정하고, 50/100 ms raw pelvis IMU6 established-state MLP/GRU PoC를 완료했다. Validation으로 선택한 MLP 100 ms는 한 번 연 Pilot internal holdout에서 macro F1 0.8614를 보였다. 이는 Pilot-only established `NORMAL/SLIP/SINK` separability evidence이며 early detection, Time-to-Separation, Full Dataset, final model 또는 deployment readiness를 뜻하지 않는다. Walking policy ONNX, raw data와 generated training artifacts는 Git에 포함하지 않는다.
+첫 PoC에서 선택한 frozen MLP 100 ms의 3-seed checkpoint를 33 valid Pilot run에 1 ms causal replay했다. SLIP은 +100 ms event recall 0.8333 ± 0.0589로 early-signal candidate가 있었지만 SINK는 0.1111이었고, BENIGN sustained hazard false firing도 seeds별 7~8/16 runs였다. 이는 Pilot-only existing-classifier analysis이며 final latency, continuous detector, Full Dataset, final model 또는 deployment readiness를 뜻하지 않는다. Walking policy ONNX, raw data와 generated replay/training artifacts는 Git에 포함하지 않는다.
 
 ## 구조
 
@@ -101,7 +101,14 @@ python scripts/fastreflex.py train \
   --config configs/experiment/20260827_first_classification_poc.yaml
 ```
 
-`evaluate`, `export`는 같은 entry point의 placeholder로 유지한다.
+Frozen first-PoC classifier의 Time-to-Separation은 재학습 없이 canonical `evaluate` command로 replay한다. Config에 기록된 split, normalizer와 checkpoint SHA가 다르면 fail-closed한다.
+
+```bash
+python scripts/fastreflex.py evaluate \
+  --config configs/experiment/20260827_time_to_separation.yaml
+```
+
+`export`는 같은 entry point의 placeholder로 유지한다.
 
 Viewer, 네 terrain 예제, policy 준비와 summary 해석은 [`docs/simulation.md`](docs/simulation.md)를 참고한다.
 

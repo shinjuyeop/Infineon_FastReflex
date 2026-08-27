@@ -1,0 +1,100 @@
+experiment:
+  id: FSR_TEMPORAL_REDISTRIBUTION_ANALYSIS
+  date: 2026-08-27
+  purpose: compare causal temporal FSR redistribution with static load distribution
+  analysis_only: true
+  simulation: forbidden
+  training: forbidden
+
+dataset:
+  id: hazard_sensor_pilot_20260827
+  path: data/raw/hazard_sensor_pilot_20260827
+  manifest_sha256: 3b15ed5412682fe6a233334caf202b271b6a8d89155bd817568d28a73f54a3e3
+  sample_rate_hz: 1000
+  foot_fsr_unit: N
+  primary_groups:
+    benign: [mild, moderate]
+    hazardous: [severe]
+  secondary_control: uniform_sand
+  reference_only: [concrete, marble]
+
+previous_static_analysis:
+  experiment_id: FSR_LOAD_DISTRIBUTION_ANALYSIS
+  artifact_path: artifacts/runs/20260827_fsr_load_distribution_analysis
+  parity_horizons_ms: [20, 50, 100]
+
+events:
+  t0: affected_foot_first_soft_patch_physical_contact
+  t1: affected_foot_patch_linked_sink_physical_onset
+  t2: frozen_sink_degradation_onset_hazardous_only
+  affected_foot_canonicalization: true
+
+horizons_ms: [0, 20, 30, 50, 75, 100, 150, 200, 300]
+load_threshold_n: 2.5
+initial_median_width_ms: 10
+endpoint_median_width_ms: 10
+path_sampling_ms: 1
+baseline_ms: {start: -100, stop: -20}
+minimum_baseline_valid_samples: 20
+
+temporal_metrics:
+  quadrant:
+    - quadrant_l1_change
+    - quadrant_path_length
+    - quadrant_path_rate
+    - excess_quadrant_path_rate
+  concentration:
+    - concentration_delta
+    - concentration_abs_change
+    - concentration_path
+    - excess_concentration_path_rate
+  entropy:
+    - entropy_delta
+    - entropy_abs_change
+    - entropy_path
+    - excess_entropy_path_rate
+  max_share:
+    - max_share_delta
+    - max_share_abs_change
+  cop_proxy:
+    - cop_displacement
+    - cop_path_length
+    - cop_path_rate
+    - cop_path_efficiency
+    - excess_cop_path_rate
+  medial_secondary:
+    - medial_delta
+    - medial_abs_change
+    - medial_path
+  front_secondary:
+    - front_delta
+    - front_abs_change
+    - front_path
+  bilateral_both_feet_loaded_only:
+    - bilateral_share_delta
+    - bilateral_share_abs_change
+    - bilateral_share_path
+    - bilateral_shift_delta
+    - bilateral_shift_abs_change
+    - bilateral_shift_path
+
+separation:
+  statistical_unit: physical_run
+  metrics: [median, range, range_overlap, run_level_auroc]
+  orientation_correct_auc: true
+  p_value_primary: false
+
+uniform_sand:
+  alignment: per_foot_physical_sink_onset
+  representation: per_run_more_hazardous_worst_foot
+  affected_side_status: not_assigned
+
+reference_terrain:
+  terrains: [concrete, marble, sand]
+  window_ms: 100
+  aggregation: max_foot_per_window_then_run_median_and_p95
+  conclusion_role: general_reference_only
+
+artifacts:
+  path: artifacts/runs/20260827_fsr_temporal_redistribution_analysis
+  gitignored: true

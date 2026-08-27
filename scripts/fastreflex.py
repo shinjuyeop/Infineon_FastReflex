@@ -251,6 +251,28 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "FSR_TEMPORAL_REDISTRIBUTION_ANALYSIS":
+            from fastreflex.evaluation.fsr_temporal import (
+                run_fsr_temporal_redistribution_analysis,
+            )
+
+            output_path, summary = run_fsr_temporal_redistribution_analysis(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "dataset_id": summary["dataset_id"],
+                        "analysis_only": summary["analysis_only"],
+                        "simulation_executed": summary["simulation_executed"],
+                        "training_executed": summary["training_executed"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id == "FSR_LOAD_DISTRIBUTION_ANALYSIS":
             from fastreflex.evaluation.fsr_distribution import (
                 run_fsr_load_distribution_analysis,

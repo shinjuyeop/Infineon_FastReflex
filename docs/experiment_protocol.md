@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`, frozen criteria, 40-run IMU Pilot, established-state PoC, Time-to-Separation, 별도 40-run virtual-FSR Observability Pilot과 read-only load-distribution analysis까지 완료했다. 현재 상태는 `FSR_LOAD_DISTRIBUTION_ANALYZED`다. t1+50 ms medial distribution이 첫 후보였지만 clear Pilot separation은 t1+100 ms에 나타나 ultra-fast evidence는 약하다. Sim-to-real 한계가 남아 sensor architecture와 detector readiness는 unfrozen이다.
+`MINIMAL_G1_MUJOCO_MIGRATION`, frozen criteria, 40-run IMU/FSR Pilot, Time-to-Separation, static 및 temporal FSR distribution analysis까지 완료했다. 현재 상태는 `FSR_TEMPORAL_REDISTRIBUTION_ANALYZED`다. Temporal은 t1+20 ms 한 horizon을 개선했지만 반복되지 않았고 late path는 Uniform Sand에 confounded되어 static보다 meaningful early advantage가 없다. Sim-to-real 한계가 남아 sensor architecture와 detector readiness는 unfrozen이다.
 
 ## 고정 연구 원칙
 
@@ -109,6 +109,16 @@ Config와 결과는 [`20260827_fsr_observability_pilot.yaml`](../configs/experim
 - 결론: `FSR_LOAD_DISTRIBUTION_LATE_SEPARATION_ONLY`; handcrafted feature, threshold, trained detector와 sensor architecture는 미확정
 
 Config와 결과는 [`20260827_fsr_load_distribution_analysis.yaml`](../configs/experiment/20260827_fsr_load_distribution_analysis.yaml), [`20260827_fsr_load_distribution_analysis.md`](../reports/20260827_fsr_load_distribution_analysis.md)에 기록한다.
+
+### FSR Temporal Redistribution Analysis
+
+- 완료: 기존 raw FSR8을 수정하지 않고 event initial/endpoint median과 raw 1 ms continuous-valid path 계산
+- 완료: t0/t1 `0/20/30/50/75/100/150/200/300 ms`, pre-event instability와 t2-in-horizon flag 분석
+- 결과: t1+20 front absolute change는 AUROC 1.000이나 +30 ms에 0.639로 하락
+- 결과: t1+100 CoP path는 AUROC 1.000이나 Uniform Sand path가 severe보다 훨씬 큼
+- 결론: `FSR_TEMPORAL_REDISTRIBUTION_NO_ADDED_VALUE`; temporal feature, classifier와 threshold는 미확정
+
+Config와 결과는 [`20260827_fsr_temporal_redistribution_analysis.yaml`](../configs/experiment/20260827_fsr_temporal_redistribution_analysis.yaml), [`20260827_fsr_temporal_redistribution_analysis.md`](../reports/20260827_fsr_temporal_redistribution_analysis.md)에 기록한다.
 
 ### Phase 6 — Sensor architecture decision
 

@@ -1,6 +1,6 @@
 # Architecture
 
-현재 repository는 `FSR_OBSERVABILITY_ANALYZED` 상태다. 기존 IMU6 Pilot과 Time-to-Separation evidence를 보존한 채 같은 40 conditions의 observer-only virtual FSR8 sensor Pilot과 fixed early-target ablation을 완료했다. Fusion14가 IMU6보다 SINK@100 ms와 Uniform Sand false-positive에서 나은 Pilot evidence를 보였지만 actual FSR hardware, final sensor architecture, Full Dataset과 final detector는 아직 검증하지 않았다.
+현재 repository는 `FSR_LOAD_DISTRIBUTION_ANALYZED` 상태다. 기존 IMU6 Pilot과 Time-to-Separation evidence를 보존한 채 같은 40 conditions의 observer-only virtual FSR8 sensor Pilot, fixed early-target ablation과 read-only load-distribution analysis를 완료했다. Distribution은 t1+50 ms부터 후보가 보였지만 clear Pilot separation은 t1+100 ms에 나타나 `LATE_SEPARATION_ONLY`로 결론냈다. Actual FSR hardware, final sensor architecture, Full Dataset과 final detector는 아직 검증하지 않았다.
 
 ## MuJoCo Baseline
 
@@ -87,14 +87,17 @@ Candidate model families:
 
 Virtual FSR은 기존 sole collision contact에서만 읽으므로 geom, mass, friction, contact parameters, controller와 walking policy를 바꾸지 않는다. 40-run sensor Pilot은 기존 Pilot의 timestamp, IMU, event/censor와 모든 common diagnostic array가 bit-identical임을 강제했다. 이 결과는 idealized MuJoCo observability evidence이며 FSR hysteresis, drift, saturation, mounting과 실제 전기 변환을 검증하지 않는다. Sensor architecture는 unfrozen이다.
 
+`evaluation/fsr_distribution.py`는 raw FSR8에서 affected-foot load ratio, normalized CoP proxy, concentration과 bilateral distribution을 deterministic하게 계산하는 analysis-only responsibility다. Low-load foot ratio는 invalid로 제외하고 t0/t1 causal horizon을 run 단위로 비교한다. 이 representation은 runtime model input이나 frozen detector feature가 아니다.
+
 ## 초기 연구 순서
 
 1. Dataset과 provenance를 먼저 설계한다.
 2. Pilot raw sanity와 established-state MLP/GRU PoC로 기본 separability를 확인한다.
 3. Onset-crossing causal window의 Time-to-Separation과 latency를 연구한다.
 4. FSR Observability Pilot으로 IMU6/FSR8/Fusion14를 동일 rule에서 비교한다.
-5. Pilot evidence를 review해 sensor architecture를 결정한다.
-6. 그 뒤에만 Full Dataset을 생성하고 동일 validation protocol로 full candidate family를 비교한다.
-7. 검증된 Float model과 계약 artifact만 export한다.
+5. FSR load distribution의 t0/t1 physical observability와 terrain/phase shortcut을 분석한다.
+6. Pilot evidence를 review해 sensor architecture를 결정한다.
+7. 그 뒤에만 Full Dataset을 생성하고 동일 validation protocol로 full candidate family를 비교한다.
+8. 검증된 Float model과 계약 artifact만 export한다.
 
 첫 설계에서는 복잡한 handcrafted feature pipeline을 사용하지 않는다. Research 경계 뒤의 quantization, Vela, firmware, HIL은 E84 deployment repository가 담당한다.

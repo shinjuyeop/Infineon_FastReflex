@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-`MINIMAL_G1_MUJOCO_MIGRATION`, frozen criteria, 40-run IMU Pilot, established-state PoC, Time-to-Separation와 별도 40-run virtual-FSR Observability Pilot까지 완료했다. 현재 상태는 `FSR_OBSERVABILITY_ANALYZED`다. Fusion14는 early SINK와 Uniform Sand FP를 개선했지만 benign mild/moderate Sink FP와 sim-to-real 한계가 남아 sensor architecture와 detector readiness는 unfrozen이다.
+`MINIMAL_G1_MUJOCO_MIGRATION`, frozen criteria, 40-run IMU Pilot, established-state PoC, Time-to-Separation, 별도 40-run virtual-FSR Observability Pilot과 read-only load-distribution analysis까지 완료했다. 현재 상태는 `FSR_LOAD_DISTRIBUTION_ANALYZED`다. t1+50 ms medial distribution이 첫 후보였지만 clear Pilot separation은 t1+100 ms에 나타나 ultra-fast evidence는 약하다. Sim-to-real 한계가 남아 sensor architecture와 detector readiness는 unfrozen이다.
 
 ## 고정 연구 원칙
 
@@ -99,6 +99,16 @@ Config와 실제 결과는 [`20260827_time_to_separation.yaml`](../configs/exper
 - 제한: idealized MuJoCo normal load이며 actual FSR hardware, calibration과 mounting 미검증
 
 Config와 결과는 [`20260827_fsr_observability_pilot.yaml`](../configs/experiment/20260827_fsr_observability_pilot.yaml), [`20260827_fsr_observability_pilot.md`](../reports/20260827_fsr_observability_pilot.md)에 기록한다.
+
+### FSR Load Distribution Analysis
+
+- 완료: 기존 sensor Pilot을 수정하지 않고 mild/moderate benign 4 vs severe hazardous 9 run을 t0/t1 기준으로 비교
+- 완료: affected-foot canonicalization, low-load invalid handling, 10 ms causal horizon median과 pre-event delta 적용
+- 결과: t0+20 CoP 신호는 50/100 ms에 반복되지 않았고, t1+50 medial-ratio delta는 AUROC 0.893이나 range overlap
+- 결과: t1+100 affected total은 Pilot에서 완전 분리했지만 Uniform Sand와 겹치며, medial-ratio delta는 AUROC 0.929
+- 결론: `FSR_LOAD_DISTRIBUTION_LATE_SEPARATION_ONLY`; handcrafted feature, threshold, trained detector와 sensor architecture는 미확정
+
+Config와 결과는 [`20260827_fsr_load_distribution_analysis.yaml`](../configs/experiment/20260827_fsr_load_distribution_analysis.yaml), [`20260827_fsr_load_distribution_analysis.md`](../reports/20260827_fsr_load_distribution_analysis.md)에 기록한다.
 
 ### Phase 6 — Sensor architecture decision
 

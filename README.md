@@ -55,9 +55,9 @@ MuJoCo
 
 ## Current Status
 
-`FSR_OBSERVABILITY_ANALYZED`
+`FSR_LOAD_DISTRIBUTION_ANALYZED`
 
-같은 40개 physical condition을 observer-only virtual FSR8과 함께 재수집해 timestamp, pelvis IMU, annotation/diagnostic 전 필드와 outcome이 기존 Pilot에 bit-identical임을 확인했다. Fixed 100 ms MLP early-target ablation에서 Fusion14의 SINK Recall@100 ms는 `0.4074 ± 0.1048`로 IMU6 `0.1111`보다 높았고 Uniform Sand sustained FP도 평균 `3.33/4`에서 `1.67/4`로 줄었다. 그러나 mild/moderate benign Sink는 모두 계속 false firing했다. 이는 idealized virtual-FSR Pilot evidence일 뿐 actual FSR hardware validation, final sensor architecture, Full Dataset, final detector 또는 deployment readiness를 뜻하지 않는다. Walking policy ONNX, raw data와 generated replay/training artifacts는 Git에 포함하지 않는다.
+같은 40개 physical condition의 observer-only virtual FSR8 Pilot에서 fixed MLP ablation에 이어 raw load distribution을 run-level로 분석했다. t0 뒤 100 ms 이내에는 반복되는 benign/hazardous separation이 없었고, t1+50 ms medial-ratio delta가 첫 distribution candidate, t1+100 ms affected total이 첫 clear Pilot separation이었다. Absolute total은 Uniform Sand와 겹쳐 결론은 `FSR_LOAD_DISTRIBUTION_LATE_SEPARATION_ONLY`다. 이는 idealized virtual-FSR Pilot evidence일 뿐 trained distribution detector, actual FSR hardware validation, final sensor architecture, Full Dataset 또는 deployment readiness를 뜻하지 않는다. Walking policy ONNX, raw data와 generated analysis/training artifacts는 Git에 포함하지 않는다.
 
 ## 구조
 
@@ -116,6 +116,13 @@ python scripts/fastreflex.py collect \
 
 python scripts/fastreflex.py train \
   --config configs/experiment/20260827_fsr_observability_pilot.yaml
+```
+
+같은 sensor Pilot의 FSR load distribution은 simulation이나 재학습 없이 canonical `evaluate` command로 재현한다. Generated CSV/PNG는 Gitignored artifact에만 저장한다.
+
+```bash
+python scripts/fastreflex.py evaluate \
+  --config configs/experiment/20260827_fsr_load_distribution_analysis.yaml
 ```
 
 `export`는 같은 entry point의 placeholder로 유지한다.

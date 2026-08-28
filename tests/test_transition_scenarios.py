@@ -13,8 +13,8 @@ import yaml
 from fastreflex.evaluation.transition_scenarios import (
     _assert_unique_and_disjoint,
     _canonical_hash,
-    _fusion_regression,
-    _simulation_config,
+    fusion_regression,
+    transition_simulation_config,
     classify_scenario_outcome,
     compare_prefix_pair,
     construct_matched_reference,
@@ -119,7 +119,7 @@ class TransitionScenarioStaticTest(unittest.TestCase):
             self.assertEqual(reference[field], pair[field])
 
     def test_fusion_truth_table_is_unchanged(self) -> None:
-        audit = _fusion_regression()
+        audit = fusion_regression()
         self.assertTrue(audit["passed"])
         self.assertFalse(audit["logic_changed"])
 
@@ -137,13 +137,13 @@ class TransitionScenarioRuntimeTest(unittest.TestCase):
                 transition_spec, 8.0, 0.75
             )
             transition = run_simulation(
-                _simulation_config(
+                transition_simulation_config(
                     cls.base, transition_spec, LOCAL_POLICY, duration_s=3.0
                 ),
                 capture_state_trace=True,
             )
             reference = run_simulation(
-                _simulation_config(
+                transition_simulation_config(
                     cls.base, reference_spec, LOCAL_POLICY, duration_s=3.0
                 ),
                 capture_state_trace=True,
@@ -213,7 +213,9 @@ class TransitionScenarioRuntimeTest(unittest.TestCase):
     def test_state_capture_does_not_change_physics(self) -> None:
         specification, captured, _ = self.results["concrete_ice_prefix"]
         plain = run_simulation(
-            _simulation_config(self.base, specification, LOCAL_POLICY, duration_s=3.0)
+            transition_simulation_config(
+                self.base, specification, LOCAL_POLICY, duration_s=3.0
+            )
         )
         np.testing.assert_array_equal(captured.runtime.pelvis_imu, plain.runtime.pelvis_imu)
         np.testing.assert_array_equal(

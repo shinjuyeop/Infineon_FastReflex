@@ -1,0 +1,176 @@
+schema_version: 1
+
+experiment:
+  id: WALKING_STABILITY_GROUND_TRUTH_SANITY
+  date: 2026-08-28
+  timezone: Asia/Seoul
+  source_commit_at_start: d7f846909ae4c5a3de7e24133b7d8b50513d4027
+  origin_main_at_start: d7f846909ae4c5a3de7e24133b7d8b50513d4027
+  worktree_clean_at_start: true
+  milestone_scope: simulator_only_causal_stability_ground_truth
+
+source:
+  simulator_config: configs/simulator/g1.yaml
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  transition_calibration_config: configs/experiment/20260828_transition_scenario_calibration.yaml
+  transition_calibration_report: reports/20260828_transition_scenario_calibration.md
+
+common:
+  duration_s: 8.0
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  minimum_normal_prefix_ms: 500
+  minimum_post_contact_ms: 500
+  deterministic: true
+  result_driven_scenario_mutation: prohibited
+
+stability_oracle:
+  role: privileged_simulator_only_ground_truth
+  runtime_inputs: []
+  forbidden_runtime_inputs: [COM, XCoM, support_polygon, raw_MoS, phase_normal_envelope, stability_residual, exact_contact, future_fall]
+  metric: phase_normalized_dynamic_margin_of_stability
+  xcom: COM_xy_plus_COM_velocity_xy_div_sqrt_g_over_h
+  support_height: COM_z_minus_current_loaded_support_height
+  support_polygon: convex_hull_of_current_loaded_named_sole_points
+  phases: [LEFT_SINGLE_SUPPORT, RIGHT_SINGLE_SUPPORT, DOUBLE_SUPPORT]
+  no_support: diagnostic_only_nan
+  envelope_scope: terrain_agnostic_observed_stable_calibration_runs_only
+  phase_lower_quantile: 0.005
+  quantile_method: linear
+  fixed_margin_m: 0.010
+  persistence_ms: 20
+  transition_gate: first_exact_target_contact
+  pretransition_firing: diagnostic_false_instability
+  future_fall_dependency: false
+  threshold_sweep: prohibited
+  post_validation_retuning: prohibited
+
+calibration:
+  label: ORACLE CALIBRATION
+  source: existing_clean_calibrated_scenarios
+  hard_stable_runs:
+    - {id: cal_concrete_s015, source_terrain: concrete, target_terrain: concrete, speed_mps: 0.15, patch_start_x_m: 0.35, patch_width_m: 0.75, slip_pattern: uniform, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_concrete_s020, source_terrain: concrete, target_terrain: concrete, speed_mps: 0.20, patch_start_x_m: 0.35, patch_width_m: 0.75, slip_pattern: uniform, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_concrete_s025, source_terrain: concrete, target_terrain: concrete, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.75, slip_pattern: uniform, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_marble_s015, source_terrain: marble, target_terrain: marble, speed_mps: 0.15, patch_start_x_m: 0.35, patch_width_m: 0.75, slip_pattern: uniform, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_marble_s020, source_terrain: marble, target_terrain: marble, speed_mps: 0.20, patch_start_x_m: 0.35, patch_width_m: 0.75, slip_pattern: uniform, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_marble_s025, source_terrain: marble, target_terrain: marble, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.75, slip_pattern: uniform, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  transition_runs:
+    - {id: cal_c_ice_s01, prior_run_id: i_s025_p033_w075, prior_observed_outcome: stable, source_terrain: concrete, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.33, patch_width_m: 0.75, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_c_ice_s02, prior_run_id: i_s025_p036_w070, prior_observed_outcome: stable, source_terrain: concrete, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.70, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_c_ice_s03, prior_run_id: i_s025_p036_w075, prior_observed_outcome: stable, source_terrain: concrete, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.75, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_c_ice_f01, prior_run_id: i_s025_p033_w070, prior_observed_outcome: fall, source_terrain: concrete, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.33, patch_width_m: 0.70, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_c_ice_f02, prior_run_id: i_s025_p034_w075, prior_observed_outcome: fall, source_terrain: concrete, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.34, patch_width_m: 0.75, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_c_ice_f03, prior_run_id: i_s015_p032_w065, prior_observed_outcome: fall, source_terrain: concrete, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.32, patch_width_m: 0.65, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_c_ice_f04, prior_run_id: i_s015_p035_w075, prior_observed_outcome: fall, source_terrain: concrete, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.35, patch_width_m: 0.75, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_c_sand_s01, prior_run_id: s_bal_l_s025_p030_w072, prior_observed_outcome: stable, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.72, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: cal_c_sand_s02, prior_run_id: s_bal_l_s025_p030_w074, prior_observed_outcome: stable, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.74, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: cal_c_sand_s03, prior_run_id: s_bal_r_s025_p035_w072, prior_observed_outcome: stable, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.72, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: cal_c_sand_s04, prior_run_id: s_bal_r_s025_p035_w074, prior_observed_outcome: stable, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.74, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: cal_c_sand_f01, prior_run_id: s_lat_l_s025_p030_w065, prior_observed_outcome: fall, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.65, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: cal_c_sand_f02, prior_run_id: s_lat_l_s025_p030_w075, prior_observed_outcome: fall, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.75, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: cal_c_sand_f03, prior_run_id: s_lat_l_s025_p035_w065, prior_observed_outcome: fall, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.65, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: cal_c_sand_f04, prior_run_id: s_lat_l_s025_p035_w075, prior_observed_outcome: fall, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.75, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: cal_m_ice_01, prior_run_id: mr_ice_s_01, prior_observed_outcome: fall, source_terrain: marble, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.33, patch_width_m: 0.75, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_m_ice_02, prior_run_id: mr_ice_s_02, prior_observed_outcome: stable, source_terrain: marble, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.70, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_m_ice_03, prior_run_id: mr_ice_s_03, prior_observed_outcome: stable, source_terrain: marble, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.75, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_m_ice_04, prior_run_id: mr_ice_f_01, prior_observed_outcome: fall, source_terrain: marble, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.33, patch_width_m: 0.70, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_m_ice_05, prior_run_id: mr_ice_f_02, prior_observed_outcome: fall, source_terrain: marble, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.34, patch_width_m: 0.75, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_m_ice_06, prior_run_id: mr_ice_f_03, prior_observed_outcome: fall, source_terrain: marble, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.32, patch_width_m: 0.65, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_m_ice_07, prior_run_id: mr_ice_f_04, prior_observed_outcome: stable, source_terrain: marble, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.35, patch_width_m: 0.75, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: cal_m_sand_s01, prior_run_id: mr_sand_s_01, prior_observed_outcome: stable, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.72, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: cal_m_sand_s02, prior_run_id: mr_sand_s_02, prior_observed_outcome: stable, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.74, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: cal_m_sand_s03, prior_run_id: mr_sand_s_03, prior_observed_outcome: stable, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.72, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: cal_m_sand_s04, prior_run_id: mr_sand_s_04, prior_observed_outcome: stable, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.74, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: cal_m_sand_f01, prior_run_id: mr_sand_f_01, prior_observed_outcome: fall, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.65, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: cal_m_sand_f02, prior_run_id: mr_sand_f_02, prior_observed_outcome: fall, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.75, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: cal_m_sand_f03, prior_run_id: mr_sand_f_03, prior_observed_outcome: fall, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.65, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: cal_m_sand_f04, prior_run_id: mr_sand_f_04, prior_observed_outcome: fall, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.75, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+
+frozen_operating_domains:
+  ice_stable: {speed_mps: [0.25], patch_start_x_m: [0.36], patch_width_m: [0.70, 0.75], slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  ice_fall: {speed_mps: [0.15], patch_start_x_m: [0.32, 0.35], patch_width_m: [0.65, 0.75], slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  sand_stable: {speed_mps: [0.25], patch_start_x_m: [0.30, 0.35], patch_width_m: [0.72, 0.75], slip_pattern: uniform, sink_pattern: [transition_left, transition_right], sink_severity: mild, support_pattern: balanced_deformable}
+  sand_fall: {speed_mps: [0.25], patch_start_x_m: [0.30, 0.35], patch_width_m: [0.65, 0.75], slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+
+fresh_validation:
+  label: FRESH ORACLE VALIDATION
+  frozen_before_execution: true
+  runs:
+    - {id: val_c_ice_s01, design_role: stable, frozen_group: ice_stable, source_terrain: concrete, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.705, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_c_ice_s02, design_role: stable, frozen_group: ice_stable, source_terrain: concrete, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.715, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_c_ice_s03, design_role: stable, frozen_group: ice_stable, source_terrain: concrete, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.725, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_c_ice_s04, design_role: stable, frozen_group: ice_stable, source_terrain: concrete, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.735, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_c_ice_s05, design_role: stable, frozen_group: ice_stable, source_terrain: concrete, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.745, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_c_ice_f01, design_role: fall, frozen_group: ice_fall, source_terrain: concrete, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.32, patch_width_m: 0.66, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_c_ice_f02, design_role: fall, frozen_group: ice_fall, source_terrain: concrete, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.32, patch_width_m: 0.68, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_c_ice_f03, design_role: fall, frozen_group: ice_fall, source_terrain: concrete, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.35, patch_width_m: 0.70, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_c_ice_f04, design_role: fall, frozen_group: ice_fall, source_terrain: concrete, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.35, patch_width_m: 0.72, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_c_ice_f05, design_role: fall, frozen_group: ice_fall, source_terrain: concrete, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.35, patch_width_m: 0.74, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_c_sand_s01, design_role: stable, frozen_group: sand_stable, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.721, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: val_c_sand_s02, design_role: stable, frozen_group: sand_stable, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.727, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: val_c_sand_s03, design_role: stable, frozen_group: sand_stable, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.733, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: val_c_sand_s04, design_role: stable, frozen_group: sand_stable, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.739, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: val_c_sand_s05, design_role: stable, frozen_group: sand_stable, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.747, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: val_c_sand_f01, design_role: fall, frozen_group: sand_fall, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.66, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: val_c_sand_f02, design_role: fall, frozen_group: sand_fall, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.68, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: val_c_sand_f03, design_role: fall, frozen_group: sand_fall, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.70, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: val_c_sand_f04, design_role: fall, frozen_group: sand_fall, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.72, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: val_c_sand_f05, design_role: fall, frozen_group: sand_fall, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.74, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: val_m_ice_s01, design_role: stable, frozen_group: ice_stable, source_terrain: marble, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.706, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_m_ice_s02, design_role: stable, frozen_group: ice_stable, source_terrain: marble, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.716, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_m_ice_s03, design_role: stable, frozen_group: ice_stable, source_terrain: marble, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.726, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_m_ice_s04, design_role: stable, frozen_group: ice_stable, source_terrain: marble, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.736, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_m_ice_s05, design_role: stable, frozen_group: ice_stable, source_terrain: marble, target_terrain: ice, speed_mps: 0.25, patch_start_x_m: 0.36, patch_width_m: 0.746, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_m_ice_f01, design_role: fall, frozen_group: ice_fall, source_terrain: marble, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.32, patch_width_m: 0.661, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_m_ice_f02, design_role: fall, frozen_group: ice_fall, source_terrain: marble, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.32, patch_width_m: 0.681, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_m_ice_f03, design_role: fall, frozen_group: ice_fall, source_terrain: marble, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.35, patch_width_m: 0.701, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_m_ice_f04, design_role: fall, frozen_group: ice_fall, source_terrain: marble, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.35, patch_width_m: 0.721, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_m_ice_f05, design_role: fall, frozen_group: ice_fall, source_terrain: marble, target_terrain: ice, speed_mps: 0.15, patch_start_x_m: 0.35, patch_width_m: 0.741, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    - {id: val_m_sand_s01, design_role: stable, frozen_group: sand_stable, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.722, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: val_m_sand_s02, design_role: stable, frozen_group: sand_stable, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.728, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: val_m_sand_s03, design_role: stable, frozen_group: sand_stable, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.734, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: val_m_sand_s04, design_role: stable, frozen_group: sand_stable, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.742, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: val_m_sand_s05, design_role: stable, frozen_group: sand_stable, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.748, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, support_pattern: balanced_deformable}
+    - {id: val_m_sand_f01, design_role: fall, frozen_group: sand_fall, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.661, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: val_m_sand_f02, design_role: fall, frozen_group: sand_fall, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.30, patch_width_m: 0.681, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: val_m_sand_f03, design_role: fall, frozen_group: sand_fall, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.701, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: val_m_sand_f04, design_role: fall, frozen_group: sand_fall, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.721, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    - {id: val_m_sand_f05, design_role: fall, frozen_group: sand_fall, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.35, patch_width_m: 0.741, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+
+acceptance:
+  stable_false_instability_run_rate_max: 0.10
+  fall_prefall_instability_coverage_min: 0.85
+  ice_fall_coverage_min: 0.80
+  sand_fall_coverage_min: 0.80
+  source_meaningful_detection_required: [concrete, marble]
+  median_fall_lead_ms_min: 200
+  pretransition_false_instability_runs_max: 0
+  causality_required: true
+  verdicts:
+    pass: WALKING_STABILITY_GROUND_TRUTH_SUPPORTED
+    promising: WALKING_STABILITY_GROUND_TRUTH_PROMISING
+    fail: WALKING_STABILITY_GROUND_TRUTH_NEEDS_REVISION
+
+terrain_regression:
+  retraining: prohibited
+  candidate: {sensor_profile: fsr4, model_family: mlp, observation_horizon_ms: 50, holdout_macro_f1: 0.9713, worst_recall: 0.9500}
+  protected_paths:
+    - configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml
+    - configs/dataset/terrain.yaml
+    - src/fastreflex/dataset/terrain.py
+    - src/fastreflex/training/terrain.py
+    - reports/20260828_terrain_rebuild_sensor_ablation.md
+
+viewer:
+  implementation: timestamp_synchronized_terminal_ground_truth_replay
+  representative_roles: [ice_stable, ice_fall, sand_stable, sand_fall]
+  physics_mutation: prohibited
+
+artifacts:
+  path: artifacts/runs/20260828_walking_stability_ground_truth_sanity
+  commit: false
+
+report:
+  path: reports/20260828_walking_stability_ground_truth_sanity.md

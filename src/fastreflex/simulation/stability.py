@@ -74,12 +74,14 @@ class StabilityDiagnostics:
 
 @dataclass(frozen=True)
 class StableCalibrationRun:
-    """A predeclared stable-control trace eligible for envelope fitting."""
+    """An observed-stable trace eligible for normal-envelope fitting."""
 
     run_id: str
     diagnostics: StabilityDiagnostics
-    intended_stable: bool
+    observed_stable: bool
     observed_fall: bool
+    source_terrain: str = ""
+    target_terrain: str = ""
 
 
 @dataclass(frozen=True)
@@ -315,7 +317,7 @@ def fit_phase_envelope(
     runs: Sequence[StableCalibrationRun],
     quantile: float,
 ) -> PhaseEnvelope:
-    """Fit phase bounds, rejecting fall or non-stable calibration inputs."""
+    """Fit phase bounds, rejecting fall or non-stable observed outcomes."""
     if not 0.0 < quantile < 0.5:
         raise ValueError("phase envelope quantile must be in (0,0.5)")
     if not runs:
@@ -326,8 +328,10 @@ def fit_phase_envelope(
         DOUBLE_SUPPORT: [],
     }
     for run in runs:
-        if not run.intended_stable or run.observed_fall:
-            raise ValueError("phase envelope accepts stable non-fall calibration runs only")
+        if not run.observed_stable or run.observed_fall:
+            raise ValueError(
+                "phase envelope accepts observed-stable non-fall calibration runs only"
+            )
         values = run.diagnostics.raw_margin_of_stability_m
         for phase in by_phase:
             selected = values[
@@ -339,7 +343,9 @@ def fit_phase_envelope(
     for phase, chunks in by_phase.items():
         if not chunks:
             raise ValueError(f"stable calibration has no {PHASE_NAMES[phase]} samples")
-        bounds[phase] = float(np.quantile(np.concatenate(chunks), quantile))
+        bounds[phase] = float(
+            np.quantile(np.concatenate(chunks), quantile, method="linear")
+        )
     return PhaseEnvelope(
         lower_bound_m=bounds,
         quantile=quantile,
@@ -370,10 +376,16 @@ def detect_instability(
     envelope: PhaseEnvelope,
     fixed_margin_m: float,
     persistence_samples: int,
+    *,
+    eligible_from_sample: int = 0,
 ) -> InstabilityTrace:
     """Apply the predeclared phase-normalized exact-state instability oracle."""
     if fixed_margin_m < 0.0:
         raise ValueError("fixed stability margin must be nonnegative")
+    if not 0 <= eligible_from_sample <= len(
+        diagnostics.raw_margin_of_stability_m
+    ):
+        raise ValueError("eligible sample must lie within the stability trace")
     residual = np.full_like(diagnostics.raw_margin_of_stability_m, np.nan)
     for phase, bound in envelope.lower_bound_m.items():
         mask = (diagnostics.gait_phase == phase) & np.isfinite(
@@ -381,6 +393,7 @@ def detect_instability(
         )
         residual[mask] = diagnostics.raw_margin_of_stability_m[mask] - bound
     candidate = np.isfinite(residual) & (residual < -fixed_margin_m)
+    candidate[:eligible_from_sample] = False
     active, onset = causal_persistence(candidate, persistence_samples)
     return InstabilityTrace(residual, candidate, active, onset)
 

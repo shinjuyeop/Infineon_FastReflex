@@ -230,7 +230,7 @@ def scenario_timing_row(
     }
 
 
-def _simulation_config(
+def transition_simulation_config(
     base: SimulationConfig,
     specification: Mapping[str, object],
     policy_path: Path,
@@ -564,7 +564,7 @@ def _physics_freeze_audit(document: Mapping[str, object]) -> dict[str, object]:
     }
 
 
-def _fusion_regression() -> dict[str, object]:
+def fusion_regression() -> dict[str, object]:
     expected = {
         TerrainState.ICE: HazardState.SLIP_RISK,
         TerrainState.SAND: HazardState.SINK_RISK,
@@ -623,7 +623,9 @@ def _run_specs(
         specification["minimum_post_contact_ms"] = 500
         run_id = str(specification["id"])
         result = run_simulation(
-            _simulation_config(base, specification, policy_path, duration_s)
+            transition_simulation_config(
+                base, specification, policy_path, duration_s
+            )
         )
         row = scenario_timing_row(result, specification)
         rows.append(row)
@@ -698,7 +700,7 @@ def run_transition_scenario_calibration(
         raise FileNotFoundError(f"verified G1 policy is unavailable: {policy_path}")
     duration = float(document["common"]["duration_s"])
     physics_audit = _physics_freeze_audit(document)
-    fusion = _fusion_regression()
+    fusion = fusion_regression()
 
     prefix_rows = []
     geometry_rows = []
@@ -707,7 +709,9 @@ def run_transition_scenario_calibration(
         geometry = geometry_contact_audit(specification)
         geometry_rows.append(geometry)
         transition = run_simulation(
-            _simulation_config(base, specification, policy_path, duration),
+            transition_simulation_config(
+                base, specification, policy_path, duration
+            ),
             capture_state_trace=True,
         )
         reference_spec = construct_matched_reference(
@@ -716,7 +720,9 @@ def run_transition_scenario_calibration(
             float(document["common"]["reference_patch_width_m"]),
         )
         reference = run_simulation(
-            _simulation_config(base, reference_spec, policy_path, duration),
+            transition_simulation_config(
+                base, reference_spec, policy_path, duration
+            ),
             capture_state_trace=True,
         )
         row = compare_prefix_pair(

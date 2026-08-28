@@ -140,18 +140,18 @@ class StabilityTest(unittest.TestCase):
         stable = StableCalibrationRun(
             "stable",
             _diagnostics(np.linspace(-0.02, 0.03, len(phases)), phases),
-            intended_stable=True,
+            observed_stable=True,
             observed_fall=False,
         )
         envelope = fit_phase_envelope((stable,), 0.01)
         self.assertEqual(envelope.calibration_run_ids, ("stable",))
         falling = StableCalibrationRun(
-            "fall", stable.diagnostics, intended_stable=True, observed_fall=True
+            "fall", stable.diagnostics, observed_stable=False, observed_fall=True
         )
         with self.assertRaises(ValueError):
             fit_phase_envelope((stable, falling), 0.01)
         nonstable = StableCalibrationRun(
-            "hazard", stable.diagnostics, intended_stable=False, observed_fall=False
+            "hazard", stable.diagnostics, observed_stable=False, observed_fall=False
         )
         with self.assertRaises(ValueError):
             fit_phase_envelope((nonstable,), 0.01)
@@ -171,6 +171,24 @@ class StabilityTest(unittest.TestCase):
             _diagnostics(future, phases), envelope, 0.01, 20
         )
         np.testing.assert_array_equal(original.onset[:35], changed.onset[:35])
+
+    def test_transition_gate_resets_persistence_at_first_contact(self) -> None:
+        phases = np.full(60, LEFT_SINGLE_SUPPORT)
+        margins = np.full(60, -0.02)
+        envelope = PhaseEnvelope({LEFT_SINGLE_SUPPORT: 0.0}, 0.005, ("stable",))
+        ungated = detect_instability(
+            _diagnostics(margins, phases), envelope, 0.01, 20
+        )
+        gated = detect_instability(
+            _diagnostics(margins, phases),
+            envelope,
+            0.01,
+            20,
+            eligible_from_sample=30,
+        )
+        self.assertEqual(np.flatnonzero(ungated.onset).tolist(), [19])
+        self.assertEqual(np.flatnonzero(gated.onset).tolist(), [49])
+        self.assertFalse(np.any(gated.active[:30]))
 
     def test_imu_rule_is_causal_and_resets_after_stable_persistence(self) -> None:
         imu = np.zeros((30, 6), dtype=np.float64)

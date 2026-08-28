@@ -885,7 +885,7 @@ def run_integrated_stability_sanity(
             StableCalibrationRun(
                 run_id=str(run_id),
                 diagnostics=result.stability,
-                intended_stable=True,
+                observed_stable=result.metadata["first_fall_sample"] is None,
                 observed_fall=result.metadata["first_fall_sample"] is not None,
             )
         )

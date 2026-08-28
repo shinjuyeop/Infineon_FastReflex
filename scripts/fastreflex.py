@@ -351,6 +351,29 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "FULL_STATE_STABILITY_GROUND_TRUTH_SANITY":
+            from fastreflex.evaluation.stability_ground_truth import (
+                run_full_state_stability_ground_truth_sanity,
+            )
+
+            output_path, metrics = run_full_state_stability_ground_truth_sanity(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "selected_candidate": metrics.get("selected_candidate"),
+                        "fresh_validation_performed": metrics[
+                            "fresh_validation"
+                        ]["performed"],
+                        "verdict": metrics["verdict"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id == "WALKING_STABILITY_GROUND_TRUTH_SANITY":
             from fastreflex.evaluation.walking_stability import (
                 run_walking_stability_ground_truth_sanity,

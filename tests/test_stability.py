@@ -260,7 +260,10 @@ class StabilityTest(unittest.TestCase):
 
     def test_runtime_trace_contains_no_privileged_oracle_channels(self) -> None:
         names = {field.name for field in fields(RuntimeTrace)}
-        self.assertEqual(names, {"sequence", "timestamp_us", "pelvis_imu", "foot_fsr"})
+        self.assertEqual(
+            names,
+            {"sequence", "timestamp_us", "pelvis_imu", "foot_fsr", "foot_imu"},
+        )
         forbidden = {"com", "xcom", "margin", "support_polygon", "terrain_gt", "fall"}
         self.assertFalse(names & forbidden)
 

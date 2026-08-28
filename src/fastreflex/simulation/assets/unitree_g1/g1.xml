@@ -125,6 +125,7 @@
                   <geom name="left_foot_contact_2" size="0.005" pos="-0.05 -0.025 -0.03" rgba="0.2 0.2 0.2 1" />
                   <geom name="left_foot_contact_3" size="0.005" pos="0.12 0.03 -0.03" rgba="0.2 0.2 0.2 1" />
                   <geom name="left_foot_contact_4" size="0.005" pos="0.12 -0.03 -0.03" rgba="0.2 0.2 0.2 1" />
+                  <site name="left_foot_imu" size="0.008" pos="0.035 0 -0.02" />
                 </body>
               </body>
             </body>
@@ -185,6 +186,7 @@
                   <geom name="right_foot_contact_2" size="0.005" pos="-0.05 -0.025 -0.03" rgba="0.2 0.2 0.2 1" />
                   <geom name="right_foot_contact_3" size="0.005" pos="0.12 0.03 -0.03" rgba="0.2 0.2 0.2 1" />
                   <geom name="right_foot_contact_4" size="0.005" pos="0.12 -0.03 -0.03" rgba="0.2 0.2 0.2 1" />
+                  <site name="right_foot_imu" size="0.008" pos="0.035 0 -0.02" />
                 </body>
               </body>
             </body>
@@ -514,6 +516,11 @@
     <framequat name="imu_quat" objtype="site" objname="imu" />
     <gyro name="imu_gyro" site="imu" />
     <accelerometer name="imu_acc" site="imu" />
+
+    <accelerometer name="left_foot_imu_acc" site="left_foot_imu" />
+    <gyro name="left_foot_imu_gyro" site="left_foot_imu" />
+    <accelerometer name="right_foot_imu_acc" site="right_foot_imu" />
+    <gyro name="right_foot_imu_gyro" site="right_foot_imu" />
 
     <framepos name="frame_pos" objtype="site" objname="imu" />
     <framelinvel name="frame_vel" objtype="site" objname="imu" />

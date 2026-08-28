@@ -1382,7 +1382,7 @@ class SimulationTest(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(diagnostics.contact_penetration_m)))
         self.assertEqual(
             tuple(RuntimeTrace.__dataclass_fields__),
-            ("sequence", "timestamp_us", "pelvis_imu", "foot_fsr"),
+            ("sequence", "timestamp_us", "pelvis_imu", "foot_fsr", "foot_imu"),
         )
 
         tilted_orientation = orientation.copy()

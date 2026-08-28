@@ -1,0 +1,38 @@
+schema_version: terrain_event_contract_v1
+
+task:
+  name: terrain_recognition
+  question: current_contacted_terrain_identity
+  classes:
+    0: CONCRETE
+    1: MARBLE
+    2: ICE
+    3: SAND
+
+runtime_sensors:
+  pelvis_imu:
+    shape: [N, 6]
+    role: stability_only_not_terrain_model_input
+  foot_fsr:
+    shape: [N, 8]
+    order: [left_front_left, left_front_right, left_rear_left, left_rear_right, right_front_left, right_front_right, right_rear_left, right_rear_right]
+    unit: N
+  foot_imu:
+    shape: [N, 12]
+    order: [left_accel_x, left_accel_y, left_accel_z, left_gyro_x, left_gyro_y, left_gyro_z, right_accel_x, right_accel_y, right_accel_z, right_gyro_x, right_gyro_y, right_gyro_z]
+    units_per_foot: [m/s^2, m/s^2, m/s^2, rad/s, rad/s, rad/s]
+    sample_rate_hz: 1000
+    frame: ankle_roll_body_local
+    axes: {x: robot_forward_at_neutral, y: robot_left_at_neutral, z: robot_up_at_neutral}
+
+event_ground_truth:
+  source: exact_mujoco_sole_ground_contact_geom_identity
+  runtime_input: false
+  ambiguous_class: AMBIGUOUS_BOUNDARY
+
+model_profiles:
+  fsr4: [touchdown_foot_fsr4]
+  foot_imu6: [touchdown_foot_accel3, touchdown_foot_gyro3]
+  fusion10: [touchdown_foot_fsr4, touchdown_foot_accel3, touchdown_foot_gyro3]
+  side_id_input: false
+  pelvis_imu_input: false

@@ -24,6 +24,85 @@ FSR_CHANNELS = (
     "right_rear_right",
 )
 FSR_UNIT = "N"
+FOOT_IMU_CHANNELS_PER_FOOT = (
+    "accel_x",
+    "accel_y",
+    "accel_z",
+    "gyro_x",
+    "gyro_y",
+    "gyro_z",
+)
+FOOT_IMU_CHANNELS = tuple(
+    f"{side}_{channel}"
+    for side in SIDES
+    for channel in FOOT_IMU_CHANNELS_PER_FOOT
+)
+FOOT_IMU_SITE_NAMES = tuple(f"{side}_foot_imu" for side in SIDES)
+FOOT_IMU_UNIT = ("m/s^2", "m/s^2", "m/s^2", "rad/s", "rad/s", "rad/s")
+
+
+def _sensor_slice(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    name: str,
+) -> np.ndarray:
+    sensor_id = model.sensor(name).id
+    address = int(model.sensor_adr[sensor_id])
+    dimension = int(model.sensor_dim[sensor_id])
+    return data.sensordata[address : address + dimension]
+
+
+def read_foot_imu(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
+    """Read left then right foot-local accel3/gyro3 as observer-only float32."""
+    values = []
+    for side in SIDES:
+        values.extend(
+            (
+                _sensor_slice(model, data, f"{side}_foot_imu_acc"),
+                _sensor_slice(model, data, f"{side}_foot_imu_gyro"),
+            )
+        )
+    sample = np.concatenate(values).astype(np.float32)
+    if sample.shape != (12,) or not np.all(np.isfinite(sample)):
+        raise ValueError("bilateral foot IMU sample must be 12 finite values")
+    return sample
+
+
+def read_foot_terrain_contact(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    terrain_class_by_geom_id: dict[int, int],
+    class_count: int = 4,
+) -> np.ndarray:
+    """Read exact per-foot terrain identity contacts for labels only.
+
+    The returned identity mask is simulator ground truth and must never be
+    exposed as a runtime model input.
+    """
+    foot_geom_ids = tuple(
+        frozenset(model.geom(name).id for name in FOOT_CONTACT_GEOM_NAMES[side])
+        for side in SIDES
+    )
+    contact = np.zeros((2, class_count), dtype=bool)
+    for contact_id in range(data.ncon):
+        item = data.contact[contact_id]
+        geom1, geom2 = int(item.geom1), int(item.geom2)
+        ground_id = None
+        foot_id = None
+        if geom1 in terrain_class_by_geom_id:
+            ground_id, foot_id = geom1, geom2
+        elif geom2 in terrain_class_by_geom_id:
+            ground_id, foot_id = geom2, geom1
+        if ground_id is None or foot_id is None:
+            continue
+        class_id = terrain_class_by_geom_id[ground_id]
+        if not 0 <= class_id < class_count:
+            raise ValueError("terrain geom mapping contains an invalid class id")
+        for side_index, ids in enumerate(foot_geom_ids):
+            if foot_id in ids:
+                contact[side_index, class_id] = True
+                break
+    return contact
 
 
 def fsr_quadrant_index(local_x_m: float, local_y_m: float) -> int:

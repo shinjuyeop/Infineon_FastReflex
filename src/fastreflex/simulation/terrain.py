@@ -79,6 +79,7 @@ TERRAIN_PROFILES = {
         description="softer, damped, lower-impedance engineering contact",
     ),
 }
+TERRAIN_CLASS_ORDER = ("concrete", "marble", "ice", "sand")
 
 SINK_PATTERNS = (
     "uniform",
@@ -222,6 +223,55 @@ def get_terrain_profile(name: str) -> TerrainProfile:
         raise ValueError(
             f"unknown terrain {name!r}; choose from {tuple(TERRAIN_PROFILES)}"
         ) from exc
+
+
+def terrain_contact_class_by_geom_id(
+    model: mujoco.MjModel,
+    terrain_name: str,
+    slip_pattern: str,
+    sink_pattern: str,
+    sink_support_pattern: str,
+    source_terrain: str,
+) -> dict[int, int]:
+    """Map enabled ground geoms to exact terrain classes for GT only."""
+    class_id = {name: index for index, name in enumerate(TERRAIN_CLASS_ORDER)}
+    if slip_pattern == "uniform" and sink_pattern == "uniform":
+        return {int(model.geom("terrain").id): class_id[terrain_name]}
+
+    mapping: dict[int, int] = {}
+
+    def add(name: str, identity: str) -> None:
+        geom_id = int(model.geom(name).id)
+        if (
+            int(model.geom_contype[geom_id]) != 0
+            and int(model.geom_conaffinity[geom_id]) != 0
+        ):
+            mapping[geom_id] = class_id[identity]
+
+    add("terrain_transition_pre", source_terrain)
+    add("terrain_transition_post", source_terrain)
+    if slip_pattern == "transition":
+        for name in TRANSITION_PATCH_GEOM_NAMES:
+            add(name, "ice")
+        return mapping
+
+    if not sink_pattern.startswith("transition_"):
+        raise ValueError("terrain identity mapping requires a supported transition")
+    target_side = sink_pattern.removeprefix("transition_")
+    other_side = "right" if target_side == "left" else "left"
+    add(f"terrain_transition_{other_side}", source_terrain)
+    add(f"terrain_transition_{target_side}", "sand")
+    if sink_support_pattern == "balanced_deformable":
+        for cell in DEFORMABLE_CELL_ORDER:
+            add(f"terrain_deformable_balanced_{target_side}_{cell}", "sand")
+    elif sink_support_pattern in DEFORMABLE_SUPPORT_PATTERNS:
+        for cell in DEFORMABLE_CELL_ORDER:
+            add(f"terrain_deformable_{target_side}_{cell}", "sand")
+    elif sink_support_pattern != "balanced_soft":
+        for segment in ("entry", "exit"):
+            for region in ("medial", "lateral"):
+                add(f"terrain_uneven_{target_side}_{segment}_{region}", "sand")
+    return mapping
 
 
 def get_sink_severity_profile(name: str) -> TerrainProfile:

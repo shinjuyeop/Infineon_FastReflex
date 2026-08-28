@@ -1,0 +1,157 @@
+schema_version: 1
+
+experiment:
+  id: TERRAIN_REBUILD_AND_SENSOR_ABLATION
+  date: 2026-08-28
+  timezone: Asia/Seoul
+  source_commit_at_start: 4a9751062b2bfa20573d9d470ce73e1820466c83
+  head_equal_origin_main_at_start: true
+  worktree_clean_at_start: true
+  dataset_id: terrain_transition_20260828
+
+source:
+  simulator_config: configs/simulator/g1.yaml
+  dataset_config: configs/dataset/terrain.yaml
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  legacy_repository_usage: historical_comparison_only
+  frozen_transition_config: configs/experiment/20260828_transition_scenario_calibration.yaml
+  frozen_terrain_mechanics_mutation: prohibited
+  require_clean_worktree: true
+
+output:
+  dataset_path: data/raw/terrain_transition_20260828
+  artifact_path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation
+  fail_if_exists: true
+  commit_generated_files: false
+
+common:
+  duration_s: 8.0
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  simulator_deterministic: true
+  independent_runs: 144
+  max_clean_events_per_class_per_run: 2
+
+event_eligibility:
+  touchdown_definition: per_terrain_identity_contact_rising_edge
+  primary_window_ms: 50
+  horizons_ms: [20, 30, 50]
+  target_contact_must_persist_for_primary_window: true
+  mixed_terrain_sample_ratio_exclusive_max: 0.20
+  require_complete_pre_fall_window: true
+  result_driven_rule_change: prohibited
+
+split:
+  unit: run
+  frozen_before_simulation: true
+  fractions_nominal: {train: 0.60, validation: 0.20, holdout: 0.20}
+  counts: {train: 88, validation: 28, holdout: 28}
+  stable_variant_indices:
+    train: [0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15]
+    validation: [2, 8, 14, 17]
+    holdout: [5, 11, 16]
+  fall_variant_indices:
+    train: [0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15]
+    validation: [2, 8, 14]
+    holdout: [5, 11, 16, 17]
+  result_driven_movement: prohibited
+
+run_matrix:
+  source_terrains: [concrete, marble]
+  groups:
+    ice_stable:
+      target_terrain: ice
+      intended_outcome: stable
+      speed_mps: 0.25
+      patch_start_x_m: [0.360]
+      patch_width_m: [0.701, 0.704, 0.707, 0.710, 0.713, 0.716, 0.719, 0.722, 0.725, 0.728, 0.731, 0.734, 0.737, 0.740, 0.743, 0.746, 0.748, 0.749]
+      slip_pattern: transition
+      sink_pattern: uniform
+      sink_severity: moderate
+      support_pattern: balanced_soft
+    ice_fall:
+      target_terrain: ice
+      intended_outcome: fall
+      speed_mps: 0.15
+      patch_start_x_m: [0.320, 0.350]
+      patch_width_m: [0.651, 0.657, 0.663, 0.669, 0.675, 0.681, 0.687, 0.693, 0.699, 0.705, 0.711, 0.717, 0.723, 0.729, 0.735, 0.741, 0.747, 0.749]
+      slip_pattern: transition
+      sink_pattern: uniform
+      sink_severity: moderate
+      support_pattern: balanced_soft
+    sand_stable:
+      target_terrain: sand
+      intended_outcome: stable
+      speed_mps: 0.25
+      patch_start_x_m: [0.300, 0.350]
+      patch_width_m: [0.720, 0.722, 0.724, 0.726, 0.728, 0.730, 0.732, 0.734, 0.736, 0.738, 0.740, 0.742, 0.744, 0.746, 0.747, 0.748, 0.749, 0.750]
+      sink_pattern: [transition_left, transition_right]
+      slip_pattern: uniform
+      sink_severity: mild
+      support_pattern: balanced_deformable
+    sand_fall:
+      target_terrain: sand
+      intended_outcome: fall
+      speed_mps: 0.25
+      patch_start_x_m: [0.300, 0.350]
+      patch_width_m: [0.651, 0.657, 0.663, 0.669, 0.675, 0.681, 0.687, 0.693, 0.699, 0.705, 0.711, 0.717, 0.723, 0.729, 0.735, 0.741, 0.747, 0.749]
+      sink_pattern: transition_left
+      slip_pattern: uniform
+      sink_severity: moderate
+      support_pattern: lateral_deformable
+
+sensor_parity:
+  representative_groups: [hard, ice, sand]
+  comparison: observer_read_disabled_vs_enabled
+  exact_fields: [qpos, qvel, pelvis_imu, foot_fsr, controller_observation, controller_action, policy_update, exact_contact, fall, slip, deformable_support]
+
+training:
+  primary_family: mlp
+  optional_family_sanity: gru
+  seeds: [17, 29, 43]
+  batch_size: 64
+  max_epochs: 40
+  patience: 6
+  learning_rate: 0.001
+  normalization: per_channel_zscore_train_events_only
+  holdout_prediction: mean_logits_three_seed_ensemble
+  sensor_profiles: [fsr4, foot_imu6, fusion10]
+  deployment_schemes: [left_only, bilateral_shared]
+
+selection:
+  validation_macro_f1_min: 0.90
+  validation_worst_class_recall_min: 0.85
+  sensor_near_best_tolerance: 0.02
+  sensor_rule: qualified_then_fewer_channels_within_tolerance
+  family_rule: highest_macro_f1_then_worst_recall_then_mlp
+  horizon_rule: shortest_passing_20_then_30_then_50
+  deployment_rule: left_only_if_supported_else_bilateral_shared
+  holdout_reselection: prohibited
+
+acceptance:
+  clean_events_min: 240
+  clean_events_per_class_min: 60
+  clean_left_events_min: 80
+  clean_right_events_min: 80
+  duplicate_run_conditions_max: 0
+  split_overlap_max: 0
+  dropped_samples_max: 0
+  holdout_macro_f1_min: 0.90
+  holdout_worst_class_recall_min: 0.85
+  robustness_catastrophic_recall_floor: 0.50
+  robustness_catastrophic_gap_max: 0.40
+  promising_macro_f1_min: 0.70
+  promising_worst_class_recall_min: 0.50
+  verdicts:
+    supported: TERRAIN_RECOGNITION_SUPPORTED
+    promising: TERRAIN_RECOGNITION_PROMISING
+    revision: TERRAIN_RECOGNITION_NEEDS_REVISION
+    dataset_revision: TERRAIN_DATASET_NEEDS_REVISION
+
+hardware_channels_including_pelvis_imu6:
+  left_only: {fsr4: 10, foot_imu6: 12, fusion10: 16}
+  bilateral_shared: {fsr4: 14, foot_imu6: 18, fusion10: 26}
+
+report:
+  path: reports/20260828_terrain_rebuild_sensor_ablation.md

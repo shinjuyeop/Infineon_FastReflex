@@ -229,7 +229,7 @@ def main() -> int:
         return 0
 
     if args.command == "collect":
-        from fastreflex.dataset.collector import collect_dataset
+        import yaml
 
         environment_policy = os.environ.get("FASTREFLEX_G1_POLICY")
         policy_path = args.policy
@@ -239,7 +239,16 @@ def main() -> int:
             parser.error(
                 "collect requires --policy or the FASTREFLEX_G1_POLICY environment variable"
             )
-        output_path, summary = collect_dataset(args.config, policy_path)
+        with args.config.open("r", encoding="utf-8") as stream:
+            experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "TERRAIN_REBUILD_AND_SENSOR_ABLATION":
+            from fastreflex.dataset.terrain import collect_terrain_dataset
+
+            output_path, summary = collect_terrain_dataset(args.config, policy_path)
+        else:
+            from fastreflex.dataset.collector import collect_dataset
+
+            output_path, summary = collect_dataset(args.config, policy_path)
         print(
             json.dumps(
                 {"output_path": str(output_path), **summary},
@@ -291,6 +300,28 @@ def main() -> int:
                         "output_path": str(output_path),
                         "profiles": list(metrics["classification"]),
                         "window_ms": 100,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if experiment_id == "TERRAIN_REBUILD_AND_SENSOR_ABLATION":
+            from fastreflex.training.terrain import run_terrain_sensor_ablation
+
+            output_path, metrics = run_terrain_sensor_ablation(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "selected_profile": metrics["selection"]["sensor_profile"],
+                        "selected_family": metrics["selection"]["model_family"],
+                        "selected_horizon_ms": metrics["selection"]["observation_horizon_ms"],
+                        "selected_scheme": metrics["selection"]["deployment_scheme"],
+                        "holdout_macro_f1": metrics["holdout"]["metrics"]["macro_f1"],
+                        "verdict": metrics["verdict"],
                     },
                     indent=2,
                     sort_keys=True,

@@ -29,13 +29,21 @@ from .terrain import (
     low_friction_patch_geom_ids,
     read_deformable_support_sample,
     soft_sink_geom_ids,
+    terrain_contact_class_by_geom_id,
     TRANSITION_PATCH_START_X_M,
     TRANSITION_PATCH_WIDTH_M,
     validate_slip_scenario,
     validate_sink_scenario,
     validate_transition_geometry,
 )
-from .sensors import FSR_CHANNELS, read_virtual_fsr
+from .sensors import (
+    FOOT_IMU_CHANNELS,
+    FOOT_IMU_SITE_NAMES,
+    FSR_CHANNELS,
+    read_foot_imu,
+    read_foot_terrain_contact,
+    read_virtual_fsr,
+)
 from .stability import (
     StabilityDiagnostics,
     derive_stability_diagnostics,
@@ -211,6 +219,7 @@ class RuntimeTrace:
     timestamp_us: np.ndarray
     pelvis_imu: np.ndarray
     foot_fsr: np.ndarray | None = None
+    foot_imu: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -235,6 +244,7 @@ class SimulationResult:
     metadata: dict[str, object]
     stability: StabilityDiagnostics | None = None
     state_trace: SimulationStateTrace | None = None
+    exact_terrain_contact: np.ndarray | None = None
 
 
 def load_simulation_config(path: Path) -> SimulationConfig:
@@ -321,11 +331,20 @@ def validate_model_contract(model: mujoco.MjModel) -> None:
     for name in ("imu_acc", "imu_gyro"):
         if int(model.sensor_dim[model.sensor(name).id]) != 3:
             raise ValueError(f"{name} must have exactly three channels")
+    for side, site_name in zip(("left", "right"), FOOT_IMU_SITE_NAMES):
+        site_id = model.site(site_name).id
+        body_id = model.body(f"{side}_ankle_roll_link").id
+        if int(model.site_bodyid[site_id]) != body_id:
+            raise ValueError(f"{site_name} is not attached to the ankle-roll body")
+        if not np.allclose(model.site_pos[site_id], (0.035, 0.0, -0.02)):
+            raise ValueError(f"{site_name} position changed")
+        if not np.allclose(model.site_quat[site_id], (1.0, 0.0, 0.0, 0.0)):
+            raise ValueError(f"{site_name} must use the ankle-roll body frame")
+        for suffix in ("acc", "gyro"):
+            name = f"{side}_foot_imu_{suffix}"
+            if int(model.sensor_dim[model.sensor(name).id]) != 3:
+                raise ValueError(f"{name} must have exactly three channels")
     for removed_name in (
-        "left_foot_imu_acc",
-        "left_foot_imu_gyro",
-        "right_foot_imu_acc",
-        "right_foot_imu_gyro",
         "left_ankle_ft_force",
         "left_ankle_ft_torque",
         "right_ankle_ft_force",
@@ -594,6 +613,7 @@ def run_simulation(
     config: SimulationConfig,
     *,
     observe_fsr: bool = True,
+    observe_foot_imu: bool = True,
     capture_state_trace: bool = False,
 ) -> SimulationResult:
     """Run one smoke trace entirely in memory; no dataset or output is written."""
@@ -635,10 +655,20 @@ def run_simulation(
         model,
         config.slip_pattern,
     )
+    terrain_class_by_geom_id = terrain_contact_class_by_geom_id(
+        model,
+        config.terrain,
+        config.slip_pattern,
+        config.sink_pattern,
+        config.sink_support_pattern,
+        config.source_terrain,
+    )
 
     timestamp_us: list[int] = []
     imu: list[np.ndarray] = []
     foot_fsr: list[np.ndarray] = []
+    foot_imu: list[np.ndarray] = []
+    exact_terrain_contact: list[np.ndarray] = []
     contact: list[np.ndarray] = []
     normal_force: list[np.ndarray] = []
     foot_xyz: list[np.ndarray] = []
@@ -750,6 +780,11 @@ def run_simulation(
             imu.append(read_pelvis_imu(model, data))
             if observe_fsr:
                 foot_fsr.append(read_virtual_fsr(model, data, ground_geom_ids))
+            if observe_foot_imu:
+                foot_imu.append(read_foot_imu(model, data))
+            exact_terrain_contact.append(
+                read_foot_terrain_contact(model, data, terrain_class_by_geom_id)
+            )
             contact.append(exact.physical_contact)
             normal_force.append(exact.normal_force_n)
             foot_xyz.append(exact.world_xyz)
@@ -797,12 +832,20 @@ def run_simulation(
             if observe_fsr
             else None
         ),
+        foot_imu=(
+            np.asarray(foot_imu, dtype=np.float32).reshape(-1, len(FOOT_IMU_CHANNELS))
+            if observe_foot_imu
+            else None
+        ),
     )
     if runtime.pelvis_imu.shape != (len(timestamps), 6):
         raise RuntimeError("unexpected pelvis IMU shape")
     if observe_fsr and runtime.foot_fsr is not None:
         if runtime.foot_fsr.shape != (len(timestamps), len(FSR_CHANNELS)):
             raise RuntimeError("unexpected virtual FSR shape")
+    if observe_foot_imu and runtime.foot_imu is not None:
+        if runtime.foot_imu.shape != (len(timestamps), len(FOOT_IMU_CHANNELS)):
+            raise RuntimeError("unexpected bilateral foot IMU shape")
     expected_timestamps = (sequence + 1) * (1_000_000 // config.sensor_rate_hz)
     if not np.array_equal(timestamps, expected_timestamps):
         raise RuntimeError("1 kHz timestamp sequence contains a drop or jitter")
@@ -905,6 +948,9 @@ def run_simulation(
         metadata=metadata,
         stability=stability,
         state_trace=state_trace,
+        exact_terrain_contact=np.asarray(
+            exact_terrain_contact, dtype=bool
+        ).reshape(-1, 2, 4),
     )
 
 
@@ -1034,6 +1080,16 @@ def summarize_result(result: SimulationResult) -> dict[str, object]:
                     np.all(np.isfinite(result.runtime.foot_fsr))
                     and np.all(result.runtime.foot_fsr >= 0.0)
                 )
+            ),
+            "foot_imu_shape": (
+                None
+                if result.runtime.foot_imu is None
+                else list(result.runtime.foot_imu.shape)
+            ),
+            "foot_imu_finite": (
+                None
+                if result.runtime.foot_imu is None
+                else bool(np.all(np.isfinite(result.runtime.foot_imu)))
             ),
             "contact_samples_per_foot": np.count_nonzero(
                 diagnostics.physical_contact, axis=0

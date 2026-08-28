@@ -204,6 +204,7 @@ class TerrainRecognitionTest(unittest.TestCase):
                         "touchdown_sample": sample,
                         "split": "train",
                         "window_50ms_valid": True,
+                        "window_30ms_valid": sample != 20,
                     }
                 )
         selected = select_capped_events(rows, "train", 2)
@@ -211,6 +212,10 @@ class TerrainRecognitionTest(unittest.TestCase):
         left = select_capped_events(rows, "train", 2, foot="left")
         self.assertEqual(len(left), 2)
         self.assertTrue(all(row["foot"] == "left" for row in left))
+        thirty = select_capped_events(
+            rows, "train", 4, required_horizon_ms=30
+        )
+        self.assertTrue(all(int(row["touchdown_sample"]) != 20 for row in thirty))
 
     def test_train_only_normalization_records_only_supplied_events(self) -> None:
         windows = TerrainWindowSet(

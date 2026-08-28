@@ -506,14 +506,18 @@ def select_capped_events(
     cap_per_run_class: int,
     *,
     foot: str | None = None,
+    required_horizon_ms: int = 50,
 ) -> list[dict[str, object]]:
     """Apply the frozen deterministic cap without changing the raw index."""
     if cap_per_run_class <= 0:
         raise ValueError("event cap must be positive")
+    if required_horizon_ms not in {20, 30, 50}:
+        raise ValueError("event selection horizon must be 20, 30, or 50 ms")
+    validity_field = f"window_{required_horizon_ms}ms_valid"
     selected: list[dict[str, object]] = []
     groups: dict[tuple[str, int], list[Mapping[str, object]]] = {}
     for row in rows:
-        if str(row["split"]) != split or not bool(row["window_50ms_valid"]):
+        if str(row["split"]) != split or not bool(row[validity_field]):
             continue
         if foot is not None and str(row["foot"]) != foot:
             continue
@@ -1122,8 +1126,8 @@ def collect_terrain_dataset(
             first_fall = result.metadata["first_fall_sample"]
             slip_present = bool(np.any(result.diagnostics.established_slip))
             sink_present = bool(
-                np.max(result.diagnostics.support_surface_displacement_m) >= 0.001
-                or np.any(result.diagnostics.sink_physical_active)
+                run.target_terrain == "sand"
+                and np.max(result.diagnostics.support_surface_displacement_m) >= 0.001
             )
             observed_fall = first_fall is not None
             manifest_rows.append(

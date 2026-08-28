@@ -154,7 +154,20 @@ def _train_candidate(
                 "validation": result.best_validation,
             }
         )
-    ensemble, _ = _ensemble_metrics(models, validation_windows)
+    ensemble, ensemble_predictions = _ensemble_metrics(models, validation_windows)
+    validation_by_foot = {}
+    for foot in ("left", "right"):
+        mask = validation_windows.feet == foot
+        validation_by_foot[foot] = (
+            classification_metrics(
+                validation_windows.targets[mask],
+                ensemble_predictions[mask],
+                validation_windows.run_ids[mask],
+                TERRAIN_CLASS_NAMES,
+            )
+            if np.count_nonzero(mask)
+            else None
+        )
     first_model = models[0]
     summary: dict[str, object] = {
         "candidate_id": f"{profile}_{family}_{horizon_ms}ms",
@@ -170,6 +183,7 @@ def _train_candidate(
         "normalizer": normalizer.to_dict(),
         "seeds": seed_rows,
         "validation_ensemble": ensemble,
+        "validation_by_foot": validation_by_foot,
         **_mean_seed_summary(seed_rows),
     }
     return {
@@ -478,10 +492,16 @@ def run_terrain_sensor_ablation(
         50: family_candidates[selected_family]
     }
     for horizon in (20, 30):
+        horizon_train_rows = select_capped_events(
+            all_rows, "train", cap, required_horizon_ms=horizon
+        )
+        horizon_validation_rows = select_capped_events(
+            all_rows, "validation", cap, required_horizon_ms=horizon
+        )
         horizon_candidates[horizon] = _train_candidate(
             dataset_path,
-            event_sets["train"],
-            event_sets["validation"],
+            horizon_train_rows,
+            horizon_validation_rows,
             selected_profile,
             selected_family,
             horizon,
@@ -497,9 +517,19 @@ def run_terrain_sensor_ablation(
     selected_horizon = int(horizon_summary["horizon_ms"])
     bilateral_candidate = horizon_candidates[selected_horizon]
 
-    left_train_rows = select_capped_events(all_rows, "train", cap, foot="left")
+    left_train_rows = select_capped_events(
+        all_rows,
+        "train",
+        cap,
+        foot="left",
+        required_horizon_ms=selected_horizon,
+    )
     left_validation_rows = select_capped_events(
-        all_rows, "validation", cap, foot="left"
+        all_rows,
+        "validation",
+        cap,
+        foot="left",
+        required_horizon_ms=selected_horizon,
     )
     left_candidate = _train_candidate(
         dataset_path,
@@ -550,6 +580,7 @@ def run_terrain_sensor_ablation(
         "holdout",
         cap,
         foot="left" if selected_scheme == "left_only" else None,
+        required_horizon_ms=selected_horizon,
     )
     raw_holdout = build_terrain_windows(
         dataset_path,
@@ -603,8 +634,9 @@ def run_terrain_sensor_ablation(
         "foot_imu6": "FOOT_IMU6",
         "fusion10": "FUSION10",
     }[selected_profile]
+    scheme_label = "LEFT" if selected_scheme == "left_only" else "BILATERAL"
     recommendation = (
-        f"{selected_scheme.upper()}_{profile_upper}_RECOMMENDED"
+        f"{scheme_label}_{profile_upper}_RECOMMENDED"
         if verdict == "TERRAIN_RECOGNITION_SUPPORTED"
         else "TERRAIN_SENSOR_ARCHITECTURE_UNRESOLVED"
     )

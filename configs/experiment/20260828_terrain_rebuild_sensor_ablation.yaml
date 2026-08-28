@@ -109,6 +109,11 @@ sensor_parity:
 training:
   primary_family: mlp
   optional_family_sanity: gru
+  model_configs:
+    mlp: configs/model/mlp.yaml
+    gru: configs/model/gru.yaml
+  terrain_output_classes: 4
+  fixed_capacity: {mlp_hidden_dims: [64, 32], gru_hidden_size: 32, gru_num_layers: 1}
   seeds: [17, 29, 43]
   batch_size: 64
   max_epochs: 40

@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-Historical Pilot/FSR analyses, frozen Slip/Sink criteria와 `SINK_SENSOR_OBSERVABILITY_PROMISING` evidence를 보존한 채 Terrain + Walking Stability + Fusion 구조를 검증한다. 현재 scenario verdict는 `TRANSITION_SCENARIOS_CALIBRATED`다. 이전 integrated sanity의 Ice/Sand coverage와 pre-transition fall 문제는 matched-prefix calibration/fresh validation으로 해결했지만 exact MoS clock은 stable FP 5/11, fall coverage 22/33의 historical failure 상태다. Fail-closed로 GRU를 수행하지 않았으며 Terrain runtime은 `ORACLE_PROXY`/`TERRAIN_RUNTIME_MODEL_PENDING`이다. Sensor architecture와 detector readiness는 unfrozen이다.
+Historical Pilot/FSR analyses, frozen Slip/Sink criteria와 `SINK_SENSOR_OBSERVABILITY_PROMISING` evidence를 보존한 채 Terrain + Walking Stability + Fusion 구조를 검증한다. Current Terrain verdict는 `TERRAIN_RECOGNITION_SUPPORTED`다. Rebuilt FSR4/MLP/50 ms/LEFT_ONLY candidate의 one-shot holdout macro F1/worst recall은 0.9713/0.95다. 이전 integrated sanity의 exact MoS clock은 stable FP 5/11, fall coverage 22/33의 historical failure 상태이고 Stability AI는 수행하지 않았다. Final sensor architecture와 Stability detector readiness는 unfrozen이다.
 
 ## 고정 연구 원칙
 
@@ -37,6 +37,14 @@ Scenario repair는 matched A-only reference와 transition의 first target contac
 Calibration은 Ice speed/start/width와 Sand speed/start/width/side/pattern/frozen severity만 탐색한다. Ice friction, Sand travel/stiffness/damping, policy/controller, fall/Slip/Sink criterion은 바꾸지 않는다. Observed outcome은 intended role과 무관하게 분류하고, valid stable은 target contact 뒤 finite patch 완전 통과와 non-fall을 요구한다. `CALIBRATION_SELECTED` 뒤 calibration-unused Concrete conditions를 실행하며 결과를 보고 freeze를 수정하지 않는다. Concrete PASS 뒤에만 동일 B conditions에서 A를 Marble로 바꾼다.
 
 실제 결과는 four prefix pair PASS, fresh Concrete Ice/Sand stable 4/fall 4씩, invalid/pre-transition fall 0, Marble Ice stable 3/fall 4와 Sand stable 4/fall 4였다. Verdict는 `TRANSITION_SCENARIOS_CALIBRATED`다. 이 milestone은 Stability oracle이나 detector acceptance가 아니다. Config와 report는 [`20260828_transition_scenario_calibration.yaml`](../configs/experiment/20260828_transition_scenario_calibration.yaml), [`20260828_transition_scenario_calibration.md`](../reports/20260828_transition_scenario_calibration.md)에 기록한다.
+
+## Terrain rebuild and sensor ablation protocol
+
+Terrain label은 exact foot-ground geom identity이고 model input은 touchdown foot의 FSR4/Foot IMU6/Fusion10뿐이다. Primary 50 ms clean event는 same identity continuous contact, mixed samples `<20%`, complete pre-fall causal window를 요구한다. Raw event index는 모두 보존하고 training/evaluation construction만 run/class당 두 event로 cap한다.
+
+Split 88/28/28 runs와 seeds 17/29/43은 simulation 전에 고정했다. Holdout은 integrity/count만 먼저 확인한다. Validation에서 같은 MLP protocol로 three sensor profiles를 비교하고 macro F1≥0.90/worst recall≥0.85 qualified profile 중 best의 2 percentage points 안이면 fewer channels를 선택한다. 그 뒤 selected sensor에서 MLP/GRU, 20/30/50 ms, LEFT_ONLY/BILATERAL_SHARED를 순서대로 선택하고 selection JSON을 쓴 뒤 holdout guard를 한 번만 연다.
+
+실제 선택은 FSR4→MLP→50 ms→LEFT_ONLY였다. Holdout macro F1 0.9713, worst recall 0.95로 `TERRAIN_RECOGNITION_SUPPORTED`다. LEFT_ONLY는 10 integrated channels지만 right-only Sand 18/144 runs에 update가 없고 median/p95 delay 1114.5/1238 ms다. BILATERAL_SHARED는 14 channels, 144/144 coverage와 922/1238 ms다. Recommendation은 `LEFT_FSR4_RECOMMENDED`이나 final freeze는 아니다. Config와 report는 [`20260828_terrain_rebuild_sensor_ablation.yaml`](../configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml), [`20260828_terrain_rebuild_sensor_ablation.md`](../reports/20260828_terrain_rebuild_sensor_ablation.md)에 기록한다.
 
 ## 연구 단계
 
@@ -205,7 +213,7 @@ Model별 handcrafted feature나 별도 dataset runner를 만들지 않는다. �
 - Research repository에는 검토된 Float contract artifact만 export
 - Quantization 이후 작업은 `Infineon_FastReflex_E84` repository로 넘김
 
-연구 순서는 `MuJoCo baseline → historical Sink/Slip criteria → Pilot/FSR/deformable-support evidence → Terrain+Stability architecture → integrated scenario/oracle revision → accepted pelvis IMU rule/optional GRU comparison → explicit Terrain artifact migration review → future dataset/sensor decision`이다. 다음 단계는 자동으로 시작하지 않으며 scenario hard-prefix parity와 exact-clock stable FP를 먼저 review한다.
+연구 순서는 `MuJoCo baseline → historical Sink/Slip criteria → Pilot/FSR/deformable-support evidence → Terrain+Stability architecture → transition calibration → rebuilt Terrain support → Stability ground-truth redesign → accepted pelvis IMU rule/optional GRU → joint sensor decision`이다. 다음 단계는 자동으로 시작하지 않으며 exact Stability clock을 먼저 사전 선언한다.
 
 ## Split과 leakage protocol
 
@@ -250,4 +258,4 @@ E84 deployment repository 범위:
 - Vela, firmware integration
 - E84 runtime, HIL과 target validation
 
-현재 milestone은 44-run Terrain/Stability integrated sanity, exact-state oracle, pelvis-IMU rule, deterministic fusion과 status replay까지 실행했다. Scenario/oracle failure 때문에 Stability AI, Full Dataset, CNN/LSTM comparison, recovery controller, sensor architecture freeze, quantization, E84 또는 HIL은 수행하지 않았다.
+Current milestone은 rebuilt Terrain raw dataset, Foot IMU observer, sensor/model/horizon/deployment ablation과 one-shot holdout까지 실행했다. Stability ground-truth redesign, Stability AI, recovery controller, final sensor architecture freeze, full integrated dataset, quantization, E84 또는 HIL은 수행하지 않았다.

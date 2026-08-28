@@ -271,6 +271,34 @@ class TerrainRecognitionTest(unittest.TestCase):
             self.assertEqual(windows.inputs.shape, (1, 50, 10))
             self.assertFalse(np.any(windows.inputs == 3.0))
 
+    def test_bilateral_shared_events_keep_one_foot_input_dimension(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "runs").mkdir()
+            fsr = np.tile(np.arange(8, dtype=np.float32), (60, 1))
+            np.savez_compressed(
+                root / "runs" / "shared_run.npz",
+                foot_fsr=fsr,
+                foot_imu=np.zeros((60, 12), dtype=np.float32),
+            )
+            common = {
+                "run_id": "shared_run",
+                "terrain_class_id": 0,
+                "touchdown_sample": 0,
+                "split": "validation",
+                "window_20ms_valid": True,
+                "window_30ms_valid": True,
+                "window_50ms_valid": True,
+            }
+            rows = [
+                {"event_id": "left_event", "foot": "left", **common},
+                {"event_id": "right_event", "foot": "right", **common},
+            ]
+            windows = build_terrain_windows(root, rows, "fsr4", 50)
+            self.assertEqual(windows.inputs.shape, (2, 50, 4))
+            np.testing.assert_array_equal(windows.inputs[0, 0], (0, 1, 2, 3))
+            np.testing.assert_array_equal(windows.inputs[1, 0], (4, 5, 6, 7))
+
     def test_horizon_selection_is_shortest_passing(self) -> None:
         rows = [
             {"horizon_ms": 20, "validation_macro_f1_mean": 0.89, "validation_worst_class_recall_mean": 0.9},

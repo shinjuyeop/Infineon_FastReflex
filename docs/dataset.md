@@ -1,20 +1,38 @@
-# Hazard Dataset Contract
+# Dataset Contracts
 
 ## 상태와 범위
 
-`hazard_dataset_contract_v1`은 historical IMU6 Pilot schema와 frozen raw annotation을 보존한다. `hazard_dataset_contract_v2`는 이를 폐기하거나 label을 바꾸지 않고 candidate `foot_fsr` runtime field와 sensor validity만 확장한다. `hazard_dataset_contract_v3`는 Sink-focused observability dataset에 frozen deformable-support s1 진단과 명시적인 run split을 추가한다. v3는 기존 outcome-based Sink history나 v1/v2 dataset을 소급 relabel하지 않는다. 기존 `hazard_pilot_20260827`과 `hazard_sensor_pilot_20260827`은 read-only다.
+`terrain_event_contract_v1`은 current four-class touchdown-event dataset이다. `hazard_dataset_contract_v1`은 historical IMU6 Pilot schema와 frozen raw annotation을 보존하고, v2는 candidate `foot_fsr`, v3는 Sink-focused deformable-support s1과 run split을 추가한다. 어느 schema도 다른 task의 기존 label을 소급 변경하지 않는다. 기존 `hazard_pilot_20260827`과 `hazard_sensor_pilot_20260827`은 read-only다.
 
 현재 architecture target은 historical raw dataset을 relabel하지 않는 별도 dual-stream contract다.
 
 | Stream | Runtime state | First input boundary |
 |---|---|---|
-| Terrain | `CONCRETE/MARBLE/ICE/SAND/UNKNOWN` | frozen reference: foot FSR4 + foot/ankle IMU6 |
+| Terrain | `CONCRETE/MARBLE/ICE/SAND/UNKNOWN` | current candidate: touchdown-foot FSR4, 50 ms |
 | Stability | `STABLE/UNSTABLE` | pelvis IMU6 @ 1 kHz |
 | Fusion | `NORMAL/SLIP_RISK/SINK_RISK/GENERIC_INSTABILITY` + recovery flag | 두 producer의 latest valid state |
 
 Terrain/Stability integrated sanity는 Full Dataset을 생성하지 않았다. Exact MoS clock이 acceptance를 실패했으므로 새 Stability label schema나 dataset identity를 freeze하지 않는다. Future dataset은 accepted `t_instability` definition, run-disjoint split과 ambiguity exclusion을 새 manifest provenance로 명시해야 한다.
 
 `TRANSITION_SCENARIOS_CALIBRATED`는 scenario prerequisite만 freeze했다. Fresh Concrete Ice/Sand stable/fall 각 4 runs와 Marble robustness를 확보했지만 NPZ dataset을 생성하거나 historical label을 바꾸지 않았다. Calibration의 Slip/Sink onset, target contact, support deformation과 fall은 simulator-only diagnostic/metadata이며 Stability runtime input이나 새 label이 아니다. Exact `t_instability`가 별도 acceptance를 통과하기 전에는 이 run을 Stability training target으로 materialize하지 않는다.
+
+후속 `terrain_transition_20260828`은 calibrated conditions에서 별도 Terrain dataset을 생성했다. 144 runs, 1,152,000 raw samples와 3,139 clean 50 ms events가 acceptance를 통과했다. 이 dataset은 Stability label을 만들거나 historical Hazard NPZ를 relabel하지 않는다.
+
+## Terrain event contract
+
+Terrain target은 “현재 해당 foot이 실제 접촉한 지면 identity”다. Exact sole-ground geom identity를 class 0/1/2/3=`CONCRETE/MARBLE/ICE/SAND` GT로 사용한다. Fall, stability와 physical Slip/Sink 여부는 label을 바꾸지 않는다.
+
+Touchdown candidate는 foot/terrain identity별 contact rising edge다. Primary `[touchdown, touchdown+50 ms)`에서 target identity가 계속 존재하고 다른 terrain contact sample 비율이 strictly `<20%`이며 complete pre-fall window인 event만 eligible하다. Exactly 20%도 `AMBIGUOUS_BOUNDARY`로 제외한다. 20/30/50 ms validity를 각각 metadata로 보존한다. Event index는 `event_id`, run/foot/time/class, source/target, observed fall, Slip/Sand-deformation diagnostics와 split만 저장하며 waveform을 복제하지 않는다.
+
+Split은 TRAIN/VALIDATION/HOLDOUT=88/28/28 runs로 simulation 전에 고정됐다. 같은 run event는 split을 넘지 않는다. Model construction은 한 run/class당 최대 두 event를 deterministic하게 고른다. Normalization은 선택된 train event sensor sample만 사용한다. Holdout은 integrity/class count만 먼저 확인하고 sensor/model/horizon/deployment selection 뒤 한 번 열었다.
+
+Terrain model input profile은 touchdown한 한 발만 본다.
+
+- `fsr4`: 해당 foot FSR quadrant 4 channels
+- `foot_imu6`: 해당 foot accel xyz + gyro xyz
+- `fusion10`: FSR4 뒤 Foot IMU6
+
+Side ID와 pelvis IMU는 Terrain tensor에 넣지 않는다. `exact_terrain_contact`, run/event/source/target ID, fall, Slip/Sink, support displacement, exact contact point/force와 boundary-relative timestamp도 금지한다.
 
 아래 3-class task는 historical v1-v3 dataset contract로 보존한다.
 
@@ -58,7 +76,7 @@ Historical v1과 current Stability-first baseline 한 sample의 model input은 p
 
 Stability runtime 입력에는 COM, COM velocity, XCoM, support polygon, exact foot contact, raw MoS, terrain GT, physical Slip/Sink onset, future fall, scenario name과 support body displacement를 넣지 않는다. 이 값은 exact ground truth/diagnostic object에만 존재한다.
 
-Terrain frozen reference는 `(50,10)` causal endpoint window의 left foot FSR4 + left foot/ankle accel3/gyro3다. Current repository의 bilateral virtual FSR8은 이 FSR4와 physical/runtime parity가 확정된 sensor migration이 아니며 foot/ankle IMU6도 없다. 따라서 terrain training input이나 runtime artifact를 현재 dataset contract에 조용히 추가하지 않는다.
+Current rebuilt Terrain candidate는 `(50,4)` causal post-touchdown window의 left FSR4다. Legacy `(50,10)` FSR4+Foot IMU6 artifact를 복사하거나 재사용한 결과가 아니다. Bilateral Foot IMU는 current G1 model에 새 observer contract로 구현해 ablation에서만 평가했다.
 
 이 좌표계는 migrated MuJoCo G1 model에서 deterministic test로 검증했다. `imu` site의 pelvis binding, zero translation/identity rotation, neutral site frame, 좌우 body 위치와 accel-then-gyro channel order가 계약과 일치한다. 실제 G1 또는 target IMU mounting/orientation parity는 deployment 전 별도 검증 대상이다. 축을 바꿔야 한다면 기존 dataset과 같은 schema version으로 조용히 바꾸지 않는다.
 
@@ -81,6 +99,12 @@ V2와 v3 sensor-capable run은 `foot_fsr [N,8] float32`, unit Newton, 1 kHz를 �
 
 Candidate profile은 `imu6=pelvis_imu`, `fsr8=foot_fsr`, `fusion14=[pelvis_imu, foot_fsr]`다. 이는 Pilot comparison을 위한 선택지이며 final sensor architecture가 아니다.
 
+### Candidate bilateral Foot IMU
+
+Terrain schema는 `foot_imu [N,12] float32`를 1 kHz로 저장한다. 각 site는 해당 `*_ankle_roll_link`에 local `pos=[0.035,0,-0.020] m`, identity quaternion으로 붙는다. Neutral-pose local frame은 +x forward, +y robot-left, +z up이다. Order는 left accel xyz/gyro xyz 뒤 right accel xyz/gyro xyz이며 unit은 m/s²/rad/s다.
+
+Hard/Ice/Sand matched run에서 read disabled/enabled qpos/qvel, pelvis IMU, FSR, controller, contact, fall, Slip와 deformable-support diagnostics가 exact parity였다. 이는 passive MuJoCo observer evidence이며 actual IMU mounting/noise/calibration evidence는 아니다.
+
 ### Missing, dropped, duplicate sample
 
 - Collector는 sequence gap, non-monotonic timestamp, non-finite channel, duplicate 또는 out-of-order sample을 감추지 않는다.
@@ -96,7 +120,7 @@ Candidate profile은 `imu6=pelvis_imu`, `fsr8=foot_fsr`, `fusion14=[pelvis_imu, 
 - Validation/test 또는 전체 dataset 통계를 normalization에 사용하지 않는다.
 - Mean/std와 이를 계산한 train run 목록 또는 split revision을 model artifact provenance에 기록한다.
 - FFT, wavelet, residual, drift estimator, derivative, moving variance, complex filter, terrain-conditioned normalization을 사용하지 않는다.
-- q/dq, Foot IMU, motor torque, terrain ID와 exact simulator state를 feature로 추가하지 않는다. FSR은 V2의 명시된 raw `foot_fsr` candidate로만 허용한다.
+- Historical Hazard model에는 q/dq, Foot IMU, motor torque, terrain ID와 exact simulator state를 추가하지 않는다. Terrain model은 별도 v1 contract의 해당-foot FSR4/Foot IMU6/Fusion10만 허용한다.
 - Model family별 feature engineering을 만들지 않는다.
 
 새 feature는 raw-signal/Time-to-Separation 연구 근거와 protocol revision이 있기 전에는 추가하지 않는다.
@@ -113,6 +137,7 @@ Dataset의 authoritative source는 미리 잘린 window가 아니라 simulation 
 | `sequence` | `[N] int64` | 연속 sample 번호 |
 | `pelvis_imu` | `[N, 6] float32` | 고정 channel order의 raw IMU |
 | `foot_fsr` | `[N, 8] float32` | V2 candidate raw virtual FSR, N |
+| `foot_imu` | `[N, 12] float32` | Terrain v1 bilateral raw Foot IMU |
 | `sample_valid` | `[N] bool` | 이 sample의 runtime input 완전성 |
 | `channel_valid` | `[N, 6] bool` | channel별 validity |
 | `fsr_valid` | `[N, 8] bool` | V2 FSR channel별 validity |

@@ -11,7 +11,7 @@ Unitree G1 simulation 기반 센서로 terrain과 walking stability를 독립적
 
 Fusion은 `ICE + UNSTABLE → SLIP_RISK`, `SAND + UNSTABLE → SINK_RISK`, 그 외 `UNSTABLE → GENERIC_INSTABILITY`로 해석하고 terrain과 무관하게 recovery를 요청한다. Risk 이름은 terrain-conditioned advisory이며 causal Slip/Sink diagnosis가 아니다. Historical `NORMAL/SLIP/SINK` direct-classification 연구와 physical oracle evidence는 보존한다.
 
-Stability의 첫 runtime input은 Waist/Pelvis IMU 6-axis다. Legacy frozen Terrain reference는 foot FSR4 + foot/ankle IMU6를 요구하지만 clean migration은 pending이다. 최종 sensor architecture는 고정하지 않았다.
+Stability의 첫 runtime input은 Waist/Pelvis IMU 6-axis다. Current rebuilt Terrain research candidate는 touchdown foot의 FSR4를 50 ms 관측하는 shared MLP이며, LEFT_ONLY 배치가 최소-channel candidate다. 최종 sensor architecture는 Stability 결과 전까지 고정하지 않는다.
 
 - accelerometer: x/y/z
 - gyroscope: x/y/z
@@ -57,13 +57,15 @@ MuJoCo runtime streams
 
 ## Current Status
 
-`TRANSITION_SCENARIOS_CALIBRATED`
+`TERRAIN_RECOGNITION_SUPPORTED`
 
-Matched-reference audit에서 Concrete/Marble→Ice/Sand 네 prefix가 qpos/qvel `1e-12` tolerance, exact IMU/FSR/action/contact 기준을 통과했다. Calibration-unused fresh Concrete 16 runs는 Ice/Sand 각각 observed stable 4/fall 4, invalid 0, pre-transition fall 0이었다. Frozen B conditions를 A만 Marble로 바꾼 15 runs도 Ice stable 3/fall 4, Sand stable 4/fall 4, invalid/pre-transition fall 0으로 robustness를 통과했다. Ice friction과 Sand travel/stiffness/damping은 변경하지 않았다.
+Calibrated Concrete/Marble→Ice/Sand에서 fresh `terrain_transition_20260828` dataset을 생성했다. 144 run, 1,152,000 raw samples와 3,139 clean 50 ms touchdown events가 four-class/side/source/stable-fall acceptance를 통과했고 drop, duplicate condition, split overlap과 pre-transition fall은 0이다. Exact terrain geom identity는 label-only이며 model tensor에는 해당 foot의 raw sensor만 들어간다.
 
-이는 transition scenario prerequisite만 준비됐다는 뜻이다. Historical phase-aware exact MoS clock은 stable FP 5/11, fall coverage 22/33으로 여전히 실패 상태이고 Stability GRU는 실행하지 않았다. Fusion truth table은 regression을 통과했지만 Stability ground truth, detector, terrain AI integration과 sensor architecture는 아직 ready/frozen이 아니다.
+50 ms validation sensor ablation의 mean macro F1/worst recall은 FSR4 0.9284/0.8571, Foot IMU6 0.9129/0.8095, Fusion10 0.9309/0.8333이었다. Qualification을 함께 통과한 최소 profile인 FSR4와 MLP/50 ms/LEFT_ONLY를 holdout 전에 선택했다. One-shot holdout은 macro F1 0.9713, worst recall 0.95, run-balanced macro F1 0.9563으로 통과했다. Recommendation은 `LEFT_FSR4_RECOMMENDED`이고 Pelvis IMU6 포함 10 physical channels다.
 
-Legacy frozen Terrain v4는 artifact/checksum/input contract를 audit했으나 current repository에 left foot/ankle IMU6와 TFLite runtime parity가 없어 `TERRAIN_RUNTIME_MODEL_PENDING`이다. Integrated run의 terrain state는 명시적인 `ORACLE_PROXY`이며 AI latency로 주장하지 않는다. 이전 `SINK_SENSOR_OBSERVABILITY_PROMISING`과 모든 Slip/Sink historical report는 그대로 보존한다.
+LEFT_ONLY는 126/144 transition에서 update가 가능했고 median/p95 delay는 1114.5/1238 ms였지만 right-only Sand 18 runs에는 clean left target touchdown이 없었다. BILATERAL_SHARED는 144/144, median/p95 922/1238 ms이고 Pelvis IMU 포함 14 channels다. 따라서 Terrain research candidate는 supported지만 `FINAL_SENSOR_ARCHITECTURE_FROZEN`은 아니다. Historical phase-aware exact MoS clock과 Stability detector는 계속 미지원 상태이며, legacy Terrain v4와 direct Slip/Sink 연구는 historical comparison으로만 보존한다.
+
+Dataset, ablation, holdout과 hardware-latency audit의 전체 근거는 [`20260828_terrain_rebuild_sensor_ablation.md`](reports/20260828_terrain_rebuild_sensor_ablation.md)에 기록한다.
 
 ## 구조
 
@@ -126,6 +128,17 @@ Transition scenario calibration은 prefix parity가 실패하면 calibration 전
 ```bash
 python scripts/fastreflex.py evaluate \
   --config configs/experiment/20260828_transition_scenario_calibration.yaml
+```
+
+Rebuilt Terrain dataset과 sensor ablation은 같은 canonical `collect`/`train` command를 사용한다. Raw NPZ, event index, checkpoints와 metrics는 Gitignored 경계에 생성된다.
+
+```bash
+python scripts/fastreflex.py collect \
+  --config configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml \
+  --policy /path/to/policy.onnx
+
+python scripts/fastreflex.py train \
+  --config configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml
 ```
 
 Integrated calibration이 존재하면 canonical `simulate` 결과의 timestamp-synchronized status replay도 사용할 수 있다.

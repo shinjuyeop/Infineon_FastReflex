@@ -47,11 +47,11 @@ Baseline은 policy SHA-256과 `[1,98]` input, `[1,29]` output을 실행 전에 �
 G1 model
   -> pretrained walking policy
   -> MuJoCo physics 2 kHz
-  -> raw pelvis IMU6 sampling 1 kHz
+  -> raw pelvis IMU6 + bilateral FSR8 + Foot IMU12 sampling 1 kHz
   -> simulator-only physical diagnostics
 ```
 
-Runtime trace는 `sequence`, `timestamp_us`, raw `pelvis_imu`만 갖는다. Foot contact, pose/velocity, penetration, `sink_physical`, pelvis posture/velocity와 fall state는 model input이 아닌 exact diagnostics다. Viewer는 canonical physics state를 별도 render buffer에 복사하므로 GUI control이나 mouse perturbation이 physics/controller/sensor/label에 전달되지 않는다.
+Runtime trace는 `sequence`, `timestamp_us`, raw `pelvis_imu`, optional `foot_fsr`와 `foot_imu`를 갖는다. Foot IMU order는 left accel3/gyro3 뒤 right accel3/gyro3다. Foot contact, exact terrain geom identity, pose/velocity, penetration, `sink_physical`, pelvis posture/velocity와 fall state는 model input이 아닌 exact diagnostics다. Viewer는 canonical physics state를 별도 render buffer에 복사하므로 GUI control이나 mouse perturbation이 physics/controller/sensor/label에 전달되지 않는다.
 
 ## Headless 실행
 
@@ -208,6 +208,8 @@ python scripts/fastreflex.py simulate \
 
 이 profile은 실제 재료 측정값이나 deformable-material model이 아니다. Relative behavior와 signal-separation을 보기 위한 engineering approximation이며 viewer를 위해 friction, `solref`, `solimp`를 바꾸지 않는다.
 
+Terrain event GT는 named sole과 실제 ground geom의 exact identity다. Ice transition의 pre/post는 selected Concrete/Marble source, full-width patch는 Ice다. Sand transition은 affected static/deformable cells만 Sand이고 반대 lane과 pre/post는 source terrain이다. 이 geom mapping은 label/diagnostic 전용이며 runtime tensor에 노출하지 않는다.
+
 `uniform`은 기존 scene/profile을 그대로 사용한다. Sink의 `asymmetric_left/right`와 `transition_left/right`는 `scene_sink.xml`에서 한쪽 compliance를 바꾼다. Slip의 `--slip-pattern transition`도 같은 finite topology를 재사용하되 기본 `x=[0.35,1.10] m`의 left/right patch를 모두 기존 Ice profile로 설정하고 그 전후는 concrete로 둔다. Pilot variation에는 `--patch-start-x`와 `--patch-width`를 사용하며 default는 각각 0.35 m와 0.75 m다. 모든 경계의 nominal top은 `z=0`이고 box가 맞닿을 뿐 겹치지 않는다. Hole, step, lowered surface 또는 deformable mesh는 없다. Cyan Ice patch와 Sink의 blue/orange는 visual-only이며 physics/label selection에 사용하지 않는다. Sink non-uniform pattern은 `--terrain sand`, Slip transition은 `--terrain ice`에서만 허용되고 두 pattern을 결합할 수 없다.
 
 ## Hazard label 설명
@@ -218,6 +220,8 @@ Terrain 이름과 Hazard label은 독립적이다. `concrete = NORMAL`, `ice = S
 - `sink_physical_active`: 같은 validity에서 first-loaded contact penetration보다 5.5 mm 이상 증가한 상태가 20 ms 지속
 
 `sink_physical_active`는 물리적 침하 precursor diagnostic이며 primary `SINK` class가 아니다. Frozen primary effect gate는 patch-linked physical sink 뒤 pelvis tilt가 benign-control upper envelope `0.04454633221030235 rad`를 초과한 상태가 20 ms 지속되는 것이다. Uniform sand처럼 penetration이 있어도 안정적으로 걷는 상태는 그 자체만으로 `SINK`가 아니다. Hazardous episode의 early-detection reference 후보는 effect가 명확해진 t2가 아니라 physical onset t1이며 실제 IMU label/window timing은 Pilot/Time-to-Separation 전까지 미확정이다.
+
+Terrain Recognition에서는 이 Hazard label을 쓰지 않는다. Clean terrain touchdown 뒤 causal 20/30/50 ms sensor window를 구성하고, primary 50 ms 동안 same identity contact가 유지되며 other-terrain sample ratio가 20% 미만인 event만 eligible하다. Boundary-straddling event는 `AMBIGUOUS_BOUNDARY`로 제외한다.
 
 ## 출력 해석
 

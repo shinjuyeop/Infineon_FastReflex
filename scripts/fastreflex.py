@@ -351,6 +351,27 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "TEMPORAL_STABILITY_SEPARABILITY_AUDIT":
+            from fastreflex.evaluation.stability_temporal import (
+                run_temporal_stability_separability_audit,
+            )
+
+            output_path, metrics = run_temporal_stability_separability_audit(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "cohort": metrics["cohort"],
+                        "holdout_performed": metrics["holdout"]["performed"],
+                        "verdict": metrics["verdict"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id == "FULL_STATE_STABILITY_GROUND_TRUTH_SANITY":
             from fastreflex.evaluation.stability_ground_truth import (
                 run_full_state_stability_ground_truth_sanity,

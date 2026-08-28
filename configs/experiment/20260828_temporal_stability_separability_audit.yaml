@@ -1,0 +1,321 @@
+schema_version: 1
+
+experiment:
+  id: TEMPORAL_STABILITY_SEPARABILITY_AUDIT
+  date: 2026-08-28
+  timezone: Asia/Seoul
+  source_commit_at_start: 54b2c1178b7392271b0b3b6d59f1c91bc3655c02
+  origin_main_at_start: 54b2c1178b7392271b0b3b6d59f1c91bc3655c02
+  worktree_clean_at_start: true
+  purpose: bounded run-level audit of when stable and eventual-fall trajectories become temporally separable
+  authoritative_t_instability_creation: prohibited
+  primary_output: EARLIEST_RELIABLE_FALL_RISK_HORIZON
+
+source:
+  simulator_config: configs/simulator/g1.yaml
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  existing_clean_config: configs/experiment/20260828_walking_stability_ground_truth_sanity.yaml
+  existing_selector: calibration.transition_runs
+  hard_control_selector: calibration.hard_stable_runs
+  fresh_design_config: configs/experiment/20260828_full_state_stability_ground_truth_sanity.yaml
+  fresh_selector: fresh_validation.runs
+  historical_mos_report: reports/20260828_walking_stability_ground_truth_sanity.md
+  historical_single_state_report: reports/20260828_full_state_stability_ground_truth_sanity.md
+
+common:
+  duration_s: 8.0
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  primary_independent_unit: simulation_run
+  primary_transition_only: true
+  actual_observed_outcome_is_authoritative: true
+  intended_role_is_model_input: false
+  post_fall_input: false
+  future_sample_input: false
+  terrain_identity_input: false
+  result_driven_tuning: prohibited
+
+cohort:
+  existing_transition_runs: 30
+  added_fresh_runs: 48
+  primary_runs: 78
+  hard_stable_negative_controls: 6
+  target_observed_stable_min: 30
+  target_observed_fall_min: 30
+  target_per_terrain_stable_min: 15
+  target_per_terrain_fall_min: 15
+  scenario_gate:
+    actual_target_contact: required
+    finite_simulation: required
+    normal_prefix_ms_min: 500
+    post_contact_ms_min: 500
+    pretransition_fall_max: 0
+
+split:
+  status: frozen_before_simulation_and_window_construction
+  basis: predeclared_source_target_and_calibrated_design_domain
+  outcome_driven_reassignment: prohibited
+  nominal_fractions: {train: 0.60, validation: 0.20, holdout: 0.20}
+  counts: {train: 46, validation: 16, holdout: 16}
+  train:
+    - cal_c_ice_s01
+    - cal_c_ice_s02
+    - fs_val_c_ice_s01
+    - fs_val_c_ice_s02
+    - fs_val_c_ice_s03
+    - cal_c_ice_f01
+    - cal_c_ice_f02
+    - cal_c_ice_f03
+    - fs_val_c_ice_f01
+    - fs_val_c_ice_f02
+    - fs_val_c_ice_f03
+    - cal_c_sand_s01
+    - cal_c_sand_s02
+    - cal_c_sand_s03
+    - fs_val_c_sand_s01
+    - fs_val_c_sand_s02
+    - fs_val_c_sand_s03
+    - cal_c_sand_f01
+    - cal_c_sand_f02
+    - cal_c_sand_f03
+    - fs_val_c_sand_f01
+    - fs_val_c_sand_f02
+    - fs_val_c_sand_f03
+    - cal_m_ice_02
+    - cal_m_ice_03
+    - fs_val_m_ice_s01
+    - fs_val_m_ice_s02
+    - fs_val_m_ice_s03
+    - cal_m_ice_01
+    - cal_m_ice_04
+    - cal_m_ice_05
+    - fs_val_m_ice_f01
+    - fs_val_m_ice_f02
+    - fs_val_m_ice_f03
+    - cal_m_sand_s01
+    - cal_m_sand_s02
+    - cal_m_sand_s03
+    - fs_val_m_sand_s01
+    - fs_val_m_sand_s02
+    - fs_val_m_sand_s03
+    - cal_m_sand_f01
+    - cal_m_sand_f02
+    - cal_m_sand_f03
+    - fs_val_m_sand_f01
+    - fs_val_m_sand_f02
+    - fs_val_m_sand_f03
+  validation:
+    - cal_c_ice_s03
+    - fs_val_c_ice_s04
+    - cal_c_ice_f04
+    - fs_val_c_ice_f04
+    - cal_c_sand_s04
+    - fs_val_c_sand_s04
+    - cal_c_sand_f04
+    - fs_val_c_sand_f04
+    - cal_m_ice_07
+    - fs_val_m_ice_s04
+    - cal_m_ice_06
+    - fs_val_m_ice_f04
+    - cal_m_sand_s04
+    - fs_val_m_sand_s04
+    - cal_m_sand_f04
+    - fs_val_m_sand_f04
+  holdout:
+    - fs_val_c_ice_s05
+    - fs_val_c_ice_s06
+    - fs_val_c_ice_f05
+    - fs_val_c_ice_f06
+    - fs_val_c_sand_s05
+    - fs_val_c_sand_s06
+    - fs_val_c_sand_f05
+    - fs_val_c_sand_f06
+    - fs_val_m_ice_s05
+    - fs_val_m_ice_s06
+    - fs_val_m_ice_f05
+    - fs_val_m_ice_f06
+    - fs_val_m_sand_s05
+    - fs_val_m_sand_s06
+    - fs_val_m_sand_f05
+    - fs_val_m_sand_f06
+  hard_stable_controls:
+    - cal_concrete_s015
+    - cal_concrete_s020
+    - cal_concrete_s025
+    - cal_marble_s015
+    - cal_marble_s020
+    - cal_marble_s025
+
+matching:
+  unit: one_fall_run_to_one_unique_stable_run_per_split_and_offset
+  priority: [target_terrain_exact, source_terrain_exact, speed_nearest, time_since_contact_exact, endpoint_support_phase_if_feasible, stable_run_id]
+  stable_endpoint: stable_contact_plus_fall_endpoint_elapsed_since_fall_contact
+  stable_endpoint_shift_if_invalid: prohibited
+  maximum_windows_per_run_per_offset: 1
+  unmatched_fall_pair: exclude_and_report
+  ice_speed_exact_match_available: false
+  ice_speed_confound: stable_domain_0.25_mps_vs_fall_domain_0.15_mps
+  sand_speed_exact_match_available: true
+
+offset_analysis:
+  primary: fixed_prefall_offset_matched_classification
+  offsets_before_fall_ms: [500, 300, 200, 100, 50]
+  secondary_offset_ms: 20
+  secondary_offset_selection_influence: false
+  positive_window_rule: observed_fall_run_endpoint_exactly_t_fall_minus_offset
+  negative_window_rule: unique_observed_stable_run_at_exact_matched_time_since_contact
+  window_must_begin_after_target_contact: true
+  all_positive_samples_strictly_prefall: true
+
+horizon_classification:
+  enabled: true
+  role: secondary_diagnostic_not_candidate_selection
+  horizons_ms: [500, 300, 200, 100, 50]
+  positive_endpoint_offset_ms: same_as_horizon
+  early_fall_negative_margin_ms: 200
+  stable_negative_matching: same_as_primary
+  maximum_windows_per_run_per_horizon: 1
+
+history:
+  candidates_ms: [50, 100, 200]
+  selection: earliest_reliable_horizon_then_shortest_history
+  near_tie: shorter_history
+  500_ms_history: excluded
+
+representations:
+  PRIVILEGED_FULL_STATE:
+    runtime_sensor_commitment: false
+    input_channels: 40
+    no_support_com_height_handling: causal_last_valid_fill
+    feature_order:
+      - pelvis_roll_rad
+      - pelvis_pitch_rad
+      - pelvis_angular_velocity_x_rad_s
+      - pelvis_angular_velocity_y_rad_s
+      - pelvis_angular_velocity_z_rad_s
+      - pelvis_linear_velocity_x_m_s
+      - pelvis_linear_velocity_y_m_s
+      - pelvis_linear_velocity_z_m_s
+      - pelvis_height_m
+      - left_hip_pitch_joint_q_rad
+      - left_hip_pitch_joint_dq_rad_s
+      - left_hip_roll_joint_q_rad
+      - left_hip_roll_joint_dq_rad_s
+      - left_hip_yaw_joint_q_rad
+      - left_hip_yaw_joint_dq_rad_s
+      - left_knee_joint_q_rad
+      - left_knee_joint_dq_rad_s
+      - left_ankle_pitch_joint_q_rad
+      - left_ankle_pitch_joint_dq_rad_s
+      - left_ankle_roll_joint_q_rad
+      - left_ankle_roll_joint_dq_rad_s
+      - right_hip_pitch_joint_q_rad
+      - right_hip_pitch_joint_dq_rad_s
+      - right_hip_roll_joint_q_rad
+      - right_hip_roll_joint_dq_rad_s
+      - right_hip_yaw_joint_q_rad
+      - right_hip_yaw_joint_dq_rad_s
+      - right_knee_joint_q_rad
+      - right_knee_joint_dq_rad_s
+      - right_ankle_pitch_joint_q_rad
+      - right_ankle_pitch_joint_dq_rad_s
+      - right_ankle_roll_joint_q_rad
+      - right_ankle_roll_joint_dq_rad_s
+      - com_linear_velocity_x_m_s
+      - com_linear_velocity_y_m_s
+      - com_linear_velocity_z_m_s
+      - com_height_above_support_m
+      - phase_left_single_support
+      - phase_right_single_support
+      - phase_double_support
+    excluded: [absolute_yaw, raw_mos_m, terrain_identity, scenario_role, observed_fall, fall_time, time_to_fall, slip, sink, deformation, run_id]
+  RUNTIME_IMU6:
+    runtime_sensor_candidate: pelvis_imu6
+    input_channels: 6
+    feature_order: [accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z]
+    excluded: [terrain_identity, scenario_role, observed_fall, fall_time, time_to_fall, slip, sink, deformation, run_id]
+
+normalization:
+  method: train_only_per_representation_channel_zscore
+  eligible_interval: target_contact_through_prefall_or_stable_run_end
+  per_run_sample_cap: 2048
+  cap_selection: evenly_spaced
+  standard_deviation_floor: 1.0e-8
+  validation_fit: prohibited
+  holdout_fit: prohibited
+
+model:
+  family: gru
+  source_config: configs/model/gru.yaml
+  architecture: {hidden_size: 32, num_layers: 1, bidirectional: false, dropout: 0.0, output_classes: 2}
+  class_names: [STABLE, FALL_RISK]
+  same_hyperparameters_across_representations: true
+  probability_threshold: 0.5
+  seeds: [20260828, 20260829, 20260830]
+  validation_prediction: mean_probability_three_seed_ensemble
+  batch_size: 32
+  optimizer: adam
+  learning_rate: 0.001
+  max_epochs: 30
+  early_stopping_patience: 5
+  early_stopping_metric: validation_macro_f1
+  hyperparameter_search: prohibited
+
+metrics:
+  primary: [auroc, auprc, macro_f1, balanced_accuracy, fall_recall, stable_specificity]
+  auroc_method: mann_whitney_average_ties
+  auprc_method: average_precision_step_integral
+  threshold: 0.5
+  independent_count: runs_not_windows
+  breakdowns: [target_terrain, source_terrain]
+
+validation_gates:
+  auroc_min: 0.90
+  auprc_min: 0.85
+  balanced_accuracy_min: 0.85
+  stable_specificity_min: 0.85
+  fall_recall_min: 0.85
+  gate_relaxation_after_results: prohibited
+
+holdout:
+  access: once_after_all_validation_selection
+  reselection_after_open: prohibited
+  gates:
+    auroc_min: 0.85
+    balanced_accuracy_min: 0.80
+    stable_specificity_min: 0.80
+    fall_recall_min: 0.80
+
+verdict:
+  meaningful_early_horizon_min_ms: 200
+  supported_imu6: privileged_and_imu6_each_reliable_at_or_above_meaningful_horizon_and_holdout_pass
+  supported_privileged_only: privileged_reliable_at_or_above_meaningful_horizon_and_holdout_pass_but_imu6_not
+  limited: privileged_reliable_only_at_50_or_100_ms_and_holdout_pass
+  not_supported: privileged_has_no_holdout_supported_reliable_horizon
+
+terrain_regression:
+  candidate: {sensor_profile: fsr4, model_family: mlp, observation_horizon_ms: 50, holdout_macro_f1: 0.9713, worst_recall: 0.9500}
+  protected_paths:
+    - configs/dataset/terrain.yaml
+    - configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml
+    - reports/20260828_terrain_rebuild_sensor_ablation.md
+    - src/fastreflex/dataset/terrain.py
+    - src/fastreflex/training/terrain.py
+  retraining: prohibited
+
+fusion_regression:
+  canonical_runtime_enum_change: prohibited
+  conceptual_future_name: FALL_RISK
+  performance_reevaluation: prohibited
+  truth_table_regression_only: true
+
+artifacts:
+  path: artifacts/runs/20260828_temporal_stability_separability_audit
+  commit: false
+  generated_plots: true
+  checkpoints: generated_not_committed
+  metrics_json: generated_not_committed
+
+report:
+  path: reports/20260828_temporal_stability_separability_audit.md

@@ -1,0 +1,251 @@
+schema_version: 1
+
+experiment:
+  id: DENSE_FALL_RISK_DATASET_AND_DETECTOR_POC
+  date: 2026-08-28
+  timezone: Asia/Seoul
+  source_commit_at_start: 2f90db2ef6be56bc4849dacde34812c25e6783fa
+  origin_main_at_start: 2f90db2ef6be56bc4849dacde34812c25e6783fa
+  worktree_clean_at_start: true
+  purpose: predict whether an actual fall will occur within a bounded future horizon from a dense causal trajectory
+  t_instability_used: false
+  observed_outcome_is_authoritative: true
+
+source:
+  simulator_config: configs/simulator/g1.yaml
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  scenario_calibration_config: configs/experiment/20260828_transition_scenario_calibration.yaml
+  scenario_calibration_sha256: fa7f6772c10f16c8f581147d00203ed0c70fcfd97c2dde86fd5ada077ebc6d7c
+  freshness_reference_configs:
+    - configs/experiment/20260828_transition_scenario_calibration.yaml
+    - configs/experiment/20260828_walking_stability_ground_truth_sanity.yaml
+    - configs/experiment/20260828_full_state_stability_ground_truth_sanity.yaml
+    - configs/experiment/20260828_temporal_stability_separability_audit.yaml
+  historical_reports:
+    - reports/20260828_walking_stability_ground_truth_sanity.md
+    - reports/20260828_full_state_stability_ground_truth_sanity.md
+    - reports/20260828_temporal_stability_separability_audit.md
+
+common:
+  duration_s: 8.0
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  primary_speed_mps: 0.25
+  primary_independent_unit: simulation_run
+  scenario_gate:
+    normal_prefix_ms_min: 500
+    post_contact_ms_min: 500
+    actual_target_contact: required
+    finite_simulation: required
+    pretransition_fall_max: 0
+  forbidden_model_inputs:
+    - terrain_identity
+    - terrain_classifier_output
+    - source_terrain
+    - patch_geometry
+    - intended_role
+    - observed_fall
+    - fall_time
+    - time_to_fall
+    - slip
+    - sink
+    - deformation
+    - future_sample
+    - post_fall_sample
+
+dataset:
+  dataset_id: fall_risk_dense_20260828
+  path: data/raw/fall_risk_dense_20260828
+  format: one_run_per_npz
+  primary_run_count: 240
+  hard_control_run_count: 16
+  generated_run_count: 256
+  commit: false
+  one_khz_channels: [timestamp_us, pelvis_imu6, privileged_full_state]
+  clocks: [first_target_contact_sample, fall_sample, censor_sample]
+  provenance: [dataset_id, source_commit, policy_sha256, simulator_config_sha256, frozen_terrain_mechanics, scenario_calibration_reference, split, manifest_sha256]
+  matrix:
+    sources: [concrete, marble]
+    targets: [ice, sand]
+    design_roles: [stable, fall]
+    runs_per_stratum: 30
+    split_by_index:
+      train: [1, 18]
+      validation: [19, 24]
+      holdout: [25, 30]
+    designed_split_counts: {train: 144, validation: 48, holdout: 48}
+  deterministic_condition_schedule:
+    ice_stable:
+      provenance: verified_0p25_stable_neighborhood_at_start_0p36_width_0p70_to_0p75
+      patch_start_x_m: 0.36
+      concrete_width: {first: 0.71013, step: 0.00131}
+      marble_width: {first: 0.71077, step: 0.00131}
+      slip_pattern: transition
+      sink_pattern: uniform
+      sink_severity: moderate
+      support_pattern: balanced_soft
+    ice_fall:
+      provenance: verified_0p25_fall_neighborhoods_0p33_0p70_and_0p34_0p75
+      alternating_anchors:
+        - {patch_start_x_m: 0.33, concrete_width_first: 0.69410, marble_width_first: 0.69430, width_step: 0.00040}
+        - {patch_start_x_m: 0.34, concrete_width_first: 0.74410, marble_width_first: 0.74430, width_step: 0.00040}
+      slip_pattern: transition
+      sink_pattern: uniform
+      sink_severity: moderate
+      support_pattern: balanced_soft
+    sand_stable:
+      provenance: verified_0p25_mild_balanced_left_right_domain
+      alternating_anchors:
+        - {patch_start_x_m: 0.30, sink_pattern: transition_left, concrete_width_first: 0.72011, marble_width_first: 0.72057, width_step: 0.00183}
+        - {patch_start_x_m: 0.35, sink_pattern: transition_right, concrete_width_first: 0.72107, marble_width_first: 0.72153, width_step: 0.00183}
+      slip_pattern: uniform
+      sink_severity: mild
+      support_pattern: balanced_deformable
+    sand_fall:
+      provenance: verified_0p25_moderate_lateral_left_domain
+      alternating_anchors:
+        - {patch_start_x_m: 0.30, concrete_width_first: 0.65111, marble_width_first: 0.65157, width_step: 0.00647}
+        - {patch_start_x_m: 0.35, concrete_width_first: 0.65207, marble_width_first: 0.65253, width_step: 0.00647}
+      slip_pattern: uniform
+      sink_pattern: transition_left
+      sink_severity: moderate
+      support_pattern: lateral_deformable
+  hard_controls:
+    sources: [concrete, marble]
+    speed_mps: [0.151, 0.165, 0.179, 0.193, 0.207, 0.221, 0.235, 0.249]
+    split_by_speed_index: {validation: [1, 4], holdout: [5, 8]}
+
+readiness_gates:
+  valid_runs_min: 200
+  observed_stable_min: 80
+  observed_fall_min: 80
+  ice_stable_min: 35
+  ice_fall_min: 35
+  sand_stable_min: 35
+  sand_fall_min: 35
+  concrete_origin_fall_min: 35
+  marble_origin_fall_min: 35
+  pretransition_fall_max: 0
+  duplicate_signature_max: 0
+  split_overlap_max: 0
+  nonfinite_input_max: 0
+  label_leakage_max: 0
+  fail_verdict: FALL_RISK_DATASET_NEEDS_REVISION
+
+representations:
+  PRIVILEGED_FULL_STATE:
+    input_channels: 40
+    schema_source: src/fastreflex/evaluation/stability_temporal.py
+    runtime_sensor_commitment: false
+    excludes_mos: true
+  PELVIS_IMU6:
+    input_channels: 6
+    feature_order: [accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z]
+    runtime_sensor_candidate: true
+
+normalization:
+  method: train_only_per_representation_channel_zscore
+  eligible_interval: target_contact_through_prefall_or_stable_censor
+  per_run_sample_cap: 2048
+  standard_deviation_floor: 1.0e-8
+  validation_fit: prohibited
+  holdout_fit: prohibited
+
+dense_windows:
+  horizons_ms: [200, 100, 50]
+  primary_horizon_ms: 200
+  fallback_order_ms: [100, 50]
+  histories_ms: [50, 100]
+  training_endpoint_stride_ms: 10
+  fall_positive_interval: [fall_minus_horizon_inclusive, fall_exclusive]
+  fall_early_negative_safety_gap_ms: 20
+  fall_early_negative_count: equal_to_positive_count
+  stable_negative_matching: exact_elapsed_since_target_contact_from_fall_positive_distribution
+  stable_negative_per_run_cap: positive_count
+  all_input_windows_strictly_prefall: true
+
+model:
+  family: gru
+  source_config: configs/model/gru.yaml
+  architecture: {hidden_size: 32, num_layers: 1, bidirectional: false, dropout: 0.0, output_classes: 2}
+  class_names: [STABLE, FALL_RISK]
+  seeds: [20260828, 20260829, 20260830]
+  ensemble: mean_probability
+  optimizer: adam
+  learning_rate: 0.001
+  batch_size: 128
+  max_epochs: 40
+  early_stopping_patience: 6
+  epoch_selection: validation_cross_entropy_minimum
+  hyperparameter_search: prohibited
+
+threshold_calibration:
+  split: validation_only
+  grid: {start: 0.10, stop: 0.90, step: 0.02}
+  replay_stride_ms: 1
+  persistence_ms: 10
+  feasibility:
+    stable_transition_fp_rate_max: 0.15
+    hard_control_fp_rate_max: 0.10
+    premature_fall_fp_rate_max: 0.15
+  selection_priority: [valid_in_horizon_fall_recall, median_prediction_lead, minimum_ice_sand_recall, higher_threshold]
+  result_driven_retuning: prohibited
+
+validation_gates:
+  fall_recall_min: 0.85
+  stable_specificity_min: 0.85
+  ice_fall_recall_min: 0.80
+  sand_fall_recall_min: 0.80
+  premature_fall_fp_rate_max: 0.15
+  hard_control_fp_rate_max: 0.10
+  median_prediction_lead_fraction_min: 0.50
+
+selection:
+  horizon_priority_ms: [200, 100, 50]
+  history_tie_break: shorter
+  privileged_and_imu_independent: true
+  diagnostic_best_if_none: most_validation_gates_then_fall_recall_then_specificity_then_lead_then_longer_horizon_then_shorter_history
+
+holdout:
+  access: one_shot_after_validation_selection_per_representation
+  waveform_access_before_selection: prohibited
+  reselection_after_open: prohibited
+  gates:
+    fall_recall_min: 0.80
+    stable_specificity_min: 0.80
+    ice_fall_recall_min: 0.75
+    sand_fall_recall_min: 0.75
+    premature_fall_fp_rate_max: 0.20
+    hard_control_fp_rate_max: 0.15
+
+temporal_diagnostics:
+  time_order: [original, reversed_inference_only]
+  endpoint_dominance: mask_prefix_keep_last_ms
+  endpoint_keep_ms: 20
+  selection_influence: false
+
+terrain_regression:
+  candidate: {sensor_profile: fsr4, model_family: mlp, observation_horizon_ms: 50, holdout_macro_f1: 0.9713, worst_recall: 0.9500}
+  retraining: prohibited
+  protected_paths:
+    - configs/dataset/terrain.yaml
+    - configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml
+    - reports/20260828_terrain_rebuild_sensor_ablation.md
+    - src/fastreflex/dataset/terrain.py
+    - src/fastreflex/training/terrain.py
+
+fusion_regression:
+  performance_reevaluation: prohibited
+  runtime_enum_change: prohibited
+  truth_table_regression_only: true
+
+artifacts:
+  path: artifacts/runs/20260828_dense_fall_risk_detector_poc
+  checkpoints: generated_not_committed
+  metrics_json: generated_not_committed
+  plots: generated_not_committed
+
+report:
+  path: reports/20260828_dense_fall_risk_detector_poc.md

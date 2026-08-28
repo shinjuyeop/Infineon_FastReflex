@@ -92,6 +92,27 @@ def evaluate_model(
     )
 
 
+def validation_cross_entropy(
+    model: nn.Module,
+    windows: WindowSet,
+    criterion: nn.Module,
+    batch_size: int = 128,
+) -> float:
+    """Return deterministic validation loss without choosing a class threshold."""
+    model.eval()
+    loss_total = 0.0
+    sample_total = 0
+    data = _loader(windows, batch_size, shuffle=False, seed=0)
+    with torch.no_grad():
+        for inputs, targets in data:
+            loss = criterion(model(inputs), targets)
+            loss_total += float(loss.detach()) * len(targets)
+            sample_total += len(targets)
+    if not sample_total:
+        raise ValueError("validation windows must not be empty")
+    return loss_total / sample_total
+
+
 def train_model(
     family: str,
     window_samples: int,
@@ -103,8 +124,9 @@ def train_model(
     patience: int = 6,
     learning_rate: float = 1.0e-3,
     class_names: tuple[str, ...] = CLASS_NAMES,
+    selection_metric: str = "macro_f1",
 ) -> tuple[nn.Module, TrainingResult]:
-    """Train one seed, selecting epochs by validation macro F1."""
+    """Train one seed with an explicitly selected validation criterion."""
     set_deterministic(seed)
     torch.set_num_threads(1)
     if train_windows.inputs.ndim != 3:
@@ -126,7 +148,10 @@ def train_model(
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     train_loader = _loader(train_windows, batch_size, shuffle=True, seed=seed)
 
-    best_score = -1.0
+    if selection_metric not in ("macro_f1", "validation_loss"):
+        raise ValueError(f"unsupported epoch selection metric: {selection_metric}")
+
+    best_score = float("inf") if selection_metric == "validation_loss" else -1.0
     best_epoch = 0
     best_state: dict[str, torch.Tensor] | None = None
     best_validation: dict[str, object] | None = None
@@ -147,15 +172,28 @@ def train_model(
         validation_metrics = evaluate_model(
             model, validation_windows, batch_size, class_names
         )
-        score = float(validation_metrics["macro_f1"])
+        validation_loss = validation_cross_entropy(
+            model, validation_windows, criterion, batch_size
+        )
+        score = (
+            validation_loss
+            if selection_metric == "validation_loss"
+            else float(validation_metrics["macro_f1"])
+        )
         history.append(
             {
                 "epoch": float(epoch),
                 "train_loss": loss_total / sample_total,
-                "validation_macro_f1": score,
+                "validation_macro_f1": float(validation_metrics["macro_f1"]),
+                "validation_cross_entropy": validation_loss,
             }
         )
-        if score > best_score + 1.0e-12:
+        improved = (
+            score < best_score - 1.0e-12
+            if selection_metric == "validation_loss"
+            else score > best_score + 1.0e-12
+        )
+        if improved:
             best_score = score
             best_epoch = epoch
             best_state = deepcopy(model.state_dict())

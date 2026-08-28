@@ -351,6 +351,28 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "DENSE_FALL_RISK_DATASET_AND_DETECTOR_POC":
+            from fastreflex.evaluation.stability_dense import (
+                run_dense_fall_risk_detector_poc,
+            )
+
+            output_path, metrics = run_dense_fall_risk_detector_poc(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "dataset": metrics["dataset"],
+                        "readiness": metrics["readiness"],
+                        "holdout_performed": metrics["holdout"]["performed"],
+                        "verdict": metrics["verdict"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id == "TEMPORAL_STABILITY_SEPARABILITY_AUDIT":
             from fastreflex.evaluation.stability_temporal import (
                 run_temporal_stability_separability_audit,

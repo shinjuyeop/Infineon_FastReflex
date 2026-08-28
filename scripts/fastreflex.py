@@ -351,6 +351,28 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "TERRAIN_CONDITIONED_REFLEX_DETECTOR_DEVELOPMENT":
+            from fastreflex.evaluation.terrain_conditioned_reflex import (
+                run_terrain_conditioned_reflex_detector,
+            )
+
+            output_path, metrics = run_terrain_conditioned_reflex_detector(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "terrain_timing": metrics["terrain_timing"],
+                        "final_selection": metrics["final_selection"],
+                        "holdout_performed": metrics["holdout"]["performed"],
+                        "verdict": metrics["verdict"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id == "EVENT_CENTRIC_REFLEX_TRIGGER_DEVELOPMENT":
             from fastreflex.evaluation.reflex_event import (
                 run_event_centric_reflex_trigger,

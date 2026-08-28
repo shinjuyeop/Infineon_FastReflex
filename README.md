@@ -65,11 +65,15 @@ Calibrated Concrete/Marble→Ice/Sand에서 fresh `terrain_transition_20260828` 
 
 LEFT_ONLY는 126/144 transition에서 update가 가능했고 median/p95 delay는 1114.5/1238 ms였지만 right-only Sand 18 runs에는 clean left target touchdown이 없었다. BILATERAL_SHARED는 144/144, median/p95 922/1238 ms이고 Pelvis IMU 포함 14 channels다. 따라서 Terrain research candidate는 supported지만 `FINAL_SENSOR_ARCHITECTURE_FROZEN`은 아니다. Historical phase-aware exact MoS clock과 Stability detector는 계속 미지원 상태이며, legacy Terrain v4와 direct Slip/Sink 연구는 historical comparison으로만 보존한다.
 
-Latest Stability research status는 `EVENT_CENTRIC_REFLEX_DETECTION_NOT_SUPPORTED`다. Frozen 50 mm/3 ms ANY-Slip과 10 mm/20 ms support-spread union으로 240 transition + 16 hard-control `reflex_event_20260828` corpus를 만들었고 readiness는 통과했지만, IMU6와 IMU6+bilateral FSR8의 MLP/GRU 20/50 ms candidates 모두 continuous validation false-alarm/timing gates를 실패했다. Validation selection이 없어 fresh 48-run holdout은 열지 않았다. Event-centric runtime architecture, sensor recommendation과 final sensor architecture는 아직 supported/frozen 상태가 아니다.
+Latest reflex research status는 `TERRAIN_CONDITIONED_REFLEX_PARTIALLY_SUPPORTED (SUPPORT_ONLY)`다. 기존 `reflex_event_20260828` corpus에서 frozen Terrain actual output으로 ICE/SAND branch를 분리하고 TRAIN full replay hard-negative mining을 두 번 수행했다. Support는 Pelvis IMU6 derived features + GRU + 20 ms, threshold 0.94가 validation Support recall 100%, Sand benign specificity 100%, premature 0%, active-negative alert fraction 0%, latency median/p95 -8/-1 ms로 통과했다.
+
+Slip은 Phase A sensor 후보의 문제가 아니라 upstream timing gate에서 실패했다. Development Ice event 96/96이 target `ICE` output보다 먼저 발생해 active-ICE TRAIN positive/negative endpoint가 모두 0이었다. Bounded Foot IMU12 fallback corpus 256 runs를 observer-only exact parity로 생성했지만 같은 gate 때문에 Phase B Slip 12 combinations도 fail-closed됐다. 두 branch가 모두 선택되지 않아 holdout guard는 0회로 유지했다. Final sensor architecture는 여전히 freeze하지 않는다.
 
 Dataset, ablation, holdout과 hardware-latency audit의 전체 근거는 [`20260828_terrain_rebuild_sensor_ablation.md`](reports/20260828_terrain_rebuild_sensor_ablation.md)에 기록한다.
 
 Event-centric physical-label corpus와 detector failure evidence는 [`20260828_event_centric_reflex_trigger.md`](reports/20260828_event_centric_reflex_trigger.md)에 기록한다.
+
+Terrain-conditioned branch timing, HNM, Support validation과 Foot IMU fallback 근거는 [`20260828_terrain_conditioned_reflex_detector.md`](reports/20260828_terrain_conditioned_reflex_detector.md)에 기록한다.
 
 ## 구조
 

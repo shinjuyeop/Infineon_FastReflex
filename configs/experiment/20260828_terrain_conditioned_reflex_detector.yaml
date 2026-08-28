@@ -1,0 +1,181 @@
+schema_version: 1
+
+experiment:
+  id: TERRAIN_CONDITIONED_REFLEX_DETECTOR_DEVELOPMENT
+  date: 2026-08-28
+  timezone: Asia/Seoul
+  source_commit_at_start: b6c91fe986abdffba2fbc1ec66915e15150fc93c
+  origin_main_at_start: b6c91fe986abdffba2fbc1ec66915e15150fc93c
+  branch_at_start: main
+  worktree_clean_at_start: true
+
+source:
+  event_config: configs/experiment/20260828_event_centric_reflex_trigger.yaml
+  event_dataset: data/raw/reflex_event_20260828
+  simulator_config: configs/simulator/g1.yaml
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  terrain_models: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models
+  terrain_metrics: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/metrics.json
+  terrain_dataset_config: configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml
+
+terrain_branch:
+  frozen_candidate: {sensor_profile: fsr4, model_family: mlp, observation_ms: 50}
+  deployment_scheme: left_only
+  clean_touchdown_source: exact_simulator_contact_scheduler
+  update_semantics: hold_until_next_valid_clean_left_touchdown
+  initial_state: UNKNOWN
+  ice_branch_output: ICE
+  sand_branch_output: SAND
+  target_identity_used_for_gating: false
+  event_before_terrain_rate_max: 0.05
+
+physical_oracles:
+  slip: {threshold_m: 0.050, persistence_ms: 3, aggregation: any_foot}
+  support: {spread_threshold_m: 0.010, persistence_ms: 20}
+  fall_or_recovery_used_as_label: false
+
+phase_a:
+  slip:
+    S1: [pelvis_imu6]
+    S2: [pelvis_imu6, fsr8]
+    S3: [fsr8]
+  support:
+    P1: [fsr8]
+    P2: [pelvis_imu6, fsr8]
+    P3: [pelvis_imu6]
+
+phase_b:
+  trigger: failed_phase_a_branches_only
+  dataset_id: reflex_event_foot_imu_20260828
+  dataset_path: data/raw/reflex_event_foot_imu_20260828
+  slip:
+    SF1: [foot_imu12]
+    SF2: [foot_imu12, fsr8]
+    SF3: [foot_imu12, pelvis_imu6]
+  support:
+    PF1: [fsr8, foot_imu12]
+    PF2: [foot_imu12]
+    PF3: [fsr8, foot_imu12, pelvis_imu6]
+  forbidden_runtime_augmentation: [q, dq, torque, current]
+  observer_parity_required: true
+
+features:
+  epsilon: 1.0e-6
+  causal_deltas_ms: [1, 5, 10]
+  causal_rolling_ms: 10
+  imu_base:
+    - raw_xyz_accel_and_gyro
+    - accel_norm
+    - gyro_norm
+    - horizontal_accel_norm
+    - horizontal_gyro_norm
+  fsr_base:
+    - raw_fsr8
+    - per_foot_total_front_rear_medial_lateral
+    - per_foot_front_minus_rear
+    - per_foot_medial_minus_lateral
+    - per_foot_normalized_front_ratio
+    - per_foot_normalized_medial_ratio
+    - bilateral_left_total_right_total_difference_normalized_left_ratio
+  transform_order: [base, delta_1ms, delta_5ms, delta_10ms, rolling_mean_10ms, rolling_variance_10ms]
+  terrain_identity_in_tensor: false
+  fall_or_event_clock_in_tensor: false
+
+training:
+  histories_ms: [20, 50]
+  model_families: [mlp, gru]
+  seeds: [20260828, 20260829, 20260830]
+  positive_endpoint_interval_ms: [-20, 40]
+  endpoint_stride_ms: 5
+  negative_latest_event_offset_ms: -30
+  initial_negative_per_temporal_bin: 8
+  temporal_bins: [early, middle, late]
+  train_monitor_run_fraction: 0.20
+  normalizer_per_run_sample_cap: 2048
+  standard_deviation_floor: 1.0e-8
+  optimizer: adam
+  learning_rate: 0.001
+  batch_size: 128
+  max_epochs: 40
+  patience: 6
+  epoch_selection: train_internal_monitor_cross_entropy
+  class_weighting: balanced
+  hidden_size: 32
+  hyperparameter_search: prohibited
+
+hard_negative_mining:
+  source_split: train_only
+  replay_stride_ms: 1
+  top_k_per_run: 8
+  minimum_separation_ms: 50
+  rounds: 2
+  positive_region_excluded: true
+  validation_access: prohibited
+  retain_all_initial_positives: true
+
+validation:
+  replay_stride_ms: 1
+  threshold_grid: {start: 0.10, stop: 0.98, step: 0.02}
+  persistence_ms: 5
+  slip_valid_latency_ms: [-20, 50]
+  support_valid_latency_ms: [-30, 50]
+  slip_gates:
+    event_recall_min: 0.95
+    premature_run_rate_max: 0.10
+    median_latency_ms_max: 15
+    p95_latency_ms_max: 40
+    active_negative_alert_fraction_max: 0.02
+  support_gates:
+    event_recall_min: 0.90
+    benign_specificity_min: 0.90
+    premature_run_rate_max: 0.10
+    median_latency_ms_max: 20
+    p95_latency_ms_max: 50
+    active_negative_alert_fraction_max: 0.02
+  candidate_priority: [all_gates, lower_premature_rate, lower_p95_latency, fewer_physical_channels, smaller_model]
+
+holdout:
+  access: one_shot_only_after_both_branches_selected
+  reselection: prohibited
+  slip_gates:
+    event_recall_min: 0.90
+    premature_run_rate_max: 0.15
+    active_negative_alert_fraction_max: 0.03
+    median_latency_ms_max: 20
+    p95_latency_ms_max: 50
+  support_gates:
+    event_recall_min: 0.85
+    benign_specificity_min: 0.85
+    premature_run_rate_max: 0.15
+    active_negative_alert_fraction_max: 0.03
+    median_latency_ms_max: 25
+    p95_latency_ms_max: 50
+  integrated_gates:
+    physical_event_recall_min: 0.875
+    no_event_transition_specificity_min: 0.90
+    hard_ground_specificity_min: 0.95
+
+protected_terrain_paths:
+  - configs/dataset/terrain.yaml
+  - configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml
+  - reports/20260828_terrain_rebuild_sensor_ablation.md
+  - src/fastreflex/dataset/terrain.py
+  - src/fastreflex/training/terrain.py
+  - artifacts/runs/20260828_terrain_rebuild_sensor_ablation/metrics.json
+  - artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/normalization.json
+  - artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_17.pt
+  - artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_29.pt
+  - artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_43.pt
+
+regression:
+  terrain_retraining: prohibited
+  fusion_truth_table_only: true
+  viewer_physics_mutation: prohibited
+  final_sensor_architecture_freeze: prohibited
+
+artifacts:
+  path: artifacts/runs/20260828_terrain_conditioned_reflex_detector
+  generated_committed: false
+
+report:
+  path: reports/20260828_terrain_conditioned_reflex_detector.md

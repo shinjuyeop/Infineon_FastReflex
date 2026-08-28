@@ -1,0 +1,238 @@
+schema_version: 1
+
+experiment:
+  id: EVENT_CENTRIC_REFLEX_TRIGGER_DEVELOPMENT
+  date: 2026-08-28
+  timezone: Asia/Seoul
+  source_commit_at_start: 7285978d233a57e86575d6bcaffd42698d1a5c54
+  origin_main_at_start: 7285978d233a57e86575d6bcaffd42698d1a5c54
+  worktree_clean_at_start: true
+  objective: detect a reflex-worthy physical Slip or support disturbance, independent of eventual fall
+
+source:
+  simulator_config: configs/simulator/g1.yaml
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  scenario_calibration_config: configs/experiment/20260828_transition_scenario_calibration.yaml
+  scenario_calibration_sha256: fa7f6772c10f16c8f581147d00203ed0c70fcfd97c2dde86fd5ada077ebc6d7c
+  dense_design_config: configs/experiment/20260828_dense_fall_risk_detector_poc.yaml
+  dense_design_sha256: 1b53009b865f9a79b9037ad96fe3107906e7a0320a995f6438501ced2833d7ae
+  historical_dense_dataset: data/raw/fall_risk_dense_20260828
+  historical_reports:
+    - reports/20260828_walking_stability_ground_truth_sanity.md
+    - reports/20260828_full_state_stability_ground_truth_sanity.md
+    - reports/20260828_temporal_stability_separability_audit.md
+    - reports/20260828_dense_fall_risk_detector_poc.md
+
+common:
+  duration_s: 8.0
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  primary_speed_mps: 0.25
+  independent_unit: simulation_run
+  scenario_gate:
+    normal_prefix_ms_min: 500
+    post_contact_ms_min: 500
+    actual_target_contact: required
+    finite_simulation: required
+    pretransition_fall_max: 0
+  forbidden_model_inputs:
+    - terrain_identity
+    - terrain_classifier_output
+    - source_terrain
+    - target_terrain
+    - patch_geometry
+    - design_role
+    - observed_fall
+    - fall_time
+    - time_to_fall
+    - recovery_success
+    - slip_oracle
+    - support_oracle
+    - event_time
+    - future_sample
+
+physical_oracles:
+  slip:
+    metric: touchdown_anchor_tangential_foot_drift_m
+    threshold_m: 0.050
+    persistence_ms: 3
+    primary_aggregation: any_foot
+    affected_foot_role: diagnostic_only
+    event_name: SLIP_REFLEX_EVENT
+  support:
+    metric: support_surface_spread_m
+    definition: max_cell_displacement_minus_min_cell_displacement
+    threshold_m: 0.010
+    persistence_ms: 20
+    reset: contact_episode_change_or_fall_censor
+    balanced_uniform_compression_below_threshold: negative
+    event_name: SUPPORT_REFLEX_EVENT
+  union:
+    label: REFLEX_EVENT
+    definition: ANY_SLIP_EVENT_OR_SUPPORT_REFLEX_EVENT
+    event_type_metadata: [SLIP, SUPPORT, SLIP_AND_SUPPORT, NONE]
+    eventual_fall_dependency: false
+
+dataset:
+  dataset_id: reflex_event_20260828
+  path: data/raw/reflex_event_20260828
+  format: one_run_per_npz
+  audit_result: historical_dense_missing_fsr8_and_physical_event_traces
+  primary_run_count: 240
+  hard_control_run_count: 16
+  primary_matrix:
+    sources: [concrete, marble]
+    targets: [ice, sand]
+    design_roles_for_condition_coverage_only: [stable, fall]
+    development_condition_indices:
+      train: [1, 18]
+      validation: [19, 24]
+    fresh_holdout_condition_indices: [31, 36]
+    runs_per_stratum: 30
+    split_counts: {train: 144, validation: 48, holdout: 48}
+    outcome_is_not_stratification_or_label: true
+  condition_schedule_source: source.dense_design_config
+  hard_controls:
+    sources: [concrete, marble]
+    speed_mps: [0.151, 0.165, 0.179, 0.193, 0.207, 0.221, 0.235, 0.249]
+    split_by_speed_index: {train: [1, 4], validation: [5, 6], holdout: [7, 8]}
+  stored_runtime_channels:
+    - timestamp_us
+    - pelvis_imu6
+    - bilateral_fsr8
+  stored_privileged_diagnostics:
+    - tangential_anchor_drift_m
+    - tangential_velocity_mps
+    - support_surface_spread_m
+    - support_surface_max_displacement_m
+    - loaded_contact
+    - first_target_contact_sample
+    - first_target_touchdown_sample
+    - censor_sample
+    - first_slip_event_sample_per_foot
+    - first_support_event_sample_per_foot
+    - first_reflex_event_sample
+  generated_data_committed: false
+
+readiness_gates:
+  slip_event_runs_min: 60
+  support_event_runs_min: 40
+  sand_benign_no_event_runs_min: 40
+  hard_ground_no_event_runs_min: 16
+  pre_event_negative_slip_required: true
+  pre_event_negative_support_required: true
+  concrete_origin_required: true
+  marble_origin_required: true
+  left_right_slip_when_available: true
+  duplicate_signature_max: 0
+  split_overlap_max: 0
+  nonfinite_input_max: 0
+
+representations:
+  PELVIS_IMU6:
+    input_channels: 6
+    feature_order: [accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z]
+  PELVIS_IMU6_FSR8:
+    input_channels: 14
+    feature_order: [accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, left_front_left, left_front_right, left_rear_left, left_rear_right, right_front_left, right_front_right, right_rear_left, right_rear_right]
+
+normalization:
+  method: train_only_per_representation_channel_zscore
+  per_run_sample_cap: 2048
+  standard_deviation_floor: 1.0e-8
+  validation_fit: prohibited
+  holdout_fit: prohibited
+
+windows:
+  histories_ms: [20, 50]
+  model_families: [mlp, gru]
+  endpoint_stride_ms: 5
+  positive_endpoint_interval_ms: [-10, 50]
+  event_negative_latest_offset_ms: -30
+  no_event_matching: elapsed_since_target_contact
+  per_run_positive_cap: 13
+  per_run_negative_cap: 13
+  post_event_unbounded_positive: prohibited
+
+model:
+  class_names: [NORMAL, REFLEX_EVENT]
+  seeds: [20260828, 20260829, 20260830]
+  ensemble: mean_probability
+  optimizer: adam
+  learning_rate: 0.001
+  batch_size: 128
+  max_epochs: 40
+  early_stopping_patience: 6
+  epoch_selection: validation_cross_entropy_minimum
+  gru: {hidden_size: 32, num_layers: 1, bidirectional: false, dropout: 0.0}
+  hyperparameter_search: prohibited
+
+threshold_calibration:
+  split: validation_only
+  grid: {start: 0.10, stop: 0.90, step: 0.02}
+  replay_stride_ms: 1
+  detector_persistence_ms: 5
+  valid_latency_ms: {minimum: -20, maximum: 50}
+  feasibility:
+    no_event_transition_fp_rate_max: 0.10
+    hard_ground_fp_rate_max: 0.05
+    premature_event_run_fp_rate_max: 0.10
+  priority: [overall_event_recall, minimum_slip_support_recall, lower_p95_positive_latency, simpler_model, shorter_history, higher_threshold]
+  result_driven_retuning: prohibited
+
+validation_gates:
+  overall_event_recall_min: 0.90
+  slip_event_recall_min: 0.90
+  support_event_recall_min: 0.85
+  no_event_transition_specificity_min: 0.90
+  hard_ground_specificity_min: 0.95
+  premature_event_run_fp_rate_max: 0.10
+  median_latency_ms_max: 20
+  p95_latency_ms_max: 50
+
+selection:
+  sensor_priority: [PELVIS_IMU6, PELVIS_IMU6_FSR8]
+  model_complexity_priority: [mlp, gru]
+  history_priority_ms: [20, 50]
+  near_tie: {recall_difference_max: 0.03, p95_latency_difference_ms_max: 10}
+
+holdout:
+  access: one_shot_after_validation_selection
+  physical_signatures: fresh_indices_31_through_36
+  waveform_access_before_selection: prohibited
+  reselection_after_open: prohibited
+  gates:
+    overall_event_recall_min: 0.85
+    slip_event_recall_min: 0.85
+    support_event_recall_min: 0.80
+    no_event_transition_specificity_min: 0.85
+    hard_ground_specificity_min: 0.90
+    premature_event_run_fp_rate_max: 0.15
+    median_latency_ms_max: 25
+    p95_latency_ms_max: 50
+
+terrain_regression:
+  candidate: {sensor_profile: fsr4, model_family: mlp, observation_horizon_ms: 50, holdout_macro_f1: 0.9713, worst_recall: 0.9500}
+  retraining: prohibited
+  protected_paths:
+    - configs/dataset/terrain.yaml
+    - configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml
+    - reports/20260828_terrain_rebuild_sensor_ablation.md
+    - src/fastreflex/dataset/terrain.py
+    - src/fastreflex/training/terrain.py
+
+fusion_regression:
+  performance_reevaluation: prohibited
+  runtime_enum_change: prohibited
+  truth_table_regression_only: true
+
+artifacts:
+  path: artifacts/runs/20260828_event_centric_reflex_trigger
+  checkpoints: generated_not_committed
+  metrics_json: generated_not_committed
+  plots: generated_not_committed
+
+report:
+  path: reports/20260828_event_centric_reflex_trigger.md

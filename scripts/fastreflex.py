@@ -351,6 +351,31 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "EVENT_CENTRIC_REFLEX_TRIGGER_DEVELOPMENT":
+            from fastreflex.evaluation.reflex_event import (
+                run_event_centric_reflex_trigger,
+            )
+
+            output_path, metrics = run_event_centric_reflex_trigger(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "dataset": metrics["dataset"],
+                        "readiness": metrics["readiness"],
+                        "selection": metrics.get("selection"),
+                        "verdict": metrics["verdict"],
+                        "architecture_recommendation": metrics[
+                            "architecture_recommendation"
+                        ],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id == "DENSE_FALL_RISK_DATASET_AND_DETECTOR_POC":
             from fastreflex.evaluation.stability_dense import (
                 run_dense_fall_risk_detector_poc,

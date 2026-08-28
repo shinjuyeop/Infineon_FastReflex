@@ -57,9 +57,11 @@ MuJoCo runtime streams
 
 ## Current Status
 
-`INTEGRATED_SCENARIO_NEEDS_REVISION`
+`TRANSITION_SCENARIOS_CALIBRATED`
 
-44-run `TERRAIN_STABILITY_INTEGRATED_SANITY`에서 hard controls는 6/6 stable, fall-intended Ice/Sand는 10/10과 12/12 fall이었지만 stable-intended는 Ice 1/8, Sand 4/8만 non-fall이었고 12개 run이 target transition 전에 fall했다. Phase-aware exact MoS clock도 stable FP 5/11, fall coverage 22/33으로 acceptance를 통과하지 못했다. Fail-closed로 Stability GRU는 실행하지 않았다. Fusion truth table과 independent state plumbing은 test를 통과했지만 integration readiness, terrain AI integration과 sensor architecture freeze를 뜻하지 않는다.
+Matched-reference audit에서 Concrete/Marble→Ice/Sand 네 prefix가 qpos/qvel `1e-12` tolerance, exact IMU/FSR/action/contact 기준을 통과했다. Calibration-unused fresh Concrete 16 runs는 Ice/Sand 각각 observed stable 4/fall 4, invalid 0, pre-transition fall 0이었다. Frozen B conditions를 A만 Marble로 바꾼 15 runs도 Ice stable 3/fall 4, Sand stable 4/fall 4, invalid/pre-transition fall 0으로 robustness를 통과했다. Ice friction과 Sand travel/stiffness/damping은 변경하지 않았다.
+
+이는 transition scenario prerequisite만 준비됐다는 뜻이다. Historical phase-aware exact MoS clock은 stable FP 5/11, fall coverage 22/33으로 여전히 실패 상태이고 Stability GRU는 실행하지 않았다. Fusion truth table은 regression을 통과했지만 Stability ground truth, detector, terrain AI integration과 sensor architecture는 아직 ready/frozen이 아니다.
 
 Legacy frozen Terrain v4는 artifact/checksum/input contract를 audit했으나 current repository에 left foot/ankle IMU6와 TFLite runtime parity가 없어 `TERRAIN_RUNTIME_MODEL_PENDING`이다. Integrated run의 terrain state는 명시적인 `ORACLE_PROXY`이며 AI latency로 주장하지 않는다. 이전 `SINK_SENSOR_OBSERVABILITY_PROMISING`과 모든 Slip/Sink historical report는 그대로 보존한다.
 
@@ -117,6 +119,13 @@ Terrain/Stability integrated sanity는 같은 canonical `evaluate` command에서
 ```bash
 python scripts/fastreflex.py evaluate \
   --config configs/experiment/20260827_terrain_stability_integrated_sanity.yaml
+```
+
+Transition scenario calibration은 prefix parity가 실패하면 calibration 전에 중단하고, PASS하면 frozen calibration, fresh Concrete validation과 Marble robustness를 순서대로 실행한다.
+
+```bash
+python scripts/fastreflex.py evaluate \
+  --config configs/experiment/20260828_transition_scenario_calibration.yaml
 ```
 
 Integrated calibration이 존재하면 canonical `simulate` 결과의 timestamp-synchronized status replay도 사용할 수 있다.

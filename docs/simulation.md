@@ -134,6 +134,20 @@ python scripts/fastreflex.py simulate \
   --viewer
 ```
 
+Marble prefix에서 같은 finite Ice patch를 보는 robustness replay:
+
+```bash
+python scripts/fastreflex.py simulate \
+  --source-terrain marble \
+  --terrain ice \
+  --slip-pattern transition \
+  --patch-start-x 0.36 \
+  --patch-width 0.70 \
+  --speed 0.25 \
+  --duration 8 \
+  --viewer
+```
+
 Uniform Sand control 관찰 예시:
 
 ```bash

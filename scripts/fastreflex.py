@@ -50,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument(
         "--terrain", choices=("concrete", "marble", "ice", "sand")
     )
+    simulate.add_argument(
+        "--source-terrain",
+        choices=("concrete", "marble"),
+        help="select the hard A-side terrain for a finite Ice/Sand transition",
+    )
     simulate.add_argument("--speed", type=float)
     simulate.add_argument("--duration", type=float)
     simulate.add_argument("--patch-start-x", type=float)
@@ -168,6 +173,11 @@ def main() -> int:
         config = replace(
             config,
             terrain=config.terrain if args.terrain is None else args.terrain,
+            source_terrain=(
+                config.source_terrain
+                if args.source_terrain is None
+                else args.source_terrain
+            ),
             command_speed_mps=(
                 config.command_speed_mps if args.speed is None else args.speed
             ),
@@ -310,6 +320,32 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "TRANSITION_SCENARIO_CALIBRATION":
+            from fastreflex.evaluation.transition_scenarios import (
+                run_transition_scenario_calibration,
+            )
+
+            output_path, metrics = run_transition_scenario_calibration(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "prefix_parity": metrics["prefix_parity"]["verdict"],
+                        "fresh_concrete_validation": metrics[
+                            "fresh_validation"
+                        ]["performed"],
+                        "marble_robustness": metrics["marble_robustness"][
+                            "performed"
+                        ],
+                        "verdict": metrics["verdict"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id == "TERRAIN_STABILITY_INTEGRATED_SANITY":
             from fastreflex.evaluation.integrated_stability import (
                 run_integrated_stability_sanity,

@@ -156,6 +156,7 @@ class SimulationConfig:
     patch_width_m: float
     headless: bool
     sink_support_pattern: str = "balanced_soft"
+    source_terrain: str = "concrete"
 
     @property
     def physics_steps_per_sample(self) -> int:
@@ -189,6 +190,9 @@ class SimulationConfig:
         if not 0.1 <= self.command_speed_mps <= 0.5:
             raise ValueError("walking command speed must be in [0.1, 0.5] m/s")
         get_terrain_profile(self.terrain)
+        get_terrain_profile(self.source_terrain)
+        if self.source_terrain not in {"concrete", "marble"}:
+            raise ValueError("transition source terrain must be concrete or marble")
         validate_slip_scenario(self.terrain, self.slip_pattern, self.sink_pattern)
         validate_sink_scenario(
             self.terrain,
@@ -210,6 +214,19 @@ class RuntimeTrace:
 
 
 @dataclass(frozen=True)
+class SimulationStateTrace:
+    """Simulator/controller-only trace for matched-prefix audits."""
+
+    robot_qpos: np.ndarray
+    robot_qvel: np.ndarray
+    controller_observation: np.ndarray
+    controller_action: np.ndarray
+    policy_updated: np.ndarray
+    pelvis_pose: np.ndarray
+    whole_body_com: np.ndarray
+
+
+@dataclass(frozen=True)
 class SimulationResult:
     """Runtime trace plus separately named simulator-only diagnostics."""
 
@@ -217,6 +234,7 @@ class SimulationResult:
     diagnostics: PhysicalDiagnostics
     metadata: dict[str, object]
     stability: StabilityDiagnostics | None = None
+    state_trace: SimulationStateTrace | None = None
 
 
 def load_simulation_config(path: Path) -> SimulationConfig:
@@ -254,6 +272,7 @@ def load_simulation_config(path: Path) -> SimulationConfig:
             sink_support_pattern=str(
                 sink.get("support_pattern", "balanced_soft")
             ),
+            source_terrain=str(terrain.get("source_type", "concrete")),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("invalid canonical G1 simulator config") from exc
@@ -324,6 +343,7 @@ def load_g1_model(
     patch_start_x_m: float = TRANSITION_PATCH_START_X_M,
     patch_width_m: float = TRANSITION_PATCH_WIDTH_M,
     sink_support_pattern: str = "balanced_soft",
+    source_terrain: str = "concrete",
 ) -> tuple[mujoco.MjModel, frozenset[int]]:
     """Load the baseline or one validated finite/full-lane patch scene."""
     validate_slip_scenario(terrain_name, slip_pattern, sink_pattern)
@@ -334,6 +354,9 @@ def load_g1_model(
         sink_support_pattern,
     )
     validate_transition_geometry(patch_start_x_m, patch_width_m)
+    get_terrain_profile(source_terrain)
+    if source_terrain not in {"concrete", "marble"}:
+        raise ValueError("transition source terrain must be concrete or marble")
     use_patch_scene = sink_pattern != "uniform" or slip_pattern == "transition"
     scene_path = SINK_SCENE_PATH if use_patch_scene else SCENE_PATH
     model = mujoco.MjModel.from_xml_path(str(scene_path))
@@ -343,6 +366,7 @@ def load_g1_model(
             model,
             patch_start_x_m,
             patch_width_m,
+            source_terrain,
         )
     elif sink_pattern == "uniform":
         ground_ids = frozenset(
@@ -356,6 +380,7 @@ def load_g1_model(
             patch_start_x_m,
             patch_width_m,
             sink_support_pattern,
+            source_terrain,
         )
     return model, ground_ids
 
@@ -489,6 +514,7 @@ class UnitreeG1Controller:
         self.target_position = DEFAULT_ANGLES.copy()
         self.step_count = 0
         self.global_phase = 0.0
+        self.last_observation = np.zeros(98, dtype=np.float32)
 
         # Match the fixed stand pose reached by the official deployment FSM,
         # avoiding that unrelated startup transient in short smoke runs.
@@ -506,10 +532,10 @@ class UnitreeG1Controller:
             self.model.actuator_ctrlrange[:, 1],
         )
 
-    def update_after_step(self) -> None:
+    def update_after_step(self) -> bool:
         self.step_count += 1
         if self.step_count % self.control_decimation:
-            return
+            return False
         self.global_phase = (
             self.global_phase + CONTROL_PERIOD_S / POLICY_PERIOD_S
         ) % 1.0
@@ -529,12 +555,14 @@ class UnitreeG1Controller:
         ).astype(np.float32)
         if observation.shape != (98,) or not np.all(np.isfinite(observation)):
             raise ValueError("invalid 98-element G1 policy observation")
+        self.last_observation = observation.copy()
         input_name = self.session.get_inputs()[0].name
         action = self.session.run(None, {input_name: observation[None, :]})[0].squeeze()
         if action.shape != (29,) or not np.all(np.isfinite(action)):
             raise ValueError("invalid 29-element G1 policy action")
         self.action = action.astype(np.float32)
         self.target_position = self.action * ACTION_SCALE + DEFAULT_ANGLES
+        return True
 
 
 def _fall_reasons(
@@ -566,6 +594,7 @@ def run_simulation(
     config: SimulationConfig,
     *,
     observe_fsr: bool = True,
+    capture_state_trace: bool = False,
 ) -> SimulationResult:
     """Run one smoke trace entirely in memory; no dataset or output is written."""
     config.validate()
@@ -579,6 +608,7 @@ def run_simulation(
         config.patch_start_x_m,
         config.patch_width_m,
         config.sink_support_pattern,
+        config.source_terrain,
     )
     data = mujoco.MjData(model)
     controller = UnitreeG1Controller(
@@ -631,6 +661,12 @@ def run_simulation(
     pelvis_angular_velocity: list[np.ndarray] = []
     pelvis_linear_velocity: list[np.ndarray] = []
     fall_active: list[bool] = []
+    robot_qpos: list[np.ndarray] = []
+    robot_qvel: list[np.ndarray] = []
+    controller_observation: list[np.ndarray] = []
+    controller_action: list[np.ndarray] = []
+    policy_updated: list[bool] = []
+    pelvis_pose: list[np.ndarray] = []
     first_fall_sample: int | None = None
     first_fall_reasons: tuple[str, ...] = ()
     pelvis_id = model.body("pelvis").id
@@ -650,6 +686,7 @@ def run_simulation(
             config.patch_start_x_m,
             config.patch_width_m,
             config.sink_support_pattern,
+            config.source_terrain,
         )
         viewer_data = mujoco.MjData(viewer_model)
         _copy_integration_state(model, data, viewer_model, viewer_data)
@@ -668,7 +705,7 @@ def run_simulation(
                 break
             controller.apply()
             mujoco.mj_step(model, data)
-            controller.update_after_step()
+            updated = controller.update_after_step()
 
             if viewer is not None:
                 if float(data.time) + 1e-12 >= next_viewer_sync_s:
@@ -741,6 +778,13 @@ def run_simulation(
             pelvis_angular_velocity.append(pelvis_velocity[:3].copy())
             pelvis_linear_velocity.append(pelvis_velocity[3:].copy())
             fall_active.append(first_fall_sample is not None)
+            if capture_state_trace:
+                robot_qpos.append(data.qpos[:36].copy())
+                robot_qvel.append(data.qvel[:35].copy())
+                controller_observation.append(controller.last_observation.copy())
+                controller_action.append(controller.action.copy())
+                policy_updated.append(updated)
+                pelvis_pose.append(data.qpos[:7].copy())
 
     timestamps = np.asarray(timestamp_us, dtype=np.int64)
     sequence = np.arange(len(timestamps), dtype=np.int64)
@@ -806,6 +850,7 @@ def run_simulation(
     )
     metadata: dict[str, object] = {
         "terrain": config.terrain,
+        "source_terrain": config.source_terrain,
         "slip_pattern": config.slip_pattern,
         "sink_pattern": config.sink_pattern,
         "sink_severity": config.sink_severity,
@@ -839,11 +884,27 @@ def run_simulation(
         "minimum_pelvis_height_m": minimum_pelvis_height_m,
         "minimum_pelvis_up": minimum_pelvis_up,
     }
+    state_trace = None
+    if capture_state_trace:
+        state_trace = SimulationStateTrace(
+            robot_qpos=np.asarray(robot_qpos, dtype=np.float64).reshape(-1, 36),
+            robot_qvel=np.asarray(robot_qvel, dtype=np.float64).reshape(-1, 35),
+            controller_observation=np.asarray(
+                controller_observation, dtype=np.float32
+            ).reshape(-1, 98),
+            controller_action=np.asarray(controller_action, dtype=np.float32).reshape(
+                -1, 29
+            ),
+            policy_updated=np.asarray(policy_updated, dtype=bool),
+            pelvis_pose=np.asarray(pelvis_pose, dtype=np.float64).reshape(-1, 7),
+            whole_body_com=np.asarray(whole_body_com, dtype=np.float64).reshape(-1, 3),
+        )
     return SimulationResult(
         runtime=runtime,
         diagnostics=diagnostics,
         metadata=metadata,
         stability=stability,
+        state_trace=state_trace,
     )
 
 

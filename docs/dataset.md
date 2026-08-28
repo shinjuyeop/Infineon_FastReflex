@@ -14,6 +14,8 @@
 
 Terrain/Stability integrated sanity는 Full Dataset을 생성하지 않았다. Exact MoS clock이 acceptance를 실패했으므로 새 Stability label schema나 dataset identity를 freeze하지 않는다. Future dataset은 accepted `t_instability` definition, run-disjoint split과 ambiguity exclusion을 새 manifest provenance로 명시해야 한다.
 
+`TRANSITION_SCENARIOS_CALIBRATED`는 scenario prerequisite만 freeze했다. Fresh Concrete Ice/Sand stable/fall 각 4 runs와 Marble robustness를 확보했지만 NPZ dataset을 생성하거나 historical label을 바꾸지 않았다. Calibration의 Slip/Sink onset, target contact, support deformation과 fall은 simulator-only diagnostic/metadata이며 Stability runtime input이나 새 label이 아니다. Exact `t_instability`가 별도 acceptance를 통과하기 전에는 이 run을 Stability training target으로 materialize하지 않는다.
+
 아래 3-class task는 historical v1-v3 dataset contract로 보존한다.
 
 | ID | Class | 의미 |

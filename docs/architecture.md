@@ -1,6 +1,6 @@
 # Architecture
 
-현재 primary target은 Terrain Recognition + Walking Stability Detection + deterministic State Fusion이다. 첫 44-run integrated sanity의 verdict는 `INTEGRATED_SCENARIO_NEEDS_REVISION`이다. Stable-intended Ice/Sand coverage와 hard-prefix causality가 부족했고 phase-aware exact MoS clock도 stable FP 5/11, fall coverage 22/33으로 실패했다. Fusion contract는 구현됐지만 integration readiness, Terrain AI migration, Stability AI와 sensor architecture는 아직 검증하거나 freeze하지 않았다. 이전 `SINK_SENSOR_OBSERVABILITY_PROMISING`과 direct NORMAL/SLIP/SINK 연구는 historical evidence로 보존한다.
+현재 primary target은 Terrain Recognition + Walking Stability Detection + deterministic State Fusion이다. `TRANSITION_SCENARIOS_CALIBRATED` milestone에서 Concrete/Marble→Ice/Sand matched prefix parity, fresh Concrete Ice/Sand stable 4/fall 4씩과 Marble robustness를 통과했다. 이는 scenario prerequisite만 준비됐다는 뜻이다. Historical phase-aware exact MoS clock은 stable FP 5/11, fall coverage 22/33으로 계속 실패 상태이며 integration readiness, Terrain AI migration, Stability AI와 sensor architecture는 아직 검증하거나 freeze하지 않았다. 이전 `SINK_SENSOR_OBSERVABILITY_PROMISING`과 direct NORMAL/SLIP/SINK 연구는 historical evidence로 보존한다.
 
 ## MuJoCo Baseline
 
@@ -31,6 +31,8 @@ Unitree G1 MJCF/meshes + user-supplied walking ONNX + terrain profile
 Runtime trace는 `[sequence, timestamp_us, pelvis_imu]`와 sensor-capable run의 candidate `foot_fsr`를 갖는다. FSR은 contact force scalar만 8채널로 관측하며 contact 위치/geom, exact wrench, foot state, fall censor와 oracle은 별도 diagnostics object에만 존재한다. `simulate`는 파일을 저장하지 않고, `collect`만 runtime trace와 diagnostic을 분리된 NPZ key로 materialize한다. Generated `data/raw/`는 Git ignored다.
 
 Optional viewer는 canonical physics state를 별도 MuJoCo render model/data에 복사해 약 60 Hz로 sync한다. GUI input은 render copy에만 머물고 physics loop에는 돌아오지 않으며, wall-clock pacing도 viewer mode에만 적용한다. 사용법은 [`simulation.md`](simulation.md)에 둔다.
+
+Transition audit에서만 optional `SimulationStateTrace`가 robot qpos/qvel, controller observation/action/update timing, pelvis pose와 COM을 simulator-only로 capture한다. 이는 matched-prefix 검증 전용이며 runtime model input이나 dataset field가 아니다. A-side는 Concrete/Marble 중 하나이고 B-side Ice/Sand geom은 contact 전 robot dynamics에 영향을 주지 않아야 한다. Matched reference는 같은 patch scene에서 B start만 run 밖으로 옮겨 topology 차이를 제거한다.
 
 Physics는 0.5 ms(2 kHz)이고 두 step마다 raw MuJoCo pelvis accelerometer/gyro를 읽어 1 ms(1 kHz), `float32`, `[accel_x/y/z, gyro_x/y/z]`로 제공한다. `imu` site는 pelvis 원점에 무회전으로 결합되어 local +x/+y/+z가 전방/좌측/위쪽이다. Timestamp는 run-local monotonic `int64` µs다.
 
@@ -124,8 +126,8 @@ Virtual FSR은 기존 sole collision contact에서만 읽으므로 geom, mass, f
 
 1. 완료된 direct NORMAL/SLIP/SINK Pilot, FSR와 deformable-support evidence를 historical baseline으로 보존한다.
 2. Terrain과 Stability producer, deterministic fusion과 leakage boundary를 유지한다.
-3. 현재 blocker인 transition 전 fall과 stable Ice/Sand coverage를 revised bounded scenario에서 먼저 해결한다.
-4. Stable-domain phase/contact representation으로 exact `t_instability`를 다시 사전 선언하고 stable FP/fall coverage/lead gate를 통과시킨다.
+3. 완료된 calibrated transition operating points와 matched-prefix contract를 유지한다.
+4. Clean transition scenarios에서 stable-domain phase/contact representation으로 exact `t_instability`를 다시 사전 선언하고 stable FP/fall coverage/lead gate를 통과시킨다.
 5. Gate 통과 뒤 같은 pelvis IMU6 deterministic rule과 small GRU를 동일 holdout에서 비교한다.
 6. Terrain v4 sensor/runtime parity를 명시적으로 review하고 clean한 경우에만 frozen inference artifact를 migration한다.
 7. 이후 별도 승인으로 dataset, sensor architecture review와 Float export를 진행한다.

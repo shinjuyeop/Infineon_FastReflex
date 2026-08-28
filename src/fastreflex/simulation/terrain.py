@@ -331,6 +331,7 @@ def apply_sink_patch_profiles(
     patch_start_x_m: float = TRANSITION_PATCH_START_X_M,
     patch_width_m: float = TRANSITION_PATCH_WIDTH_M,
     support_pattern: str = "balanced_soft",
+    source_terrain: str = "concrete",
 ) -> frozenset[int]:
     """Configure the canonical sink scene for a full-lane or finite patch."""
     validate_sink_scenario("sand", pattern, severity, support_pattern)
@@ -371,7 +372,9 @@ def apply_sink_patch_profiles(
         )
         return frozenset(ground_ids.values())
 
-    stable_profile = get_terrain_profile("concrete")
+    if source_terrain not in {"concrete", "marble"}:
+        raise ValueError("transition source terrain must be concrete or marble")
+    stable_profile = get_terrain_profile(source_terrain)
     ground_ids = {
         name: apply_terrain_profile(model, stable_profile, name)
         for name in TRANSITION_GROUND_GEOM_NAMES
@@ -599,8 +602,11 @@ def apply_slip_patch_profiles(
     model: mujoco.MjModel,
     patch_start_x_m: float = TRANSITION_PATCH_START_X_M,
     patch_width_m: float = TRANSITION_PATCH_WIDTH_M,
+    source_terrain: str = "concrete",
 ) -> frozenset[int]:
-    """Apply concrete-to-full-width-Ice-to-concrete transition profiles."""
+    """Apply a hard-terrain-to-Ice-to-hard-terrain transition profile."""
+    if source_terrain not in {"concrete", "marble"}:
+        raise ValueError("transition source terrain must be concrete or marble")
     configure_transition_geometry(model, patch_start_x_m, patch_width_m)
     ice_color = (0.35, 0.70, 0.95, 1.0)
     _select_patch_topology(
@@ -617,7 +623,7 @@ def apply_slip_patch_profiles(
             "terrain_transition_post": (0.35, 0.35, 0.35, 1.0),
         },
     )
-    concrete = get_terrain_profile("concrete")
+    concrete = get_terrain_profile(source_terrain)
     ground_ids = {
         name: apply_terrain_profile(model, concrete, name)
         for name in TRANSITION_GROUND_GEOM_NAMES

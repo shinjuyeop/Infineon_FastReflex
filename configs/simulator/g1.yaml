@@ -9,6 +9,7 @@ controller:
 
 terrain:
   type: concrete
+  source_type: concrete
 
 slip:
   pattern: uniform

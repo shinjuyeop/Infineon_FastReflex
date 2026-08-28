@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-Historical Pilot/FSR analyses, frozen Slip/Sink criteria와 `SINK_SENSOR_OBSERVABILITY_PROMISING` evidence를 보존한 채 Terrain + Walking Stability + Fusion 구조를 첫 integrated sanity로 검증했다. 현재 verdict는 `INTEGRATED_SCENARIO_NEEDS_REVISION`이다. Ice stable-intended 1/8, Sand stable-intended 4/8, transition 전 fall 12건으로 scenario gate가 실패했고 exact MoS clock도 stable FP 5/11, fall coverage 22/33으로 실패했다. Fail-closed로 GRU를 수행하지 않았으며 Terrain runtime은 `ORACLE_PROXY`/`TERRAIN_RUNTIME_MODEL_PENDING`이다. Sensor architecture와 detector readiness는 unfrozen이다.
+Historical Pilot/FSR analyses, frozen Slip/Sink criteria와 `SINK_SENSOR_OBSERVABILITY_PROMISING` evidence를 보존한 채 Terrain + Walking Stability + Fusion 구조를 검증한다. 현재 scenario verdict는 `TRANSITION_SCENARIOS_CALIBRATED`다. 이전 integrated sanity의 Ice/Sand coverage와 pre-transition fall 문제는 matched-prefix calibration/fresh validation으로 해결했지만 exact MoS clock은 stable FP 5/11, fall coverage 22/33의 historical failure 상태다. Fail-closed로 GRU를 수행하지 않았으며 Terrain runtime은 `ORACLE_PROXY`/`TERRAIN_RUNTIME_MODEL_PENDING`이다. Sensor architecture와 detector readiness는 unfrozen이다.
 
 ## 고정 연구 원칙
 
@@ -29,6 +29,14 @@ Ground truth와 runtime detector를 다음처럼 분리한다.
 첫 frozen experiment는 hard stable six run의 phase별 MoS 0.5 percentile, additional 10 mm degradation과 20 ms persistence를 predeclared했다. Acceptance는 stable firing ≤5%, fall coverage ≥80%, Ice/Sand detection 존재, median lead ≥100 ms다. Scenario acceptance는 Ice/Sand stable coverage, fall-intended coverage, pre-transition fall 0과 finite sensor를 별도로 검사한다. Scenario 또는 exact clock이 실패하면 rule/AI 성능으로 primary conclusion을 내거나 threshold를 sweep하지 않는다.
 
 실제 결과는 scenario와 exact-clock gate가 모두 FAIL이었다. Pelvis IMU rule은 secondary holdout에서 supported fall 4/4를 결국 감지했지만 stable FP 2/3, Recall@10/20/50/100 ms 0, median latency 353.5 ms였다. Optional GRU는 실행하지 않았다. Config와 report는 [`20260827_terrain_stability_integrated_sanity.yaml`](../configs/experiment/20260827_terrain_stability_integrated_sanity.yaml), [`20260827_terrain_stability_integrated_sanity.md`](../reports/20260827_terrain_stability_integrated_sanity.md)에 기록한다.
+
+## Transition scenario calibration protocol
+
+Scenario repair는 matched A-only reference와 transition의 first target contact 이전 robot/controller prefix를 먼저 비교한다. Same patch scene에서 reference patch만 run 밖으로 옮기고 qpos/qvel, IMU6, FSR8, controller observation/action/update timing, pelvis pose, COM과 contact를 검사한다. Target geometry boundary, top height, no hole/overlap과 pretarget dynamic-support contact도 독립 gate다. Prefix parity가 실패하면 calibration을 시작하지 않는다.
+
+Calibration은 Ice speed/start/width와 Sand speed/start/width/side/pattern/frozen severity만 탐색한다. Ice friction, Sand travel/stiffness/damping, policy/controller, fall/Slip/Sink criterion은 바꾸지 않는다. Observed outcome은 intended role과 무관하게 분류하고, valid stable은 target contact 뒤 finite patch 완전 통과와 non-fall을 요구한다. `CALIBRATION_SELECTED` 뒤 calibration-unused Concrete conditions를 실행하며 결과를 보고 freeze를 수정하지 않는다. Concrete PASS 뒤에만 동일 B conditions에서 A를 Marble로 바꾼다.
+
+실제 결과는 four prefix pair PASS, fresh Concrete Ice/Sand stable 4/fall 4씩, invalid/pre-transition fall 0, Marble Ice stable 3/fall 4와 Sand stable 4/fall 4였다. Verdict는 `TRANSITION_SCENARIOS_CALIBRATED`다. 이 milestone은 Stability oracle이나 detector acceptance가 아니다. Config와 report는 [`20260828_transition_scenario_calibration.yaml`](../configs/experiment/20260828_transition_scenario_calibration.yaml), [`20260828_transition_scenario_calibration.md`](../reports/20260828_transition_scenario_calibration.md)에 기록한다.
 
 ## 연구 단계
 

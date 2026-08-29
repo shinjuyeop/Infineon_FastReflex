@@ -351,6 +351,28 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "SUPPORT_EARLY_MODE_RESOLUTION":
+            from fastreflex.evaluation.support_early_mode import (
+                run_support_early_mode_resolution,
+            )
+
+            output_path, metrics = run_support_early_mode_resolution(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "cause_verdict": metrics["cause_verdict"],
+                        "selected_incipient": metrics["incipient"]["selected"],
+                        "holdout_performed": metrics["holdout"]["performed"],
+                        "verdict": metrics["verdict"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id in {
             "CAUSAL_SUPPORT_TERRAIN_CONTEXT_FUSION",
             "PER_FOOT_TERRAIN_MEMORY_SUPPORT_FUSION",

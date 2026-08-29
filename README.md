@@ -75,6 +75,8 @@ Latest reflex research status는 `CONTINUOUS_SLIP_REFLEX_PROMISING`이다. Terra
 
 후속 `PER_FOOT_TERRAIN_MEMORY_SUPPORT_FUSION`은 기존 BILATERAL_SHARED FSR4/MLP/50 ms 후보를 frozen protocol에서 역사적 validation과 exact parity로 재구성하고, Terrain prediction에 causal touchdown-foot provenance를 보존했다. PF1(any loaded SAND-memory foot)은 TRAIN의 역사적 7개 suppression miss를 모두 rescue했고 PF1/PF2 모두 VALIDATION recall 12/12, suppression 0/12, Sand benign·hard specificity 100%를 기록했다. 그러나 두 정책 모두 6/12에서 약 565 ms premature authorization을 만들었고 Ice non-Support 9/40에도 held SAND-memory authorization이 발생했다. 따라서 선택 정책 없이 HOLDOUT access 0을 유지했으며 verdict는 `PER_FOOT_TERRAIN_SUPPORT_FUSION_NOT_SUPPORTED`다. FSR8 + Pelvis IMU6 14-channel system candidate와 final sensor architecture는 승인·freeze하지 않는다.
 
+`SUPPORT_EARLY_MODE_RESOLUTION`은 이 약 -565 ms raw mode를 TRAIN/VALIDATION에서 물리·gait audit했다. 24/24 episode가 한 same-foot stride(581–582 ms)와 맞았지만 조기 alert 시 loaded-foot spread는 6.508–6.553 mm였고 TRAIN no-Support phase envelope를 20 ms 이상 벗어났다. Cause verdict는 `SUPPORT_EARLY_MODE_PHYSICAL_PRECURSOR`다. TRAIN-only q99.5로 만든 I1/I2/I3 incipient reference는 모두 VALIDATION physical gate를 통과했지만, frozen Pelvis-IMU Support detector는 Ice non-Support specificity 9/24=37.5%로 continuous validation에 실패했다. 따라서 primary verdict는 `CONTINUOUS_SUPPORT_REFLEX_NOT_SUPPORTED`, HOLDOUT access는 0이며 HNM·sensor augmentation·integrated replay는 수행하지 않았다.
+
 Dataset, ablation, holdout과 hardware-latency audit의 전체 근거는 [`20260828_terrain_rebuild_sensor_ablation.md`](reports/20260828_terrain_rebuild_sensor_ablation.md)에 기록한다.
 
 Event-centric physical-label corpus와 detector failure evidence는 [`20260828_event_centric_reflex_trigger.md`](reports/20260828_event_centric_reflex_trigger.md)에 기록한다.
@@ -88,6 +90,8 @@ Frozen Support TRAIN/VALIDATION failure-mode와 gating evidence는 [`20260829_su
 Continuous raw Support와 causal Terrain context F0/F1/F2 availability 근거는 [`20260829_causal_support_terrain_context_fusion.md`](reports/20260829_causal_support_terrain_context_fusion.md)에 기록한다.
 
 Bilateral touchdown provenance, per-foot memory PF1/PF2와 premature authorization 근거는 [`20260829_per_foot_terrain_memory_support_fusion.md`](reports/20260829_per_foot_terrain_memory_support_fusion.md)에 기록한다.
+
+Support early mode의 gait periodicity, physical precursor와 continuous specificity 근거는 [`20260829_support_early_mode_resolution.md`](reports/20260829_support_early_mode_resolution.md)에 기록한다.
 
 ## 구조
 

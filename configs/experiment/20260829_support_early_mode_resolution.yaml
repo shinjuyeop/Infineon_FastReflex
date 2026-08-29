@@ -1,0 +1,202 @@
+schema_version: 1
+
+experiment:
+  id: SUPPORT_EARLY_MODE_RESOLUTION
+  date: 2026-08-29
+  timezone: Asia/Seoul
+  source_commit_at_start: f8e128e20fcd7ca70c6aa2553ccf2c56af823a42
+  origin_main_at_start: f8e128e20fcd7ca70c6aa2553ccf2c56af823a42
+  branch_at_start: main
+  worktree_clean_at_start: true
+
+source:
+  event_dataset: data/raw/reflex_event_20260828
+  event_manifest: data/raw/reflex_event_20260828/manifest.json
+  event_manifest_sha256: 64f86ffcb6b3291c8f37537a4a732ff61aa700e135b09c60590bff48e83df936
+  prior_diagnostics: simulation/outputs/per_foot_terrain_memory_support_fusion/event_diagnostics.csv
+  prior_report: reports/20260829_per_foot_terrain_memory_support_fusion.md
+  prior_config: configs/experiment/20260829_per_foot_terrain_memory_support_fusion.yaml
+  development_terrain_gate_cache: artifacts/runs/20260828_terrain_conditioned_reflex_detector/terrain_gate/development
+  per_cell_displacement_available: false
+  support_surface_spread_available: true
+  support_surface_max_displacement_available: true
+
+frozen_support:
+  candidate_id: P3
+  components: [pelvis_imu6]
+  model_family: gru
+  feature_dimension: 60
+  feature_schema_sha256: 4775bf9cdb1a6680c64c0c744caf69e34afb3628726594350133a59545835170
+  history_ms: 20
+  probability_threshold: 0.94
+  persistence_ms: 5
+  physical_oracle:
+    support_surface_spread_m: 0.010
+    persistence_ms: 20
+  valid_latency_ms: [-30, 50]
+  normalizer:
+    path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/normalization/phase_a/support/p3.json
+    sha256: db04b0fcb134141e91acaac66111835cfdede25a516201788c5f7fd42ca43b20
+  checkpoints:
+    - path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/checkpoints/phase_a/support/p3_gru_history20_round2_seed20260828.pt
+      sha256: 26d2bbbffd65dd5cf06424366754749d485511c46791632f1fe2062ae046aa21
+    - path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/checkpoints/phase_a/support/p3_gru_history20_round2_seed20260829.pt
+      sha256: d3e023ee89240283eb5f6d8f76a9bd1365dbca97de64b1ec76d06a23d44cf586
+    - path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/checkpoints/phase_a/support/p3_gru_history20_round2_seed20260830.pt
+      sha256: 0781b7ffc6887ad96e5ade7f482fe0d97b6e643322f6dd072767b4f15ab176dc
+
+phase_a_audit:
+  splits: [train, validation]
+  holdout_access: prohibited
+  premature_lead_reference_ms: 565
+  gait:
+    touchdown_source: loaded_contact_false_to_true
+    repeated_same_foot_rising_suppression_ms: 100
+    alias_period_tolerance_ms: 50
+    affected_foot: earliest_per_foot_support_oracle
+    phase_names: [NO_SUPPORT, LEFT_SUPPORT, RIGHT_SUPPORT, DOUBLE_SUPPORT]
+  waveform:
+    tensor: frozen_normalized_20ms_derived_pelvis_imu60
+    metrics: [normalized_l2, cosine_similarity, per_channel_correlation]
+    matched_normal:
+      source_split: train
+      phase_equal: true
+      support_foot_equal: true
+      touchdown_age_tolerance_ms: 50
+      maximum_matches_per_alert: 32
+  physical_envelope:
+    fit_split: train_only
+    quantile: 0.995
+    phase_conditioned: true
+    future_outcome_used: false
+    persistence_ms: 20
+    metrics:
+      - support_surface_spread_m
+      - support_surface_max_displacement_m
+      - spread_delta_1ms_m
+      - spread_delta_5ms_m
+      - spread_delta_10ms_m
+      - spread_delta_20ms_m
+      - spread_delta_50ms_m
+      - fsr_left_total_n
+      - fsr_right_total_n
+      - fsr_bilateral_imbalance
+  classification:
+    gait_alias: alias_period_match_and_no_persistent_physical_envelope_exit
+    physical_precursor: persistent_physical_envelope_exit_at_or_before_premature_alert
+    mixed: gait_alias_and_physical_precursor
+    unresolved: neither_or_required_signal_unavailable
+    allowed: [GAIT_ALIAS_FALSE_MODE, PHYSICAL_PRECURSOR_MODE, MIXED_OR_UNRESOLVED]
+
+incipient_candidates:
+  fit_split: train_benign_only
+  threshold_quantile: 0.995
+  persistence_ms: 20
+  candidates:
+    I1: support_spread_derivative_1ms
+    I2: support_spread_delta_20ms
+    I3: normalized_spread_and_derivative
+  validation_gates:
+    sand_benign_fp_rate_max: 0.05
+    ice_non_support_fp_rate_max: 0.05
+    hard_ground_fp_rate_max: 0.05
+    support_coverage_min: 0.90
+    onset_before_established_rate_min: 0.90
+    median_lead_ms_min: 50
+  candidate_addition_after_validation: prohibited
+
+branch_a_retraining:
+  representation: pelvis_imu6_derived_60d
+  model_family: gru
+  history_ms: 20
+  persistence_ms: 5
+  seeds: [20260828, 20260829, 20260830]
+  positive_endpoints:
+    relative_to_support_ms: [-20, 40]
+    stride_ms: 5
+  base_negative_sampling:
+    per_temporal_bin: 8
+    temporal_bins: 3
+    terrain_independent: true
+  gait_alias_negatives:
+    explicit: true
+  hard_negative_mining:
+    replay_stride_ms: 1
+    rounds: 3
+    top_k_per_run: 16
+    minimum_separation_ms: 30
+    prioritize_gait_alias: true
+    near_duplicate_rejection_ms: 30
+    validation_access_between_rounds: prohibited
+  optimizer:
+    name: Adam
+    learning_rate: 0.001
+    batch_size: 128
+    max_epochs: 40
+    patience: 6
+    epoch_selection: internal_train_monitor_validation_loss
+  threshold_calibration:
+    source_split: validation_only_after_round_3
+    minimum: 0.50
+    maximum: 0.99
+    step: 0.01
+    mutation_after_selection: prohibited
+
+selection:
+  validation_gates:
+    support_recall_min: 0.95
+    premature_event_run_rate_max: 0.10
+    sand_benign_specificity_min: 0.95
+    ice_non_support_specificity_min: 0.90
+    hard_ground_specificity_min: 0.95
+    negative_alert_fraction_max: 0.02
+    median_latency_ms_max: 20
+    p95_latency_ms_max: 50
+  priority:
+    - higher_support_recall
+    - lower_premature_rate
+    - lower_p95_latency
+    - higher_threshold
+
+holdout:
+  access: once_after_validation_freeze
+  open_count_before_freeze: 0
+  reselection: prohibited
+  gates:
+    support_recall_min: 0.90
+    premature_event_run_rate_max: 0.15
+    sand_benign_specificity_min: 0.90
+    ice_non_support_specificity_min: 0.85
+    hard_ground_specificity_min: 0.90
+    negative_alert_fraction_max: 0.03
+    median_latency_ms_max: 25
+    p95_latency_ms_max: 50
+
+protected:
+  support_frozen_hashes_unchanged: required
+  terrain_models_unchanged: required
+  terrain:
+    normalizer:
+      path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/normalization.json
+      sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+    checkpoints:
+      - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_17.pt
+        sha256: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+      - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_29.pt
+        sha256: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+      - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_43.pt
+        sha256: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+  slip_freeze:
+    path: artifacts/runs/20260829_continuous_slip_reflex_detector/slip_candidate_freeze.json
+    sha256: 6fa116278153479fc5b2c021f9b6011be08373fdd417a2c3236f9876186c52f3
+  terrain_input_to_support: prohibited
+  new_sensor_input: prohibited
+  recovery: prohibited
+
+artifacts:
+  output_path: simulation/outputs/support_early_mode_resolution
+  model_path: artifacts/runs/20260829_support_early_mode_resolution
+  generated_committed: false
+
+report:
+  path: reports/20260829_support_early_mode_resolution.md

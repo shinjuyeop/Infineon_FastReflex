@@ -2,16 +2,16 @@
 
 ## 목적
 
-Unitree G1 simulation 기반 센서로 terrain과 walking stability를 독립적으로 추정하고 control-facing hazard state로 fuse하는 구조를 연구한다.
+Unitree G1 simulation 기반 센서로 physical hazard reflex와 terrain context를 독립적으로 추정하는 구조를 연구한다.
 
-현재 primary architecture target은 다음 두 stream이다.
+현재 supported research candidate는 다음 두 stream이다.
 
-- Terrain: `CONCRETE / MARBLE / ICE / SAND / UNKNOWN`
-- Stability: `STABLE / UNSTABLE`
+- Hazard Reflex: Pelvis IMU6 기반 `NORMAL / HAZARD_REFLEX_REQUIRED`
+- Terrain advisory: FSR4 기반 `CONCRETE / MARBLE / ICE / SAND / UNKNOWN`
 
-Fusion은 `ICE + UNSTABLE → SLIP_RISK`, `SAND + UNSTABLE → SINK_RISK`, 그 외 `UNSTABLE → GENERIC_INSTABILITY`로 해석하고 terrain과 무관하게 recovery를 요청한다. Risk 이름은 terrain-conditioned advisory이며 causal Slip/Sink diagnosis가 아니다. Historical `NORMAL/SLIP/SINK` direct-classification 연구와 physical oracle evidence는 보존한다.
+Reflex를 Terrain보다 먼저 독립적으로 결정하고, held Terrain은 이후 `SLIP_RISK / SUPPORT_RISK / GENERIC_DISTURBANCE` cause refinement에만 사용한다. Terrain은 reflex를 gate하거나 지연하지 않는다. Historical Stability와 `NORMAL/SLIP/SINK` direct-classification 연구 및 physical oracle evidence는 보존한다.
 
-Stability의 첫 runtime input은 Waist/Pelvis IMU 6-axis다. Current rebuilt Terrain research candidate는 touchdown foot의 FSR4를 50 ms 관측하는 shared MLP이며, LEFT_ONLY 배치가 최소-channel candidate다. 최종 sensor architecture는 Stability 결과 전까지 고정하지 않는다.
+Hazard Reflex runtime input은 Waist/Pelvis IMU 6-axis다. Current rebuilt Terrain research candidate는 touchdown foot의 FSR4를 50 ms 관측하는 shared MLP이며, LEFT_ONLY 배치가 최소-channel candidate다. 최종 sensor architecture는 E84 resource와 hardware-realism 검증 전까지 고정하지 않는다.
 
 - accelerometer: x/y/z
 - gyroscope: x/y/z
@@ -19,10 +19,10 @@ Stability의 첫 runtime input은 Waist/Pelvis IMU 6-axis다. Current rebuilt Te
 ## 기본 원칙
 
 - 1 kHz sensor sequence를 기준으로 연구한다.
-- Terrain producer와 Stability producer를 독립 update하고 latest valid terrain을 hold한다.
-- Stability는 복잡한 수작업 전처리를 피하고 deterministic pelvis-IMU rule부터 검증한다.
-- Exact COM/XCoM/support state는 ground truth와 analysis에만 사용하고 runtime detector에 넣지 않는다.
-- AI는 exact stability clock이 acceptance를 통과한 뒤 작은 GRU부터 비교한다.
+- Terrain producer와 Hazard Reflex producer를 독립 update하고 latest valid terrain은 cause refinement용으로만 hold한다.
+- Hazard Reflex는 actual established Slip/Support와 privileged I1 precursor로 평가하되 이 exact clock을 runtime tensor에 넣지 않는다.
+- Exact COM/XCoM/support state와 fall/recovery outcome은 historical ground truth/analysis에만 사용한다.
+- Runtime sequence model은 bounded candidate와 TRAIN-only hard-negative mining 뒤 sealed holdout으로 검증한다.
 - dataset, training, validation, Float model export를 이 저장소에서 관리한다.
 - 실험 차이는 새 runner가 아니라 config로 표현한다.
 - quantization과 E84 deployment는 별도 저장소에서 수행한다.
@@ -31,11 +31,8 @@ Stability의 첫 runtime input은 Waist/Pelvis IMU 6-axis다. Current rebuilt Te
 
 ```text
 MuJoCo runtime streams
-  ├─ touchdown-centered Terrain Recognition -> held terrain_state
-  └─ continuous Walking Stability Detection -> stability_state
-                                              |
-                                              v
-              deterministic State Fusion -> hazard_state + recovery_required
+  ├─ Pelvis IMU6 -> continuous unified Hazard Reflex -> REFLEX_REQUIRED
+  └─ FSR4 touchdown -> held Terrain Recognition -----> cause refinement only
 ```
 
 ## Repository boundary
@@ -65,7 +62,7 @@ Calibrated Concrete/Marble→Ice/Sand에서 fresh `terrain_transition_20260828` 
 
 LEFT_ONLY는 126/144 transition에서 update가 가능했고 median/p95 delay는 1114.5/1238 ms였지만 right-only Sand 18 runs에는 clean left target touchdown이 없었다. BILATERAL_SHARED는 144/144, median/p95 922/1238 ms이고 Pelvis IMU 포함 14 channels다. 따라서 Terrain research candidate는 supported지만 `FINAL_SENSOR_ARCHITECTURE_FROZEN`은 아니다. Historical phase-aware exact MoS clock과 Stability detector는 계속 미지원 상태이며, legacy Terrain v4와 direct Slip/Sink 연구는 historical comparison으로만 보존한다.
 
-Latest reflex research status는 `CONTINUOUS_SLIP_REFLEX_PROMISING`이다. Terrain-independent continuous Slip Phase A의 12 candidates를 Round 0과 TRAIN-only HNM 3회까지 완료한 결과, Pelvis IMU6 derived features + GRU + 20 ms, threshold 0.58, persistence 5 ms가 validation에서 Slip recall/no-hazard specificity 100%/100%, premature 0%로 선택됐다. One-shot holdout에서도 Slip 24/24, no-hazard 16/16, hard-ground 4/4, premature/negative-time alert 0%, latency median/p95 -27.5/-27 ms로 모든 Slip gate를 통과했고 24/24 reflex가 frozen ICE output보다 먼저 발생했다. Foot IMU Phase B는 필요하지 않았다.
+Previous cause-specific Slip research status는 `CONTINUOUS_SLIP_REFLEX_PROMISING`이다. Terrain-independent continuous Slip Phase A의 12 candidates를 Round 0과 TRAIN-only HNM 3회까지 완료한 결과, Pelvis IMU6 derived features + GRU + 20 ms, threshold 0.58, persistence 5 ms가 validation에서 Slip recall/no-hazard specificity 100%/100%, premature 0%로 선택됐다. One-shot holdout에서도 Slip 24/24, no-hazard 16/16, hard-ground 4/4, premature/negative-time alert 0%, latency median/p95 -27.5/-27 ms로 모든 Slip gate를 통과했고 24/24 reflex가 frozen ICE output보다 먼저 발생했다. Foot IMU Phase B는 필요하지 않았다.
 
 동일 one-shot holdout에서 변경하지 않은 frozen Sand Support branch는 benign specificity 12/12와 premature 0%를 유지했지만 recall 9/12=75%로 85% gate에 미달했다. Integrated event union recall 33/36=91.67%, no-hazard/hard-ground specificity 100%는 통과했지만 branch gate를 존중해 final asymmetric architecture는 supported로 선언하지 않는다. Recommended research candidate의 unique physical set은 LEFT_ONLY Terrain FSR4 + shared Pelvis IMU6 = 10 channels이며 final sensor architecture는 freeze하지 않는다.
 
@@ -76,6 +73,8 @@ Latest reflex research status는 `CONTINUOUS_SLIP_REFLEX_PROMISING`이다. Terra
 후속 `PER_FOOT_TERRAIN_MEMORY_SUPPORT_FUSION`은 기존 BILATERAL_SHARED FSR4/MLP/50 ms 후보를 frozen protocol에서 역사적 validation과 exact parity로 재구성하고, Terrain prediction에 causal touchdown-foot provenance를 보존했다. PF1(any loaded SAND-memory foot)은 TRAIN의 역사적 7개 suppression miss를 모두 rescue했고 PF1/PF2 모두 VALIDATION recall 12/12, suppression 0/12, Sand benign·hard specificity 100%를 기록했다. 그러나 두 정책 모두 6/12에서 약 565 ms premature authorization을 만들었고 Ice non-Support 9/40에도 held SAND-memory authorization이 발생했다. 따라서 선택 정책 없이 HOLDOUT access 0을 유지했으며 verdict는 `PER_FOOT_TERRAIN_SUPPORT_FUSION_NOT_SUPPORTED`다. FSR8 + Pelvis IMU6 14-channel system candidate와 final sensor architecture는 승인·freeze하지 않는다.
 
 `SUPPORT_EARLY_MODE_RESOLUTION`은 이 약 -565 ms raw mode를 TRAIN/VALIDATION에서 물리·gait audit했다. 24/24 episode가 한 same-foot stride(581–582 ms)와 맞았지만 조기 alert 시 loaded-foot spread는 6.508–6.553 mm였고 TRAIN no-Support phase envelope를 20 ms 이상 벗어났다. Cause verdict는 `SUPPORT_EARLY_MODE_PHYSICAL_PRECURSOR`다. TRAIN-only q99.5로 만든 I1/I2/I3 incipient reference는 모두 VALIDATION physical gate를 통과했지만, frozen Pelvis-IMU Support detector는 Ice non-Support specificity 9/24=37.5%로 continuous validation에 실패했다. 따라서 primary verdict는 `CONTINUOUS_SUPPORT_REFLEX_NOT_SUPPORTED`, HOLDOUT access는 0이며 HNM·sensor augmentation·integrated replay는 수행하지 않았다.
+
+`UNIFIED_HAZARD_REFLEX_SYSTEM_VALIDATION`은 fresh signature-disjoint 256-run corpus에서 cause correctness와 control-facing reflex decision을 분리했다. Dataset은 physical Slip 64, established Support 64(I1 coverage 100%), Sand benign 64, hard normal 64였고 invalid/pre-transition fall/duplicate/prior overlap은 모두 0이었다. Frozen Slip+Support OR Phase A는 validation overall 24/26와 specificity 26/26을 보였지만 Slip 11/13=84.62%로 gate를 실패했다. Predeclared Phase B의 Pelvis IMU6-derived 80D GRU 20 ms, threshold 0.99, persistence 5 ms는 validation과 one-shot fresh holdout에서 각각 hazard 26/26, Slip 13/13, Support 13/13, no-hazard 26/26, premature 0을 기록했다. Verdict는 `UNIFIED_HAZARD_REFLEX_SUPPORTED_SINGLE_IMU`다. Terrain FSR4는 advisory로만 유지하며 provisional unique set은 10 channels이고 final sensor architecture는 freeze하지 않았다.
 
 Dataset, ablation, holdout과 hardware-latency audit의 전체 근거는 [`20260828_terrain_rebuild_sensor_ablation.md`](reports/20260828_terrain_rebuild_sensor_ablation.md)에 기록한다.
 
@@ -92,6 +91,8 @@ Continuous raw Support와 causal Terrain context F0/F1/F2 availability 근거는
 Bilateral touchdown provenance, per-foot memory PF1/PF2와 premature authorization 근거는 [`20260829_per_foot_terrain_memory_support_fusion.md`](reports/20260829_per_foot_terrain_memory_support_fusion.md)에 기록한다.
 
 Support early mode의 gait periodicity, physical precursor와 continuous specificity 근거는 [`20260829_support_early_mode_resolution.md`](reports/20260829_support_early_mode_resolution.md)에 기록한다.
+
+Fresh unified physical-label corpus, frozen OR failure, conditional unified HNM과 one-shot holdout 근거는 [`20260829_unified_hazard_reflex_system.md`](reports/20260829_unified_hazard_reflex_system.md)에 기록한다.
 
 ## 구조
 

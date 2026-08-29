@@ -1,0 +1,261 @@
+schema_version: 1
+
+experiment:
+  id: UNIFIED_HAZARD_REFLEX_SYSTEM_VALIDATION
+  date: 2026-08-29
+  timezone: Asia/Seoul
+  source_commit_at_start: d3501ed4627bbea66929f6da04dfc032e48c3495
+  origin_main_at_start: d3501ed4627bbea66929f6da04dfc032e48c3495
+  branch_at_start: main
+  worktree_clean_at_start: true
+  objective: current_reflex_worthy_physical_hazard
+
+source:
+  simulator_config: configs/simulator/g1.yaml
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  scenario_calibration_config: configs/experiment/20260828_transition_scenario_calibration.yaml
+  scenario_calibration_sha256: fa7f6772c10f16c8f581147d00203ed0c70fcfd97c2dde86fd5ada077ebc6d7c
+  dense_design_config: configs/experiment/20260828_dense_fall_risk_detector_poc.yaml
+  dense_design_sha256: 1b53009b865f9a79b9037ad96fe3107906e7a0320a995f6438501ced2833d7ae
+  prior_manifests:
+    - {path: data/raw/hazard_pilot_20260827/manifest.csv, sha256: 2a539abe122f8d4e06429d39db2dc37ec6f7569a8360959e64681d9f0ac1cf3e}
+    - {path: data/raw/hazard_sensor_pilot_20260827/manifest.csv, sha256: 3b15ed5412682fe6a233334caf202b271b6a8d89155bd817568d28a73f54a3e3}
+    - {path: data/raw/sink_observability_20260827/manifest.csv, sha256: cbff615e3183024fc805b1cd3cae38c7d078d704ce8aff922700373c35f2b518}
+    - {path: data/raw/fall_risk_dense_20260828/manifest.json, sha256: 6c452caebdbc1a6f5b2feb639d15aa3627c1c3e4e6e343dbf9adff3b60b39207}
+    - {path: data/raw/reflex_event_20260828/manifest.json, sha256: 64f86ffcb6b3291c8f37537a4a732ff61aa700e135b09c60590bff48e83df936}
+    - {path: data/raw/reflex_event_foot_imu_20260828/manifest.json, sha256: c206e05dec4f6bb63a667a5fe8f0c1fd0e9c4d45f4c4e8901a571c81c0dba234}
+    - {path: data/raw/terrain_transition_20260828/manifest.csv, sha256: 2bca2070b24d4724b886ee83c20d493d63cb7cdd0a2ffc6596918a08c47e698a}
+
+common:
+  duration_s: 8.0
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  primary_speed_mps: 0.25
+  scenario_gate:
+    normal_prefix_ms_min: 500
+    post_contact_ms_min: 500
+    target_contact_required: true
+    finite_required: true
+    pretransition_fall_max: 0
+  runtime_model_forbidden:
+    - terrain_identity
+    - terrain_output
+    - slip_clock
+    - support_clock
+    - precursor_clock
+    - fall
+    - recovery
+    - time_to_event
+    - future_sample
+
+physical_semantics:
+  slip:
+    metric: touchdown_anchor_tangential_foot_drift_m
+    threshold_m: 0.050
+    persistence_ms: 3
+    aggregation: any_foot
+    valid_timing_ms: [-30, 40]
+  support_established:
+    metric: support_surface_spread_m
+    threshold_m: 0.010
+    persistence_ms: 20
+    reset: contact_episode_change_or_fall_censor
+    latest_valid_ms: 50
+  support_precursor_i1:
+    role: simulator_privileged_precursor_reference
+    score: positive_loaded_foot_spread_derivative_1ms
+    train_benign_quantile: 0.995
+    frozen_threshold: 0.0
+    persistence_ms: 20
+    future_outcome_used: false
+    deployable_threshold_claim: prohibited
+  label:
+    hazard_reflex_required: established_slip_or_established_support
+    precursor_accepts_support_alert: true
+    primary_no_hazard: no_slip_and_no_precursor_and_no_support
+    precursor_only_class: SUPPORT_PRECURSOR_ONLY
+    fall_recovery_dependency: false
+
+dataset:
+  dataset_id: unified_hazard_reflex_20260829
+  path: data/raw/unified_hazard_reflex_20260829
+  format: one_run_per_npz
+  total_designed_runs: 256
+  group_order: [ICE_SLIP_HAZARD, SAND_SUPPORT_HAZARD, SAND_BENIGN, HARD_GROUND_NORMAL]
+  groups:
+    ICE_SLIP_HAZARD:
+      runs: 64
+      sources: {concrete: 32, marble: 32}
+      speed_mps: 0.25
+      patch_starts_cycle: [0.33, 0.34, 0.36, 0.35]
+      width_schedule:
+        concrete: {first: 0.70155, step: 0.00150}
+        marble: {first: 0.70187, step: 0.00150}
+      mechanics: {target_terrain: ice, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+    SAND_SUPPORT_HAZARD:
+      runs: 64
+      sources: {concrete: 32, marble: 32}
+      speed_mps: 0.25
+      alternating_patch_starts: [0.30, 0.35]
+      width_schedule_per_anchor:
+        concrete: {first: 0.65023, step: 0.00600}
+        marble: {first: 0.65041, step: 0.00600}
+      mechanics: {target_terrain: sand, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable}
+    SAND_BENIGN:
+      runs: 64
+      sources: {concrete: 32, marble: 32}
+      speed_mps: 0.25
+      alternating_patch:
+        - {start: 0.30, sink_pattern: transition_left}
+        - {start: 0.35, sink_pattern: transition_right}
+      width_schedule_per_anchor:
+        concrete: {first: 0.72031, step: 0.00183}
+        marble: {first: 0.72041, step: 0.00180}
+      mechanics: {target_terrain: sand, slip_pattern: uniform, sink_severity: mild, support_pattern: balanced_deformable}
+    HARD_GROUND_NORMAL:
+      runs: 64
+      sources: {concrete: 32, marble: 32}
+      speed_schedule: {first: 0.15730, step: 0.00670}
+      mechanics: {slip_pattern: uniform, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft}
+  split_before_simulation:
+    concrete: {train: [1, 19], validation: [20, 26], holdout: [27, 32]}
+    marble: {train: [1, 19], validation: [20, 25], holdout: [26, 32]}
+    per_group: {train: 38, validation: 13, holdout: 13}
+    total: {train: 152, validation: 52, holdout: 52}
+    outcome_can_change_membership: false
+  stored_runtime_channels: [timestamp_us, pelvis_imu6, foot_fsr8]
+  stored_diagnostics: [slip_clock, support_spread, support_precursor_clock, support_established_clock, fall_recovery, terrain_prediction, provenance]
+  generated_committed: false
+
+readiness:
+  valid_runs_min: 240
+  established_slip_min: 50
+  established_support_min: 50
+  i1_support_coverage_min: 0.90
+  primary_no_hazard_min: 100
+  sand_benign_no_hazard_min: 50
+  hard_ground_no_hazard_min: 50
+  pretransition_fall_max: 0
+  duplicate_signature_max: 0
+  split_overlap_max: 0
+  prior_signature_overlap_max: 0
+  fail_verdict: UNIFIED_HAZARD_DATASET_NEEDS_REVISION
+
+phase_a:
+  architecture: FROZEN_DUAL_DETECTOR_HAZARD_SYSTEM
+  system_logic: slip_alert_or_support_alert
+  terrain_can_gate_reflex: false
+  slip:
+    freeze_path: artifacts/runs/20260829_continuous_slip_reflex_detector/slip_candidate_freeze.json
+    freeze_sha256: 6fa116278153479fc5b2c021f9b6011be08373fdd417a2c3236f9876186c52f3
+    components: [pelvis_imu6]
+    feature_dimension: 80
+    feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+    model_family: gru
+    history_ms: 20
+    threshold: 0.58
+    persistence_ms: 5
+    normalizer: {path: artifacts/runs/20260829_continuous_slip_reflex_detector/normalization/phase_a/a1.json, sha256: 1ca15a09a95157fbb5591f473959982aa03c40d642f2a205c8147d082264e991}
+    checkpoints:
+      - {path: artifacts/runs/20260829_continuous_slip_reflex_detector/checkpoints/phase_a/slip/a1_gru_history20_round3_seed20260828.pt, sha256: 68a769eff23d93917f64b94f6ba1ea4a787792da75eb49853c10d3786b28eb65}
+      - {path: artifacts/runs/20260829_continuous_slip_reflex_detector/checkpoints/phase_a/slip/a1_gru_history20_round3_seed20260829.pt, sha256: 8bbfe3cb78a5e99faf25b4b3c2e5720d02f3481fed1b4e7e74a91b035dbcde8d}
+      - {path: artifacts/runs/20260829_continuous_slip_reflex_detector/checkpoints/phase_a/slip/a1_gru_history20_round3_seed20260830.pt, sha256: 7129bbb4c5af039cb29643395940879654dc8a7a50e42c1919e274095c3234ed}
+  support:
+    components: [pelvis_imu6]
+    feature_dimension: 60
+    feature_schema_sha256: 4775bf9cdb1a6680c64c0c744caf69e34afb3628726594350133a59545835170
+    model_family: gru
+    history_ms: 20
+    threshold: 0.94
+    persistence_ms: 5
+    normalizer: {path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/normalization/phase_a/support/p3.json, sha256: db04b0fcb134141e91acaac66111835cfdede25a516201788c5f7fd42ca43b20}
+    checkpoints:
+      - {path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/checkpoints/phase_a/support/p3_gru_history20_round2_seed20260828.pt, sha256: 26d2bbbffd65dd5cf06424366754749d485511c46791632f1fe2062ae046aa21}
+      - {path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/checkpoints/phase_a/support/p3_gru_history20_round2_seed20260829.pt, sha256: d3e023ee89240283eb5f6d8f76a9bd1365dbca97de64b1ec76d06a23d44cf586}
+      - {path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/checkpoints/phase_a/support/p3_gru_history20_round2_seed20260830.pt, sha256: 0781b7ffc6887ad96e5ade7f482fe0d97b6e643322f6dd072767b4f15ab176dc}
+  validation_gates:
+    overall_hazard_recall_min: 0.90
+    slip_hazard_recall_min: 0.95
+    support_hazard_recall_min: 0.85
+    primary_no_hazard_specificity_min: 0.95
+    sand_benign_specificity_min: 0.95
+    hard_ground_specificity_min: 0.95
+    system_premature_run_rate_max: 0.10
+    slip_p95_latency_ms_max: 40
+    support_p95_established_latency_ms_max: 50
+    median_support_lead_ms_min: 0
+
+phase_b:
+  activation: phase_a_fails_validation
+  architecture: PHASE_B_UNIFIED_HAZARD_DETECTOR
+  runtime_sensor: pelvis_imu6_only
+  feature_union: canonical_deduplicated_existing_slip80_support60
+  new_transforms: prohibited
+  candidates:
+    - {model_family: gru, history_ms: 20}
+    - {model_family: gru, history_ms: 50}
+  support_positive_fractions: [0.0, 0.25, 0.50, 0.75, 1.0]
+  support_event_local_offsets_ms: [-20, 0, 20, 40]
+  slip_positive_interval_ms: [-30, 40]
+  slip_positive_stride_ms: 5
+  per_run_positive_cap: 20
+  initial_negative_per_gait_category: 12
+  hnm:
+    source_split: train_only
+    rounds: 3
+    top_k_per_run: 12
+    minimum_separation_ms: 30
+    replay_stride_ms: 1
+    precursor_region_never_negative: true
+    validation_access_before_round_3: prohibited
+  training:
+    seeds: [20260828, 20260829, 20260830]
+    optimizer: Adam
+    learning_rate: 0.001
+    batch_size: 128
+    max_epochs: 40
+    patience: 6
+    epoch_selection: internal_train_monitor_validation_loss
+  threshold:
+    split: validation_only_after_hnm3
+    grid: {start: 0.10, stop: 0.99, step: 0.01}
+    persistence_ms: 5
+  validation_gates: same_as_phase_a
+
+terrain_advisory:
+  candidate: {input: FSR4, model: MLP, horizon_ms: 50, classes: [CONCRETE, MARBLE, ICE, SAND]}
+  terrain_can_block_reflex: false
+  normalizer: {path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/normalization.json, sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de}
+  checkpoints:
+    - {path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_17.pt, sha256: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628}
+    - {path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_29.pt, sha256: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66}
+    - {path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_43.pt, sha256: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31}
+  deployment_scheme: left_only
+
+holdout:
+  split: fresh_holdout_52
+  access: once_after_final_candidate_freeze
+  waveform_access_before_freeze: prohibited
+  outcome_access_before_freeze: prohibited
+  allowed_pre_freeze: [file_existence, sha256, run_count, split_membership]
+  reselection: prohibited
+  gates:
+    overall_hazard_recall_min: 0.875
+    slip_hazard_recall_min: 0.90
+    support_hazard_recall_min: 0.80
+    primary_no_hazard_specificity_min: 0.90
+    sand_benign_specificity_min: 0.90
+    hard_ground_specificity_min: 0.90
+    system_premature_run_rate_max: 0.15
+    slip_p95_latency_ms_max: 50
+    support_p95_established_latency_ms_max: 50
+
+artifacts:
+  path: artifacts/runs/20260829_unified_hazard_reflex_system
+  output_path: simulation/outputs/unified_hazard_reflex_system
+  generated_committed: false
+
+report:
+  path: reports/20260829_unified_hazard_reflex_system.md

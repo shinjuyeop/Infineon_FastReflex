@@ -351,6 +351,28 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id == "UNIFIED_HAZARD_REFLEX_SYSTEM_VALIDATION":
+            from fastreflex.evaluation.unified_hazard_reflex import (
+                run_unified_hazard_reflex_system,
+            )
+
+            output_path, metrics = run_unified_hazard_reflex_system(
+                args.config, REPOSITORY_ROOT
+            )
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "dataset_ready": metrics["readiness"]["passed"],
+                        "selected_architecture": metrics["selected_architecture"],
+                        "holdout_performed": metrics["holdout"]["performed"],
+                        "verdict": metrics["verdict"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id == "SUPPORT_EARLY_MODE_RESOLUTION":
             from fastreflex.evaluation.support_early_mode import (
                 run_support_early_mode_resolution,

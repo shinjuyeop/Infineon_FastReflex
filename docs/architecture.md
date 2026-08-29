@@ -1,6 +1,6 @@
 # Architecture
 
-현재 primary target은 Terrain Recognition + Walking Stability Detection + deterministic State Fusion이다. `TERRAIN_RECOGNITION_SUPPORTED` milestone에서 current calibrated transition simulator로 four-class Terrain dataset을 새로 만들고 FSR4/Foot IMU6/Fusion10, MLP/GRU, 20/30/50 ms와 LEFT_ONLY/BILATERAL_SHARED를 validation-only selection 뒤 one-shot holdout으로 평가했다. Current Terrain research candidate는 FSR4/MLP/50 ms/LEFT_ONLY다. Historical phase-aware exact MoS clock과 Stability detector는 계속 실패 상태이며 final sensor architecture는 freeze하지 않았다. 이전 `SINK_SENSOR_OBSERVABILITY_PROMISING`과 direct NORMAL/SLIP/SINK 연구는 historical evidence로 보존한다.
+현재 primary control-facing candidate는 continuous unified Hazard Reflex와 independent Terrain advisory다. Fresh 256-run `UNIFIED_HAZARD_REFLEX_SYSTEM_VALIDATION`에서 Pelvis IMU6-derived 80D/GRU/20 ms/threshold 0.99/persistence 5 ms가 validation과 one-shot holdout의 Slip/Support hazard recall, Sand/hard specificity와 premature gate를 모두 통과했다. Current Terrain research candidate는 FSR4/MLP/50 ms/LEFT_ONLY이며 reflex를 gate하지 않고 cause refinement에만 사용한다. Historical phase-aware exact MoS clock과 Stability detector는 실패 상태로 보존하며 final sensor architecture는 E84/hardware validation 전까지 freeze하지 않는다.
 
 ## MuJoCo Baseline
 
@@ -66,9 +66,28 @@ touchdown foot FSR4, 50 ms
 
 `terrain_transition_20260828`은 exact contact geom identity를 GT로 쓰되 runtime tensor에는 한 발의 FSR4/Foot IMU6/Fusion10만 제공한다. Primary validation에서 only FSR4가 macro F1/worst recall 0.90/0.85 gate를 모두 통과했고, MLP와 50 ms가 선택됐다. LEFT_ONLY one-shot holdout macro F1 0.9713/worst recall 0.95로 current research candidate가 됐다.
 
-Terrain prediction은 clean touchdown 뒤 selected 50 ms observation에서 state를 갱신하고 다음 valid event까지 hold한다. LEFT_ONLY는 Pelvis IMU6 포함 10 channels지만 right-only Sand 18/144 runs에서 update가 없고 median delay 1114.5 ms다. BILATERAL_SHARED는 14 channels, 144/144 coverage, median 922 ms다. Recommendation은 `LEFT_FSR4_RECOMMENDED`이나 Stability와 actual hardware validation 전 final freeze는 아니다. Legacy Terrain v4는 source/data/model을 재사용하지 않은 historical comparison이다.
+Terrain prediction은 clean touchdown 뒤 selected 50 ms observation에서 state를 갱신하고 다음 valid event까지 hold한다. LEFT_ONLY는 Pelvis IMU6 포함 10 channels지만 right-only Sand 18/144 runs에서 update가 없고 median delay 1114.5 ms다. BILATERAL_SHARED는 14 channels, 144/144 coverage, median 922 ms다. Recommendation은 `LEFT_FSR4_RECOMMENDED`이나 E84 resource와 actual hardware validation 전 final freeze는 아니다. Legacy Terrain v4는 source/data/model을 재사용하지 않은 historical comparison이다.
 
-## Terrain + Stability + Fusion target
+## Current unified Hazard Reflex
+
+```text
+Pelvis IMU6, 1 kHz
+  -> existing causal Slip80 semantic-superset features
+  -> GRU, 20 ms, threshold 0.99, persistence 5 ms
+  -> HAZARD_REFLEX_REQUIRED
+
+FSR4 touchdown, 50 ms
+  -> frozen Terrain MLP
+  -> asynchronous cause refinement only
+```
+
+Primary physical reference is `established Slip OR established Support`. Slip remains 50 mm tangential drift for 3 ms. Support remains 10 mm heterogeneous support spread for 20 ms, while TRAIN-benign-q99.5 I1 loaded-foot spread derivative is a privileged earliest acceptable Support precursor. I1, terrain identity, physical clocks, fall and recovery never enter the runtime tensor. `SUPPORT_PRECURSOR_ONLY` is excluded from strict no-hazard specificity.
+
+The frozen Slip/Support detector OR was evaluated first and retired as the final candidate only because fresh validation Slip first-alert recall was 11/13. The predeclared single Pelvis IMU Phase B completed exactly three TRAIN-only HNM rounds for 20/50 ms GRUs before validation access. Both passed; 20 ms won the simpler-history rule. Fresh holdout had Slip 13/13, Support 13/13, no-hazard 26/26 and premature 0. Generated checkpoints remain Gitignored research artifacts, not a deployment release.
+
+Reflex precedes cause: current held Terrain may still describe the source terrain at alert time, so ICE/SAND disagreement cannot suppress the reflex. In the fresh holdout, reflex preceded first valid target Terrain in 15/26 hazard runs. The provisional physical set is Pelvis IMU6 + left FSR4 = 10 channels. Foot IMU and q/dq are not required by current evidence.
+
+## Historical Terrain + Stability + Fusion target
 
 ```text
                      runtime streams
@@ -136,11 +155,11 @@ Virtual FSR은 기존 sole collision contact에서만 읽으므로 geom, mass, f
 ## 현재 연구 순서
 
 1. 완료된 direct NORMAL/SLIP/SINK Pilot, FSR와 deformable-support evidence를 historical baseline으로 보존한다.
-2. Terrain과 Stability producer, deterministic fusion과 leakage boundary를 유지한다.
-3. 완료된 calibrated transition operating points와 matched-prefix contract를 유지한다.
-4. Supported rebuilt Terrain candidate와 LEFT_ONLY/BILATERAL tradeoff를 유지하되 final sensor architecture는 freeze하지 않는다.
-5. Clean transition scenarios에서 stable-domain phase/contact representation으로 exact `t_instability`를 다시 사전 선언하고 stable FP/fall coverage/lead gate를 통과시킨다.
-6. Gate 통과 뒤 같은 pelvis IMU6 deterministic rule과 small GRU를 동일 holdout에서 비교한다.
-7. 이후 Terrain+Stability evidence를 함께 review해 final sensor architecture와 Float release 여부를 별도 승인한다.
+2. Supported unified Pelvis IMU6 Hazard Reflex와 privileged/runtime leakage boundary를 유지한다.
+3. Terrain은 independent advisory producer로 유지하고 reflex persistence나 authorization을 gate하지 않는다.
+4. 완료된 calibrated transition operating points, physical Slip/Support clocks와 I1 limitation을 유지한다.
+5. Current provisional Pelvis IMU6 + left FSR4 10-channel candidate를 final sensor freeze로 과대 해석하지 않는다.
+6. Recovery/controller 변경 시 fall outcome과 detector evidence를 별도 protocol로 다시 검증한다.
+7. E84 compute/memory, integrated timing과 hardware realism review 뒤 Float release/final sensor architecture를 별도 승인한다.
 
 첫 설계에서는 복잡한 handcrafted feature pipeline을 사용하지 않는다. Research 경계 뒤의 quantization, Vela, firmware, HIL은 E84 deployment repository가 담당한다.

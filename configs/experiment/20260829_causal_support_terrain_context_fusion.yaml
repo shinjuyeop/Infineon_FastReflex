@@ -1,0 +1,154 @@
+schema_version: 1
+
+experiment:
+  id: CAUSAL_SUPPORT_TERRAIN_CONTEXT_FUSION
+  date: 2026-08-29
+  timezone: Asia/Seoul
+  source_commit_at_start: e3e475db207775def9da1cf4f367c099e76aed6d
+  origin_main_at_start: e3e475db207775def9da1cf4f367c099e76aed6d
+  branch_at_start: main
+  worktree_clean_at_start: true
+
+source:
+  event_dataset: data/raw/reflex_event_20260828
+  event_manifest: data/raw/reflex_event_20260828/manifest.json
+  foot_observer_dataset: data/raw/reflex_event_foot_imu_20260828
+  prior_reflex_config: configs/experiment/20260828_terrain_conditioned_reflex_detector.yaml
+  prior_selection: artifacts/runs/20260828_terrain_conditioned_reflex_detector/selection_before_holdout.json
+  prior_audit_report: reports/20260829_support_failure_mode_audit.md
+  development_terrain_gate_cache: artifacts/runs/20260828_terrain_conditioned_reflex_detector/terrain_gate/development
+  continuous_slip_config: configs/experiment/20260829_continuous_slip_reflex_detector.yaml
+  slip_freeze: artifacts/runs/20260829_continuous_slip_reflex_detector/slip_candidate_freeze.json
+
+frozen_support:
+  candidate_id: P3
+  components: [pelvis_imu6]
+  model_family: gru
+  history_ms: 20
+  probability_threshold: 0.94
+  persistence_ms: 5
+  feature_dimension: 60
+  feature_schema_sha256: 4775bf9cdb1a6680c64c0c744caf69e34afb3628726594350133a59545835170
+  valid_latency_ms: [-30, 50]
+  normalizer:
+    path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/normalization/phase_a/support/p3.json
+    sha256: db04b0fcb134141e91acaac66111835cfdede25a516201788c5f7fd42ca43b20
+  checkpoints:
+    - path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/checkpoints/phase_a/support/p3_gru_history20_round2_seed20260828.pt
+      sha256: 26d2bbbffd65dd5cf06424366754749d485511c46791632f1fe2062ae046aa21
+    - path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/checkpoints/phase_a/support/p3_gru_history20_round2_seed20260829.pt
+      sha256: d3e023ee89240283eb5f6d8f76a9bd1365dbca97de64b1ec76d06a23d44cf586
+    - path: artifacts/runs/20260828_terrain_conditioned_reflex_detector/checkpoints/phase_a/support/p3_gru_history20_round2_seed20260830.pt
+      sha256: 0781b7ffc6887ad96e5ade7f482fe0d97b6e643322f6dd072767b4f15ab176dc
+  retraining: prohibited
+  threshold_tuning: prohibited
+  persistence_tuning: prohibited
+
+frozen_terrain:
+  candidate: {sensor_profile: fsr4, model_family: mlp, observation_ms: 50}
+  deployment_scheme: left_only
+  interface:
+    global_held_state: true
+    prediction_timestamps: true
+    prediction_classes: true
+    prediction_probabilities: true
+    prediction_foot_identity: false
+    per_foot_memory: false
+  normalizer:
+    path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/normalization.json
+    sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+  checkpoints:
+    - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_17.pt
+      sha256: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+    - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_29.pt
+      sha256: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+    - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_43.pt
+      sha256: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+  retraining: prohibited
+  observation_change: prohibited
+
+raw_detection:
+  continuous_across_terrain_states: true
+  terrain_can_reset_score: false
+  terrain_can_reset_persistence: false
+  terrain_can_modify_hidden_state: false
+  semantics: score_at_or_above_threshold_for_persistence_ms
+
+policies:
+  F0:
+    name: HISTORICAL_EXACT_GLOBAL_GATE
+    selectable_if_context_suppression_reproduced: false
+    context: current_global_terrain_equals_sand
+  F1:
+    name: CAUSAL_RECENT_SAND_GRACE
+    grace_ms: 50
+    last_sand_clock: last_sample_where_frozen_global_output_equals_sand
+    context: current_sand_or_elapsed_since_last_sand_at_most_grace
+    reset: [simulation_reset, explicit_censor, grace_expiry]
+    non_sand_update_immediate_reset: false
+    grace_sweep: prohibited
+  F2:
+    name: SUPPORT_FOOT_TERRAIN_MEMORY
+    availability_requires:
+      - frozen_prediction_foot_identity
+      - frozen_per_foot_update_provenance
+      - canonical_runtime_supporting_foot_state
+    unavailable_result: PER_FOOT_TERRAIN_CONTEXT_UNAVAILABLE_WITH_FROZEN_INTERFACE
+    simulator_terrain_truth: prohibited
+
+selection:
+  source_split: validation_only
+  validation_gates:
+    support_recall_min: 0.95
+    sand_benign_specificity_min: 0.95
+    premature_event_run_rate_max: 0.05
+    median_fusion_latency_ms_max: 20
+    p95_fusion_latency_ms_max: 50
+    context_suppression_rate_max: 0.05
+    hard_ground_specificity_min: 0.95
+  priority:
+    - lower_context_suppression
+    - higher_support_recall
+    - higher_benign_specificity
+    - lower_premature_rate
+    - lower_p95_latency
+    - simpler_runtime_state
+    - shorter_bounded_memory
+  near_tie:
+    recall_percentage_points_max: 2
+    specificity_percentage_points_max: 2
+    p95_latency_ms_max: 5
+    prefer_simpler: true
+  F0_reproduced_suppression_disqualifies_selection: true
+
+holdout:
+  access: once_after_policy_freeze
+  reselection: prohibited
+  gates:
+    support_recall_min: 0.90
+    sand_benign_specificity_min: 0.90
+    premature_event_run_rate_max: 0.10
+    context_suppression_rate_max: 0.10
+    median_fusion_latency_ms_max: 25
+    p95_fusion_latency_ms_max: 50
+    hard_ground_specificity_min: 0.90
+
+protected_slip:
+  freeze_artifact_sha256: df0a232ec242283ef8b25c59421cebde982a7a93febb655cc511fa2fa3de3229
+  retraining: prohibited
+  modification: prohibited
+
+regression:
+  support_hashes_unchanged: required
+  terrain_hashes_unchanged: required
+  slip_hashes_unchanged: required
+  fusion_truth_table: required
+  simulator_viewer_parity: required
+  final_sensor_architecture_freeze: prohibited
+
+artifacts:
+  path: simulation/outputs/causal_support_terrain_context_fusion
+  generated_committed: false
+
+report:
+  path: reports/20260829_causal_support_terrain_context_fusion.md

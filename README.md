@@ -71,6 +71,8 @@ Latest reflex research status는 `CONTINUOUS_SLIP_REFLEX_PROMISING`이다. Terra
 
 후속 `SUPPORT_FAILURE_MODE_AUDIT`은 HOLDOUT을 재사용하지 않고 frozen Support branch를 TRAIN/VALIDATION에 replay했다. TRAIN은 29/36=80.56%, VALIDATION은 12/12=100%, negative false reflex는 0/156이었다. TRAIN miss 7건 모두 ungated Support score가 threshold를 넘고 16–63 ms 지속됐지만 Support onset 직전 frozen Terrain state가 SAND에서 ICE/MARBLE로 바뀌어 gated persistence가 0 ms였다. 따라서 development evidence의 primary failure는 sensor/score 부족이 아니라 `GATING_SUPPRESSION`이며 observability 판단은 `SUPPORT_SIGNAL_PRESENT_BUT_DECISION_WEAK`이다. Detector, threshold, persistence, Terrain, Slip, sensor set은 변경하지 않았고 기존 HOLDOUT은 소비된 evidence로 유지한다.
 
+`CAUSAL_SUPPORT_TERRAIN_CONTEXT_FUSION`은 raw Support persistence를 Terrain과 분리한 뒤 current-SAND F0와 predeclared 50 ms recent-SAND F1을 비교했다. F0는 VALIDATION gate를 수치상 통과했지만 TRAIN suppression 7건을 그대로 재현해 선택 불가였다. F1은 TRAIN miss 중 2건만 rescue하고 5건 suppression을 남겼으며, VALIDATION 6/12에서 stale-Sand context가 약 565 ms 이른 raw alert를 system event로 승인해 premature 50%로 실패했다. Frozen Terrain interface에 foot identity/per-foot memory가 없어 F2는 구현하지 않았고, 선택 정책이 없으므로 HOLDOUT access는 0이었다. Verdict는 `CAUSAL_SUPPORT_TERRAIN_FUSION_NOT_SUPPORTED`이며 detector/sensor/terrain 변경이나 grace sweep은 수행하지 않았다.
+
 Dataset, ablation, holdout과 hardware-latency audit의 전체 근거는 [`20260828_terrain_rebuild_sensor_ablation.md`](reports/20260828_terrain_rebuild_sensor_ablation.md)에 기록한다.
 
 Event-centric physical-label corpus와 detector failure evidence는 [`20260828_event_centric_reflex_trigger.md`](reports/20260828_event_centric_reflex_trigger.md)에 기록한다.
@@ -80,6 +82,8 @@ Terrain-conditioned branch timing, HNM, Support validation과 Foot IMU fallback 
 Terrain-independent continuous Slip HNM, one-shot holdout과 asymmetric system 근거는 [`20260829_continuous_slip_reflex_detector.md`](reports/20260829_continuous_slip_reflex_detector.md)에 기록한다.
 
 Frozen Support TRAIN/VALIDATION failure-mode와 gating evidence는 [`20260829_support_failure_mode_audit.md`](reports/20260829_support_failure_mode_audit.md)에 기록한다.
+
+Continuous raw Support와 causal Terrain context F0/F1/F2 availability 근거는 [`20260829_causal_support_terrain_context_fusion.md`](reports/20260829_causal_support_terrain_context_fusion.md)에 기록한다.
 
 ## 구조
 

@@ -69,6 +69,8 @@ Latest reflex research status는 `CONTINUOUS_SLIP_REFLEX_PROMISING`이다. Terra
 
 동일 one-shot holdout에서 변경하지 않은 frozen Sand Support branch는 benign specificity 12/12와 premature 0%를 유지했지만 recall 9/12=75%로 85% gate에 미달했다. Integrated event union recall 33/36=91.67%, no-hazard/hard-ground specificity 100%는 통과했지만 branch gate를 존중해 final asymmetric architecture는 supported로 선언하지 않는다. Recommended research candidate의 unique physical set은 LEFT_ONLY Terrain FSR4 + shared Pelvis IMU6 = 10 channels이며 final sensor architecture는 freeze하지 않는다.
 
+후속 `SUPPORT_FAILURE_MODE_AUDIT`은 HOLDOUT을 재사용하지 않고 frozen Support branch를 TRAIN/VALIDATION에 replay했다. TRAIN은 29/36=80.56%, VALIDATION은 12/12=100%, negative false reflex는 0/156이었다. TRAIN miss 7건 모두 ungated Support score가 threshold를 넘고 16–63 ms 지속됐지만 Support onset 직전 frozen Terrain state가 SAND에서 ICE/MARBLE로 바뀌어 gated persistence가 0 ms였다. 따라서 development evidence의 primary failure는 sensor/score 부족이 아니라 `GATING_SUPPRESSION`이며 observability 판단은 `SUPPORT_SIGNAL_PRESENT_BUT_DECISION_WEAK`이다. Detector, threshold, persistence, Terrain, Slip, sensor set은 변경하지 않았고 기존 HOLDOUT은 소비된 evidence로 유지한다.
+
 Dataset, ablation, holdout과 hardware-latency audit의 전체 근거는 [`20260828_terrain_rebuild_sensor_ablation.md`](reports/20260828_terrain_rebuild_sensor_ablation.md)에 기록한다.
 
 Event-centric physical-label corpus와 detector failure evidence는 [`20260828_event_centric_reflex_trigger.md`](reports/20260828_event_centric_reflex_trigger.md)에 기록한다.
@@ -76,6 +78,8 @@ Event-centric physical-label corpus와 detector failure evidence는 [`20260828_e
 Terrain-conditioned branch timing, HNM, Support validation과 Foot IMU fallback 근거는 [`20260828_terrain_conditioned_reflex_detector.md`](reports/20260828_terrain_conditioned_reflex_detector.md)에 기록한다.
 
 Terrain-independent continuous Slip HNM, one-shot holdout과 asymmetric system 근거는 [`20260829_continuous_slip_reflex_detector.md`](reports/20260829_continuous_slip_reflex_detector.md)에 기록한다.
+
+Frozen Support TRAIN/VALIDATION failure-mode와 gating evidence는 [`20260829_support_failure_mode_audit.md`](reports/20260829_support_failure_mode_audit.md)에 기록한다.
 
 ## 구조
 

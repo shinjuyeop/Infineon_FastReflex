@@ -23,6 +23,7 @@ data/cache/
 artifacts/runs/
 artifacts/checkpoints/
 artifacts/tmp/
+simulation/outputs/
 *.pt
 *.pth
 *.onnx

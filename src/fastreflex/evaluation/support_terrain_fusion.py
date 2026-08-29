@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -36,12 +37,14 @@ from fastreflex.evaluation.support_failure_audit import (
 from fastreflex.evaluation.terrain_conditioned_reflex import (
     SAND,
     TERRAIN_STATE_NAMES,
+    UNKNOWN,
     BranchReplay,
     TerrainGateTrace,
     _canonical_sha256,
     _replay_many,
     branch_event_sample,
     sustained_alert_trace,
+    terrain_predictions,
 )
 from fastreflex.evaluation.transition_scenarios import fusion_regression
 
@@ -58,6 +61,118 @@ VERDICTS = (
     "CAUSAL_SUPPORT_TERRAIN_FUSION_PROMISING",
     "CAUSAL_SUPPORT_TERRAIN_FUSION_NOT_SUPPORTED",
 )
+PER_FOOT_EXPERIMENT_ID = "PER_FOOT_TERRAIN_MEMORY_SUPPORT_FUSION"
+POLICY_PF1 = "PF1"
+POLICY_PF2 = "PF2"
+PER_FOOT_POLICIES = (POLICY_PF1, POLICY_PF2)
+FOOT_NAMES = ("LEFT", "RIGHT")
+
+
+@dataclass(frozen=True)
+class PerFootTerrainMemoryTrace:
+    """Causal held Terrain state and last-update clock for each foot."""
+
+    state: np.ndarray
+    last_update_sample: np.ndarray
+
+
+def per_foot_terrain_memory(
+    trace: TerrainGateTrace, samples: int | None = None
+) -> PerFootTerrainMemoryTrace:
+    """Replay independent LEFT/RIGHT memories from prediction provenance only."""
+    sample_count = len(trace.state) if samples is None else int(samples)
+    if sample_count != len(trace.state):
+        raise ValueError("per-foot memory must align with Terrain trace")
+    records = terrain_predictions(trace)
+    updates = np.asarray(
+        [record.prediction_timestamp for record in records], dtype=np.int64
+    )
+    predictions = np.asarray([record.class_id for record in records], dtype=np.int64)
+    feet_array = np.asarray(
+        [record.touchdown_foot for record in records], dtype="<U5"
+    )
+    if np.any(updates < 0) or np.any(updates >= sample_count):
+        raise ValueError("Terrain prediction timestamp is outside the run")
+    if np.any(predictions < 0) or np.any(predictions >= 4):
+        raise ValueError("Terrain prediction class ID is invalid")
+    if any(value not in FOOT_NAMES for value in feet_array.tolist()):
+        raise ValueError("Terrain prediction foot must be LEFT or RIGHT")
+
+    state = np.full((sample_count, 2), UNKNOWN, dtype=np.int8)
+    last = np.full((sample_count, 2), -1, dtype=np.int64)
+    current = np.full(2, UNKNOWN, dtype=np.int8)
+    current_last = np.full(2, -1, dtype=np.int64)
+    cursor = 0
+    order = sorted(range(len(updates)), key=lambda index: (int(updates[index]), index))
+    position = 0
+    while position < len(order):
+        update = int(updates[order[position]])
+        state[cursor:update] = current
+        last[cursor:update] = current_last
+        while position < len(order) and int(updates[order[position]]) == update:
+            index = order[position]
+            side = FOOT_NAMES.index(str(feet_array[index]))
+            current[side] = int(predictions[index]) + 1
+            current_last[side] = update
+            position += 1
+        cursor = update
+    state[cursor:] = current
+    last[cursor:] = current_last
+    return PerFootTerrainMemoryTrace(state=state, last_update_sample=last)
+
+
+def fsr_loaded_feet(
+    fsr8: np.ndarray, *, epsilon_n: float = 1.0e-6
+) -> tuple[np.ndarray, np.ndarray]:
+    """Derive current support/load state causally from bilateral virtual FSR."""
+    values = np.asarray(fsr8, dtype=np.float64)
+    if (
+        values.ndim != 2
+        or values.shape[1] != 8
+        or not np.all(np.isfinite(values))
+        or np.any(values < 0.0)
+        or epsilon_n < 0.0
+    ):
+        raise ValueError("FSR8 must be finite nonnegative [samples,8]")
+    totals = np.column_stack((values[:, :4].sum(axis=1), values[:, 4:].sum(axis=1)))
+    return totals > float(epsilon_n), totals
+
+
+def per_foot_context(
+    policy: str,
+    memory: np.ndarray,
+    loaded: np.ndarray,
+    totals: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return PF1/PF2 authorization and causal dominant-foot index."""
+    states = np.asarray(memory, dtype=np.int8)
+    supports = np.asarray(loaded, dtype=bool)
+    forces = np.asarray(totals, dtype=np.float64)
+    if not (states.shape == supports.shape == forces.shape) or states.shape[1:] != (2,):
+        raise ValueError("per-foot memory/load tensors must align as [samples,2]")
+    dominant = np.argmax(forces, axis=1).astype(np.int8)  # exact ties select LEFT
+    any_load = np.any(supports, axis=1)
+    if policy == POLICY_PF1:
+        context = np.any(supports & (states == SAND), axis=1)
+    elif policy == POLICY_PF2:
+        rows = np.arange(len(states), dtype=np.int64)
+        context = any_load & (states[rows, dominant] == SAND)
+    else:
+        raise ValueError("per-foot policy must be PF1 or PF2")
+    return context.astype(bool), dominant
+
+
+def _context_gate(trace: TerrainGateTrace, context: np.ndarray) -> TerrainGateTrace:
+    state = np.where(np.asarray(context, dtype=bool), SAND, UNKNOWN).astype(np.int8)
+    return TerrainGateTrace(
+        state=state,
+        update_samples=trace.update_samples,
+        prediction_ids=trace.prediction_ids,
+        prediction_probabilities=trace.prediction_probabilities,
+        first_target_valid_sample=trace.first_target_valid_sample,
+        clean_event_count=trace.clean_event_count,
+        prediction_feet=trace.prediction_feet,
+    )
 
 
 def raw_support_alert(
@@ -133,19 +248,19 @@ def terrain_interface_audit() -> dict[str, object]:
     foot_fields = tuple(
         value for value in fields if "foot" in value or "side" in value
     )
-    per_foot_available = bool(foot_fields) and "state_per_foot" in fields
+    prediction_foot_available = "prediction_feet" in fields
     return {
-        "interface_class": "GLOBAL_HELD_STATE_WITH_PREDICTION_HISTORY",
+        "interface_class": "HELD_STATE_WITH_TOUCHDOWN_FOOT_PROVENANCE",
         "trace_fields": list(fields),
         "global_held_state": "state" in fields,
         "prediction_timestamps": "update_samples" in fields,
         "prediction_classes": "prediction_ids" in fields,
         "prediction_probabilities": "prediction_probabilities" in fields,
-        "prediction_foot_identity": False,
-        "per_foot_memory": False,
+        "prediction_foot_identity": prediction_foot_available,
+        "per_foot_memory": prediction_foot_available,
         "foot_related_fields": list(foot_fields),
-        "F2_implementable": per_foot_available,
-        "F2_result": None if per_foot_available else PER_FOOT_UNAVAILABLE,
+        "F2_implementable": prediction_foot_available,
+        "F2_result": None if prediction_foot_available else PER_FOOT_UNAVAILABLE,
         "exact_terrain_truth_used_by_fusion": False,
     }
 
@@ -450,6 +565,200 @@ def evaluate_policy(
     }
 
 
+def _per_foot_run_state(
+    run: EventRun,
+    gate: TerrainGateTrace,
+    policy: str,
+    epsilon_n: float,
+) -> tuple[PerFootTerrainMemoryTrace, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    memory = per_foot_terrain_memory(gate)
+    fsr8 = np.asarray(run.features["PELVIS_IMU6_FSR8"][:, 6:], dtype=np.float32)
+    loaded, totals = fsr_loaded_feet(fsr8, epsilon_n=epsilon_n)
+    context, dominant = per_foot_context(
+        policy, memory.state, loaded, totals
+    )
+    return memory, loaded, totals, context, dominant
+
+
+def _memory_names(values: np.ndarray) -> list[str]:
+    return [TERRAIN_STATE_NAMES[int(value)] for value in values]
+
+
+def _false_authorization_mechanism(
+    run: EventRun,
+    replay: BranchReplay,
+    endpoint_index: int,
+    memory: PerFootTerrainMemoryTrace,
+    loaded: np.ndarray,
+    dominant: np.ndarray,
+    policy: str,
+) -> str:
+    sample = int(replay.endpoints[endpoint_index])
+    memories = memory.state[sample]
+    active = loaded[sample]
+    if policy == POLICY_PF1 and np.any((memories == SAND) & ~active) and not np.any(
+        (memories == SAND) & active
+    ):
+        return "unloaded_sand_memory_foot_incorrectly_authorized"
+    selected = (
+        np.flatnonzero(active & (memories == SAND))
+        if policy == POLICY_PF1
+        else np.asarray([int(dominant[sample])], dtype=np.int64)
+    )
+    ages = [
+        sample - int(memory.last_update_sample[sample, side])
+        for side in selected
+        if int(memory.last_update_sample[sample, side]) >= 0
+    ]
+    if run.target_terrain != "sand":
+        if ages and max(ages) > 50:
+            return "stale_per_foot_terrain_memory"
+        return "terrain_misclassification"
+    if run.event_sample is None:
+        return "raw_support_false_alert"
+    if ages and max(ages) > 50 and replay.terrain_state[endpoint_index] != SAND:
+        return "stale_per_foot_terrain_memory"
+    return "raw_support_false_alert"
+
+
+def evaluate_per_foot_policy(
+    policy: str,
+    runs: Mapping[str, EventRun],
+    gates: Mapping[str, TerrainGateTrace],
+    replays: Mapping[str, BranchReplay],
+    *,
+    threshold: float = 0.94,
+    persistence_ms: int = 5,
+    epsilon_n: float = 1.0e-6,
+) -> dict[str, object]:
+    """Evaluate PF1/PF2 using only prediction provenance and current FSR8."""
+    if policy not in PER_FOOT_POLICIES:
+        raise ValueError("selection pool contains exactly PF1 and PF2")
+    contexts: dict[str, np.ndarray] = {}
+    states: dict[
+        str,
+        tuple[PerFootTerrainMemoryTrace, np.ndarray, np.ndarray, np.ndarray],
+    ] = {}
+    proxy_gates = {}
+    for run_id, run in runs.items():
+        memory, loaded, totals, context, dominant = _per_foot_run_state(
+            run, gates[run_id], policy, epsilon_n
+        )
+        contexts[run_id] = context
+        states[run_id] = (memory, loaded, totals, dominant)
+        proxy_gates[run_id] = _context_gate(gates[run_id], context)
+
+    metrics = evaluate_policy(
+        POLICY_F0,
+        runs,
+        proxy_gates,
+        replays,
+        threshold=threshold,
+        persistence_ms=persistence_ms,
+    )
+    metrics["policy"] = policy
+    system_alert_samples = 0
+    prediction_count = {"LEFT": 0, "RIGHT": 0}
+    class_distribution = {
+        foot: {name: 0 for name in TERRAIN_STATE_NAMES[1:]}
+        for foot in FOOT_NAMES
+    }
+    no_memory_support_events = 0
+
+    for run_id, gate in gates.items():
+        if gate.prediction_feet is None:
+            raise ValueError("per-foot fusion requires prediction foot provenance")
+        for foot, prediction in zip(gate.prediction_feet, gate.prediction_ids):
+            name = str(foot).upper()
+            prediction_count[name] += 1
+            class_distribution[name][TERRAIN_STATE_NAMES[int(prediction) + 1]] += 1
+        replay = replays[run_id]
+        raw, _ = raw_support_alert(
+            replay.probabilities,
+            threshold=threshold,
+            persistence_ms=persistence_ms,
+        )
+        context_at_endpoints = contexts[run_id][replay.endpoints]
+        risk, _ = support_risk_trace(raw, context_at_endpoints)
+        system_alert_samples += int(np.count_nonzero(risk))
+
+    event_rows = {str(row["run_id"]): row for row in metrics["event_rows"]}
+    for run_id, row in event_rows.items():
+        run = runs[run_id]
+        memory, loaded, totals, dominant = states[run_id]
+        event = int(row["support_event_sample"])
+        memories = memory.state[event]
+        last = memory.last_update_sample[event]
+        active = loaded[event]
+        row["policy"] = policy
+        row["terrain_memory_at_support"] = _memory_names(memories)
+        row["terrain_memory_age_ms_at_support"] = [
+            None if int(value) < 0 else event - int(value) for value in last
+        ]
+        row["loaded_feet_at_support"] = active.astype(bool).tolist()
+        row["foot_total_fsr_n_at_support"] = totals[event].astype(float).tolist()
+        row["dominant_foot_at_support"] = FOOT_NAMES[int(dominant[event])]
+        row["sand_memory_feet_at_support"] = [
+            FOOT_NAMES[index]
+            for index in np.flatnonzero(memories == SAND).tolist()
+        ]
+        row["supporting_sand_memory_feet_at_support"] = [
+            FOOT_NAMES[index]
+            for index in np.flatnonzero(active & (memories == SAND)).tolist()
+        ]
+        if np.any(active) and not np.any((memories != UNKNOWN) & active):
+            no_memory_support_events += 1
+        premature = row["fusion_premature_sample"]
+        if premature is not None:
+            index = int(np.flatnonzero(replays[run_id].endpoints == int(premature))[0])
+            row["fusion_premature_mechanism"] = _false_authorization_mechanism(
+                run,
+                replays[run_id],
+                index,
+                memory,
+                loaded,
+                dominant,
+                policy,
+            )
+
+    mechanisms: dict[str, int] = {}
+    for row in metrics["negative_rows"]:
+        row["policy"] = policy
+        if not bool(row["system_false_reflex"]):
+            row["false_positive_mechanism"] = "none"
+            continue
+        run_id = str(row["run_id"])
+        replay = replays[run_id]
+        memory, loaded, _, dominant = states[run_id]
+        raw, _ = raw_support_alert(
+            replay.probabilities,
+            threshold=threshold,
+            persistence_ms=persistence_ms,
+        )
+        risk, onset = support_risk_trace(raw, contexts[run_id][replay.endpoints])
+        indices = np.flatnonzero(onset)
+        index = int(indices[0]) if len(indices) else int(np.flatnonzero(risk)[0])
+        mechanism = _false_authorization_mechanism(
+            runs[run_id], replay, index, memory, loaded, dominant, policy
+        )
+        row["false_positive_mechanism"] = mechanism
+        mechanisms[mechanism] = mechanisms.get(mechanism, 0) + 1
+
+    premature_mechanisms: dict[str, int] = {}
+    for row in metrics["event_rows"]:
+        if row["fusion_premature_sample"] is not None:
+            key = str(row["fusion_premature_mechanism"])
+            premature_mechanisms[key] = premature_mechanisms.get(key, 0) + 1
+    metrics["false_positive_mechanisms"] = dict(sorted(mechanisms.items()))
+    metrics["premature_mechanisms"] = dict(sorted(premature_mechanisms.items()))
+    metrics["system_alert_samples"] = system_alert_samples
+    metrics["system_alert_duration_ms"] = system_alert_samples
+    metrics["terrain_prediction_count_by_foot"] = prediction_count
+    metrics["terrain_prediction_class_distribution_by_foot"] = class_distribution
+    metrics["support_events_without_valid_loaded_foot_memory"] = no_memory_support_events
+    return metrics
+
+
 def policy_gate_results(
     metrics: Mapping[str, object], gates: Mapping[str, object]
 ) -> dict[str, bool]:
@@ -518,6 +827,62 @@ def select_validation_policy(
         "selected": str(selected["policy"]),
         "candidates": candidates,
         "selection_priority_applied": True,
+    }
+
+
+def select_per_foot_policy(
+    validation: Mapping[str, Mapping[str, object]],
+    validation_gates: Mapping[str, object],
+) -> dict[str, object]:
+    """Select only PF1/PF2 using the predeclared validation ordering."""
+    candidates = []
+    for policy in PER_FOOT_POLICIES:
+        checks = policy_gate_results(validation[policy], validation_gates)
+        candidates.append(
+            {"policy": policy, "gates": checks, "passed": all(checks.values())}
+        )
+    passing = [row for row in candidates if bool(row["passed"])]
+    if not passing:
+        return {"selected": None, "candidates": candidates}
+    if len(passing) == 1:
+        return {"selected": passing[0]["policy"], "candidates": candidates}
+
+    pf1 = validation[POLICY_PF1]
+    pf2 = validation[POLICY_PF2]
+    same_primary = (
+        float(pf1["support_recall"]) == float(pf2["support_recall"])
+        and float(pf1["context_suppression_rate"])
+        == float(pf2["context_suppression_rate"])
+        and float(pf1["premature_event_run_rate"])
+        == float(pf2["premature_event_run_rate"])
+        and float(pf1["sand_benign_specificity"])
+        == float(pf2["sand_benign_specificity"])
+        and float(pf1["hard_ground_specificity"])
+        == float(pf2["hard_ground_specificity"])
+        and float(pf1["fusion_latency_ms"]["p95"])
+        == float(pf2["fusion_latency_ms"]["p95"])
+    )
+    if same_primary:
+        selected = POLICY_PF1
+        reason = "near_tie_prefer_pf1"
+    else:
+        def rank(policy: str) -> tuple[float, ...]:
+            metrics = validation[policy]
+            return (
+                float(metrics["support_recall"]),
+                -float(metrics["context_suppression_rate"]),
+                -float(metrics["premature_event_run_rate"]),
+                float(metrics["sand_benign_specificity"]),
+                -float(metrics["fusion_latency_ms"]["p95"]),
+                float(policy == POLICY_PF1),
+            )
+
+        selected = max(PER_FOOT_POLICIES, key=rank)
+        reason = "predeclared_priority"
+    return {
+        "selected": selected,
+        "candidates": candidates,
+        "selection_reason": reason,
     }
 
 
@@ -696,8 +1061,6 @@ def run_causal_support_terrain_context_fusion(
     output_path = repository_root / str(document["artifacts"]["path"])
     output_path.mkdir(parents=True, exist_ok=True)
     interface = terrain_interface_audit()
-    if bool(interface["F2_implementable"]):
-        raise RuntimeError("F2 implementation requires an explicit reviewed contract")
     declared_before = _verify_declared_hashes(repository_root, document)
 
     prior_config = _load_yaml(
@@ -957,6 +1320,463 @@ def run_causal_support_terrain_context_fusion(
     return summary_path, summary
 
 
+def _reference_replays(
+    replays: Mapping[str, BranchReplay],
+    gates: Mapping[str, TerrainGateTrace],
+) -> dict[str, BranchReplay]:
+    return {
+        run_id: BranchReplay(
+            endpoints=replay.endpoints,
+            probabilities=replay.probabilities,
+            terrain_state=gates[run_id].state[replay.endpoints],
+        )
+        for run_id, replay in replays.items()
+    }
+
+
+def _metric_contract(metrics: Mapping[str, object]) -> dict[str, object]:
+    keys = (
+        "event_runs",
+        "support_recall",
+        "detected_events",
+        "missed_events",
+        "premature_event_runs",
+        "premature_event_run_rate",
+        "context_suppression_count",
+        "context_suppression_rate",
+        "sand_benign_runs",
+        "sand_benign_specificity",
+        "hard_ground_runs",
+        "hard_ground_specificity",
+    )
+    return {key: metrics[key] for key in keys}
+
+
+def _per_foot_policy_freeze(
+    document: Mapping[str, object],
+    config_path: Path,
+    selected: str,
+    reconstruction: Mapping[str, object],
+    protected_hashes: Mapping[str, str],
+    validation_metrics: Mapping[str, object],
+) -> dict[str, object]:
+    freeze = {
+        "experiment": PER_FOOT_EXPERIMENT_ID,
+        "source_commit": document["experiment"]["source_commit_at_start"],
+        "config_path": str(config_path),
+        "config_sha256": _file_sha256(config_path),
+        "selected_policy": selected,
+        "policy_contract": document["policies"][selected],
+        "terrain_prediction_interface": document["terrain_prediction_interface"],
+        "per_foot_memory": document["per_foot_memory"],
+        "loaded_foot": document["loaded_foot"],
+        "bilateral_terrain": {
+            "contract": document["bilateral_terrain"],
+            "reconstruction": reconstruction,
+        },
+        "frozen_support": document["frozen_support"],
+        "protected_hashes": dict(protected_hashes),
+        "validation_metrics": _without_rows(validation_metrics),
+        "holdout_open_count_before_freeze": 0,
+        "reselection_after_holdout": False,
+    }
+    freeze["artifact_sha256"] = _canonical_sha256(freeze)
+    return freeze
+
+
+def _memory_age_summary(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    ages = []
+    missing = 0
+    for row in rows:
+        active = row["loaded_feet_at_support"]
+        values = row["terrain_memory_age_ms_at_support"]
+        selected = [value for value, loaded in zip(values, active) if loaded]
+        if not selected or all(value is None for value in selected):
+            missing += 1
+        ages.extend(int(value) for value in selected if value is not None)
+    return {
+        "loaded_foot_memory_age_ms": _percentiles(ages),
+        "events_without_valid_loaded_foot_memory": missing,
+    }
+
+
+def run_per_foot_terrain_memory_support_fusion(
+    config_path: Path,
+    repository_root: Path,
+) -> tuple[Path, dict[str, object]]:
+    """Reconstruct fixed bilateral Terrain output, select PF1/PF2, open holdout once."""
+    from fastreflex.training.terrain import reconstruct_bilateral_shared_candidate
+
+    root = repository_root.resolve()
+    config_path = config_path.resolve()
+    document = _load_yaml(config_path)
+    if document["experiment"]["id"] != PER_FOOT_EXPERIMENT_ID:
+        raise ValueError("unsupported per-foot Terrain fusion experiment")
+    output = root / str(document["artifacts"]["path"])
+    summary_path = output / "summary.json"
+    if summary_path.exists():
+        raise FileExistsError("refusing to open the per-foot holdout more than once")
+    output.mkdir(parents=True, exist_ok=True)
+
+    source = document["source"]
+    manifest_path = root / str(source["event_manifest"])
+    if _file_sha256(manifest_path) != str(source["event_manifest_sha256"]):
+        raise RuntimeError("reflex event manifest changed")
+    slip_path = root / str(source["slip_freeze"])
+    if _file_sha256(slip_path) != str(source["slip_freeze_sha256"]):
+        raise RuntimeError("frozen Slip artifact changed")
+
+    prior_global_document = _load_yaml(
+        root / str(source["prior_global_fusion_config"])
+    )
+    protected_before = _verify_declared_hashes(root, prior_global_document)
+    reconstruction_path, reconstruction = reconstruct_bilateral_shared_candidate(
+        document["bilateral_terrain"], root
+    )
+    if not bool(reconstruction["historical_validation_parity"]):
+        raise RuntimeError("bilateral Terrain validation parity failed")
+    runtime_terrain_document = {
+        "source": {"terrain_models": str(reconstruction_path.relative_to(root))},
+        "terrain_branch": {"deployment_scheme": "bilateral_shared"},
+    }
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    dataset_path = root / str(source["event_dataset"])
+    observer_path = root / str(source["foot_observer_dataset"])
+    development_runs = load_event_runs(
+        dataset_path, manifest, ("train", "validation")
+    )
+    bilateral_gates = holdout_gate_from_observer_dataset(
+        runtime_terrain_document, development_runs, observer_path, root
+    )
+    if not all(
+        gate.prediction_feet is not None for gate in bilateral_gates.values()
+    ):
+        raise RuntimeError("bilateral Terrain output lost touchdown-foot provenance")
+
+    normalizer, checkpoints = _load_frozen_support(root, document)
+    development_replays = _replay_split(
+        development_runs,
+        bilateral_gates,
+        document,
+        normalizer,
+        checkpoints,
+    )
+    raw_sha = _raw_replay_sha(development_replays)
+    prior_summary = json.loads(
+        (root / str(source["prior_global_fusion_summary"])).read_text(
+            encoding="utf-8"
+        )
+    )
+    if raw_sha != prior_summary["raw_support_replay"]["development_sha256"]:
+        raise RuntimeError("frozen raw Support replay changed")
+
+    historical_gates = load_development_gates(
+        root / str(source["historical_gate_cache"]), development_runs
+    )
+    historical_replays = _reference_replays(development_replays, historical_gates)
+    reference: dict[str, dict[str, dict[str, object]]] = {
+        "train": {},
+        "validation": {},
+    }
+    per_foot: dict[str, dict[str, dict[str, object]]] = {
+        "train": {},
+        "validation": {},
+    }
+    diagnostics: list[dict[str, object]] = []
+    negative_diagnostics: list[dict[str, object]] = []
+    epsilon = float(document["loaded_foot"]["epsilon_n"])
+    support = document["frozen_support"]
+    for split in ("train", "validation"):
+        runs = {
+            run_id: run
+            for run_id, run in development_runs.items()
+            if run.split == split
+        }
+        old_gates = {run_id: historical_gates[run_id] for run_id in runs}
+        new_gates = {run_id: bilateral_gates[run_id] for run_id in runs}
+        old_replays = {run_id: historical_replays[run_id] for run_id in runs}
+        new_replays = {run_id: development_replays[run_id] for run_id in runs}
+        for policy in (POLICY_F0, POLICY_F1):
+            result = evaluate_policy(
+                policy,
+                runs,
+                old_gates,
+                old_replays,
+                threshold=float(support["probability_threshold"]),
+                persistence_ms=int(support["persistence_ms"]),
+                grace_ms=50,
+            )
+            reference[split][policy] = result
+            expected = prior_summary["development"][split][policy]
+            if _metric_contract(result) != _metric_contract(expected):
+                raise RuntimeError(f"historical {split} {policy} reproduction failed")
+        for policy in PER_FOOT_POLICIES:
+            result = evaluate_per_foot_policy(
+                policy,
+                runs,
+                new_gates,
+                new_replays,
+                threshold=float(support["probability_threshold"]),
+                persistence_ms=int(support["persistence_ms"]),
+                epsilon_n=epsilon,
+            )
+            per_foot[split][policy] = result
+            diagnostics.extend(result["event_rows"])
+            negative_diagnostics.extend(result["negative_rows"])
+
+    selection = select_per_foot_policy(
+        per_foot["validation"], document["selection"]["validation_gates"]
+    )
+    selected = selection["selected"]
+    guard = EventHoldoutGuard()
+    freeze = None
+    holdout: dict[str, object] = {
+        "performed": False,
+        "guard_open_count": 0,
+        "reason": "no_per_foot_policy_passed_validation",
+    }
+    if selected is not None:
+        freeze = _per_foot_policy_freeze(
+            document,
+            config_path,
+            str(selected),
+            reconstruction,
+            protected_before,
+            per_foot["validation"][str(selected)],
+        )
+        freeze_path = output / "selection_before_holdout.json"
+        _write_json(freeze_path, freeze)
+        freeze_sha = str(freeze["artifact_sha256"])
+        if guard.open_count != 0:
+            raise RuntimeError("Support holdout was accessed before policy freeze")
+        guard.open_once()
+        holdout_runs = load_event_runs(
+            dataset_path, manifest, ("holdout",), holdout_guard=guard
+        )
+        holdout_gates = holdout_gate_from_observer_dataset(
+            runtime_terrain_document, holdout_runs, observer_path, root
+        )
+        holdout_replays = _replay_split(
+            holdout_runs,
+            holdout_gates,
+            document,
+            normalizer,
+            checkpoints,
+        )
+        selected_metrics = evaluate_per_foot_policy(
+            str(selected),
+            holdout_runs,
+            holdout_gates,
+            holdout_replays,
+            threshold=float(support["probability_threshold"]),
+            persistence_ms=int(support["persistence_ms"]),
+            epsilon_n=epsilon,
+        )
+        checks = policy_gate_results(selected_metrics, document["holdout"]["gates"])
+        diagnostics.extend(selected_metrics["event_rows"])
+        negative_diagnostics.extend(selected_metrics["negative_rows"])
+        freeze_after = json.loads(freeze_path.read_text(encoding="utf-8"))
+        if (
+            freeze_after["artifact_sha256"] != freeze_sha
+            or _canonical_sha256(
+                {
+                    key: value
+                    for key, value in freeze_after.items()
+                    if key != "artifact_sha256"
+                }
+            )
+            != freeze_sha
+        ):
+            raise RuntimeError("per-foot policy mutated after holdout")
+        holdout = {
+            "performed": True,
+            "guard_open_count": guard.open_count,
+            "policy": selected,
+            "metrics": selected_metrics,
+            "gates": checks,
+            "passed": all(checks.values()),
+            "raw_replay_sha256": _raw_replay_sha(holdout_replays),
+            "memory_age": _memory_age_summary(selected_metrics["event_rows"]),
+        }
+
+    historical_misses = {
+        str(row["run_id"])
+        for row in reference["train"][POLICY_F0]["event_rows"]
+        if not bool(row["fusion_detected"])
+    }
+    miss_details = []
+    for run_id in sorted(historical_misses):
+        old_row = next(
+            row
+            for row in reference["train"][POLICY_F0]["event_rows"]
+            if str(row["run_id"]) == run_id
+        )
+        rows = {
+            policy: next(
+                row
+                for row in per_foot["train"][policy]["event_rows"]
+                if str(row["run_id"]) == run_id
+            )
+            for policy in PER_FOOT_POLICIES
+        }
+        miss_details.append(
+            {
+                "run_id": run_id,
+                "historical_terrain_state": old_row["terrain_state_at_support"],
+                "historical_last_sand_gap_ms": old_row[
+                    "last_sand_to_support_gap_ms"
+                ],
+                "terrain_memory_at_support": rows[POLICY_PF1][
+                    "terrain_memory_at_support"
+                ],
+                "loaded_feet_at_support": rows[POLICY_PF1][
+                    "loaded_feet_at_support"
+                ],
+                "dominant_foot_at_support": rows[POLICY_PF1][
+                    "dominant_foot_at_support"
+                ],
+                "supporting_sand_memory_feet": rows[POLICY_PF1][
+                    "supporting_sand_memory_feet_at_support"
+                ],
+                "PF1_rescued": bool(rows[POLICY_PF1]["fusion_detected"]),
+                "PF2_rescued": bool(rows[POLICY_PF2]["fusion_detected"]),
+            }
+        )
+    rescue = {
+        policy: {
+            "historical_misses": len(historical_misses),
+            "rescued": sum(
+                bool(row[f"{policy}_rescued"]) for row in miss_details
+            ),
+            "long_gap_marble_misses": sum(
+                row["historical_terrain_state"] == "MARBLE"
+                and row["historical_last_sand_gap_ms"] is not None
+                and int(row["historical_last_sand_gap_ms"]) > 50
+                for row in miss_details
+            ),
+            "long_gap_marble_rescued": sum(
+                row["historical_terrain_state"] == "MARBLE"
+                and row["historical_last_sand_gap_ms"] is not None
+                and int(row["historical_last_sand_gap_ms"]) > 50
+                and bool(row[f"{policy}_rescued"])
+                for row in miss_details
+            ),
+        }
+        for policy in PER_FOOT_POLICIES
+    }
+
+    protected_after = _verify_declared_hashes(root, prior_global_document)
+    if protected_before != protected_after:
+        raise RuntimeError("protected Support or selected Terrain artifact changed")
+    if _file_sha256(slip_path) != str(source["slip_freeze_sha256"]):
+        raise RuntimeError("frozen Slip artifact changed after evaluation")
+    if not fusion_regression()["passed"]:
+        raise RuntimeError("fusion regression failed")
+
+    if selected is None:
+        verdict = "PER_FOOT_TERRAIN_SUPPORT_FUSION_NOT_SUPPORTED"
+    elif bool(holdout.get("passed")):
+        verdict = "PER_FOOT_TERRAIN_SUPPORT_FUSION_SUPPORTED"
+    else:
+        verdict = "PER_FOOT_TERRAIN_SUPPORT_FUSION_PROMISING"
+
+    _write_diagnostics(output / "event_diagnostics.csv", diagnostics)
+    _write_diagnostics(output / "negative_diagnostics.csv", negative_diagnostics)
+    summary = {
+        "experiment_id": PER_FOOT_EXPERIMENT_ID,
+        "start_state": document["experiment"],
+        "bilateral_terrain": {
+            "artifact_path": str(reconstruction_path.relative_to(root)),
+            **reconstruction,
+        },
+        "terrain_prediction_interface": {
+            **document["terrain_prediction_interface"],
+            "prediction_foot_preserved_end_to_end": True,
+            "model_tensor_contains_foot_id": False,
+            "simulator_terrain_truth_in_runtime_output": False,
+        },
+        "per_foot_memory": document["per_foot_memory"],
+        "loaded_foot": document["loaded_foot"],
+        "raw_support_replay": {
+            "development_sha256": raw_sha,
+            "matches_prior_audit": True,
+            "terrain_memory_can_reset_persistence": False,
+            "PF1_PF2_bit_identical": raw_policy_parity(
+                per_foot["train"][POLICY_PF1],
+                per_foot["train"][POLICY_PF2],
+            )
+            and raw_policy_parity(
+                per_foot["validation"][POLICY_PF1],
+                per_foot["validation"][POLICY_PF2],
+            ),
+        },
+        "historical_references": {
+            split: {
+                policy: _without_rows(metrics)
+                for policy, metrics in values.items()
+            }
+            for split, values in reference.items()
+        },
+        "development": {
+            split: {
+                policy: {
+                    **_without_rows(metrics),
+                    **(
+                        {
+                            "gates": policy_gate_results(
+                                metrics, document["selection"]["validation_gates"]
+                            )
+                        }
+                        if split == "validation"
+                        else {}
+                    ),
+                }
+                for policy, metrics in values.items()
+            }
+            for split, values in per_foot.items()
+        },
+        "historical_miss_rescue": rescue,
+        "historical_miss_details": miss_details,
+        "selection": selection,
+        "freeze": freeze,
+        "holdout": (
+            {**holdout, "metrics": _without_rows(holdout["metrics"])}
+            if bool(holdout.get("performed"))
+            else holdout
+        ),
+        "sensor_implication": {
+            "terrain_and_context": "BILATERAL_FSR8",
+            "support_detector": "PELVIS_IMU6",
+            "unique_physical_channels": 14,
+            "additional_sensor_type_required": False,
+            "recommendation": (
+                "BILATERAL_FSR8_PLUS_PELVIS_IMU6_SYSTEM_CANDIDATE"
+                if verdict == "PER_FOOT_TERRAIN_SUPPORT_FUSION_SUPPORTED"
+                else "SYSTEM_SENSOR_ARCHITECTURE_UNRESOLVED"
+            ),
+            "final_sensor_architecture_frozen": False,
+        },
+        "integrity": {
+            "holdout_access_count_before_freeze": 0,
+            "holdout_access_count_final": guard.open_count,
+            "policy_mutated_after_holdout": False,
+            "support_retrained": False,
+            "support_threshold_changed": False,
+            "terrain_model_selected_from_support_task": False,
+            "terrain_holdout_access_for_reconstruction": 0,
+            "slip_modified": False,
+            "protected_hashes_unchanged": True,
+            "protected_hashes": protected_after,
+            "fusion_regression": True,
+            "simulator_viewer_physics_modified": False,
+        },
+        "verdict": verdict,
+    }
+    _write_json(summary_path, summary)
+    return summary_path, summary
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -968,9 +1788,15 @@ def main() -> None:
     )
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
     arguments = parser.parse_args()
-    summary_path, summary = run_causal_support_terrain_context_fusion(
-        arguments.config, arguments.repository_root
-    )
+    experiment = _load_yaml(arguments.config)["experiment"]["id"]
+    if experiment == PER_FOOT_EXPERIMENT_ID:
+        summary_path, summary = run_per_foot_terrain_memory_support_fusion(
+            arguments.config, arguments.repository_root
+        )
+    else:
+        summary_path, summary = run_causal_support_terrain_context_fusion(
+            arguments.config, arguments.repository_root
+        )
     print(
         json.dumps(
             {

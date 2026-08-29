@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
@@ -27,6 +28,7 @@ from fastreflex.evaluation.metrics import classification_metrics
 from fastreflex.models.baselines import parameter_count
 from fastreflex.training.trainer import (
     TrainingResult,
+    load_checkpoint,
     save_checkpoint,
     train_model,
 )
@@ -37,6 +39,14 @@ def _write_json(path: Path, value: object) -> None:
     with path.open("w", encoding="utf-8") as stream:
         json.dump(value, stream, indent=2, sort_keys=True)
         stream.write("\n")
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _normalized_windows(
@@ -194,6 +204,218 @@ def _train_candidate(
         "train_windows": train_windows,
         "validation_windows": validation_windows,
     }
+
+
+def _bilateral_validation_signature(summary: Mapping[str, object]) -> dict[str, object]:
+    """Keep only deterministic fields needed to prove historical reconstruction."""
+    seeds = summary["seeds"]
+    return {
+        "candidate_id": summary["candidate_id"],
+        "profile": summary["profile"],
+        "family": summary["family"],
+        "horizon_ms": summary["horizon_ms"],
+        "input_channels": summary["input_channels"],
+        "parameter_count": summary["parameter_count"],
+        "train_event_count": summary["train_event_count"],
+        "validation_event_count": summary["validation_event_count"],
+        "normalizer_mean": summary["normalizer"]["mean"],
+        "normalizer_std": summary["normalizer"]["std"],
+        "seed_results": [
+            {
+                "seed": row["seed"],
+                "best_epoch": row["best_epoch"],
+                "epochs_completed": row["epochs_completed"],
+                "macro_f1": row["validation"]["macro_f1"],
+                "confusion_matrix": row["validation"]["confusion_matrix"],
+            }
+            for row in seeds
+        ],
+        "validation_macro_f1_mean": summary["validation_macro_f1_mean"],
+        "validation_worst_class_recall_mean": summary[
+            "validation_worst_class_recall_mean"
+        ],
+        "ensemble_macro_f1": summary["validation_ensemble"]["macro_f1"],
+        "ensemble_confusion_matrix": summary["validation_ensemble"][
+            "confusion_matrix"
+        ],
+        "left_macro_f1": summary["validation_by_foot"]["left"]["macro_f1"],
+        "right_macro_f1": summary["validation_by_foot"]["right"]["macro_f1"],
+    }
+
+
+def _nested_numeric_parity(
+    actual: object, expected: object, tolerance: float, path: str = "root"
+) -> None:
+    if isinstance(expected, Mapping):
+        if not isinstance(actual, Mapping) or set(actual) != set(expected):
+            raise RuntimeError(f"bilateral validation parity keys differ at {path}")
+        for key in expected:
+            _nested_numeric_parity(
+                actual[key], expected[key], tolerance, f"{path}.{key}"
+            )
+        return
+    if isinstance(expected, (list, tuple)):
+        if not isinstance(actual, (list, tuple)) or len(actual) != len(expected):
+            raise RuntimeError(f"bilateral validation parity shape differs at {path}")
+        for index, (actual_value, expected_value) in enumerate(zip(actual, expected)):
+            _nested_numeric_parity(
+                actual_value, expected_value, tolerance, f"{path}[{index}]"
+            )
+        return
+    if isinstance(expected, (int, float)) and not isinstance(expected, bool):
+        if not isinstance(actual, (int, float)) or not np.isclose(
+            float(actual), float(expected), rtol=0.0, atol=tolerance
+        ):
+            raise RuntimeError(
+                f"bilateral validation parity differs at {path}: "
+                f"{actual!r} != {expected!r}"
+            )
+        return
+    if actual != expected:
+        raise RuntimeError(
+            f"bilateral validation parity differs at {path}: "
+            f"{actual!r} != {expected!r}"
+        )
+
+
+def reconstruct_bilateral_shared_candidate(
+    contract: Mapping[str, object],
+    repository_root: Path,
+    progress: Callable[[str], None] = print,
+) -> tuple[Path, dict[str, object]]:
+    """Rebuild the historical shared-foot candidate without opening Terrain holdout.
+
+    This is deliberately narrower than the original sensor-ablation runner: it
+    executes exactly the already-recorded FSR4/MLP/50 ms TRAIN/VALIDATION
+    contract and rejects any validation difference before exposing checkpoints.
+    """
+    root = repository_root.resolve()
+    original_config_path = root / str(contract["original_config"])
+    original_events_path = root / str(contract["original_events"])
+    original_metrics_path = root / str(contract["historical_metrics"])
+    original_dataset_config_path = root / str(contract["original_dataset_config"])
+    declared = (
+        (original_config_path, str(contract["original_config_sha256"])),
+        (original_events_path, str(contract["original_events_sha256"])),
+        (original_metrics_path, str(contract["historical_metrics_sha256"])),
+        (
+            original_dataset_config_path,
+            str(contract["original_dataset_config_sha256"]),
+        ),
+    )
+    for path, expected_sha in declared:
+        if _file_sha256(path) != expected_sha:
+            raise RuntimeError(f"frozen bilateral reconstruction input changed: {path}")
+
+    output = root / str(contract["artifact_path"])
+    provenance_path = output / "reconstruction.json"
+    checkpoint_paths = tuple(
+        output / f"seed_{int(seed)}.pt" for seed in contract["seeds"]
+    )
+    normalizer_path = output / "normalization.json"
+    if provenance_path.is_file():
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        files = (*checkpoint_paths, normalizer_path)
+        if not all(path.is_file() for path in files):
+            raise RuntimeError("bilateral reconstruction artifact is incomplete")
+        for path in files:
+            expected = provenance["artifact_hashes"][path.name]
+            if _file_sha256(path) != expected:
+                raise RuntimeError(f"bilateral reconstruction artifact changed: {path}")
+        for path in checkpoint_paths:
+            _, metadata = load_checkpoint(path)
+            if (
+                metadata["family"] != "mlp"
+                or int(metadata["window_samples"]) != 50
+                or int(metadata["input_channels"]) != 4
+            ):
+                raise RuntimeError("reconstructed Terrain checkpoint contract changed")
+        return output, provenance
+
+    original_config = yaml.safe_load(original_config_path.read_text(encoding="utf-8"))
+    settings = original_config["training"]
+    required_settings = {
+        "profile": "fsr4",
+        "family": "mlp",
+        "observation_ms": 50,
+        "input_channels": 4,
+        "seeds": list(settings["seeds"]),
+        "batch_size": int(settings["batch_size"]),
+        "max_epochs": int(settings["max_epochs"]),
+        "patience": int(settings["patience"]),
+        "learning_rate": float(settings["learning_rate"]),
+        "max_events_per_run_class": int(
+            original_config["common"]["max_clean_events_per_class_per_run"]
+        ),
+    }
+    for key, expected in required_settings.items():
+        if contract[key] != expected:
+            raise RuntimeError(f"bilateral reconstruction contract changed: {key}")
+
+    dataset_path = root / str(contract["original_dataset"])
+    rows = read_event_index(original_events_path)
+    cap = int(contract["max_events_per_run_class"])
+    train_rows = select_capped_events(
+        rows, "train", cap, required_horizon_ms=50
+    )
+    validation_rows = select_capped_events(
+        rows, "validation", cap, required_horizon_ms=50
+    )
+    candidate = _train_candidate(
+        dataset_path,
+        train_rows,
+        validation_rows,
+        "fsr4",
+        "mlp",
+        50,
+        tuple(int(value) for value in contract["seeds"]),
+        settings,
+        progress,
+    )
+    historical = json.loads(original_metrics_path.read_text(encoding="utf-8"))[
+        "deployment"
+    ]["bilateral_shared"]["validation"]
+    actual_signature = _bilateral_validation_signature(candidate["summary"])
+    expected_signature = _bilateral_validation_signature(historical)
+    _nested_numeric_parity(
+        actual_signature,
+        expected_signature,
+        float(contract["parity_tolerance"]),
+    )
+
+    output.mkdir(parents=True, exist_ok=False)
+    for model, result, seed, checkpoint in zip(
+        candidate["models"],
+        candidate["training_results"],
+        contract["seeds"],
+        checkpoint_paths,
+    ):
+        save_checkpoint(
+            checkpoint,
+            model,
+            "mlp",
+            50,
+            int(seed),
+            result,
+            input_channels=4,
+            class_names=TERRAIN_CLASS_NAMES,
+        )
+    _write_json(normalizer_path, candidate["normalizer"].to_dict())
+    provenance = {
+        "status": contract["reconstruction_label"],
+        "terrain_holdout_access_count": 0,
+        "support_task_used_for_training_or_selection": False,
+        "historical_validation_parity": True,
+        "parity_tolerance": float(contract["parity_tolerance"]),
+        "validation_signature": actual_signature,
+        "source_hashes": {str(path.relative_to(root)): sha for path, sha in declared},
+        "artifact_hashes": {
+            path.name: _file_sha256(path)
+            for path in (*checkpoint_paths, normalizer_path)
+        },
+    }
+    _write_json(provenance_path, provenance)
+    return output, provenance
 
 
 def _qualified(summary: Mapping[str, object], macro_min: float, recall_min: float) -> bool:

@@ -106,6 +106,16 @@ PHASE_B_CANDIDATES = {
 
 
 @dataclass(frozen=True)
+class TerrainPrediction:
+    """One causal classifier output plus scheduler-owned touchdown provenance."""
+
+    class_id: int
+    probabilities: np.ndarray
+    prediction_timestamp: int
+    touchdown_foot: str
+
+
+@dataclass(frozen=True)
 class TerrainGateTrace:
     """Held frozen-Terrain state and exact clean-event provenance."""
 
@@ -115,6 +125,34 @@ class TerrainGateTrace:
     prediction_probabilities: np.ndarray
     first_target_valid_sample: int | None
     clean_event_count: int
+    prediction_feet: np.ndarray | None = None
+
+
+def terrain_predictions(trace: TerrainGateTrace) -> tuple[TerrainPrediction, ...]:
+    """Expose the canonical prediction schema without terrain-truth metadata."""
+    if trace.prediction_feet is None:
+        raise ValueError("Terrain prediction foot provenance is unavailable")
+    if not (
+        len(trace.update_samples)
+        == len(trace.prediction_ids)
+        == len(trace.prediction_probabilities)
+        == len(trace.prediction_feet)
+    ):
+        raise ValueError("Terrain prediction provenance arrays must align")
+    return tuple(
+        TerrainPrediction(
+            class_id=int(class_id),
+            probabilities=np.asarray(probabilities, dtype=np.float32),
+            prediction_timestamp=int(timestamp),
+            touchdown_foot=str(foot).upper(),
+        )
+        for timestamp, class_id, probabilities, foot in zip(
+            trace.update_samples,
+            trace.prediction_ids,
+            trace.prediction_probabilities,
+            trace.prediction_feet,
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -404,6 +442,7 @@ def frozen_terrain_gate_from_result(
     updates: list[int] = []
     predictions: list[int] = []
     probabilities: list[np.ndarray] = []
+    prediction_feet: list[str] = []
     fsr = np.asarray(result.runtime.foot_fsr, dtype=np.float32)
     current = UNKNOWN
     cursor = 0
@@ -432,6 +471,7 @@ def frozen_terrain_gate_from_result(
         updates.append(update)
         predictions.append(prediction)
         probabilities.append(probability.astype(np.float32))
+        prediction_feet.append(str(row["foot"]).upper())
     state[cursor:] = current
     target_state = TERRAIN_PREDICTION_TO_STATE[run.target_terrain.upper()]
     target_after_contact = np.flatnonzero(
@@ -452,6 +492,7 @@ def frozen_terrain_gate_from_result(
         ),
         first_target_valid_sample=first_target,
         clean_event_count=len(eligible),
+        prediction_feet=np.asarray(prediction_feet, dtype="<U5"),
     )
 
 
@@ -470,6 +511,11 @@ def _save_gate(path: Path, trace: TerrainGateTrace) -> None:
             dtype=np.int64,
         ),
         clean_event_count=np.asarray(trace.clean_event_count, dtype=np.int64),
+        prediction_feet=(
+            np.empty(0, dtype="<U5")
+            if trace.prediction_feet is None
+            else np.asarray(trace.prediction_feet, dtype="<U5")
+        ),
     )
 
 
@@ -485,6 +531,11 @@ def _load_gate(path: Path, samples: int) -> TerrainGateTrace:
             ),
             first_target_valid_sample=None if first < 0 else first,
             clean_event_count=int(stored["clean_event_count"]),
+            prediction_feet=(
+                np.asarray(stored["prediction_feet"], dtype="<U5")
+                if "prediction_feet" in stored.files
+                else None
+            ),
         )
     if trace.state.shape != (samples,):
         raise ValueError("Terrain gate trace length differs from event run")

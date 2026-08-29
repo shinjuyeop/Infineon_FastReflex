@@ -351,6 +351,34 @@ def main() -> int:
 
         with args.config.open("r", encoding="utf-8") as stream:
             experiment_id = yaml.safe_load(stream)["experiment"]["id"]
+        if experiment_id in {
+            "CAUSAL_SUPPORT_TERRAIN_CONTEXT_FUSION",
+            "PER_FOOT_TERRAIN_MEMORY_SUPPORT_FUSION",
+        }:
+            from fastreflex.evaluation.support_terrain_fusion import (
+                run_causal_support_terrain_context_fusion,
+                run_per_foot_terrain_memory_support_fusion,
+            )
+
+            runner = (
+                run_per_foot_terrain_memory_support_fusion
+                if experiment_id == "PER_FOOT_TERRAIN_MEMORY_SUPPORT_FUSION"
+                else run_causal_support_terrain_context_fusion
+            )
+            output_path, metrics = runner(args.config, REPOSITORY_ROOT)
+            print(
+                json.dumps(
+                    {
+                        "output_path": str(output_path),
+                        "selected_policy": metrics["selection"]["selected"],
+                        "holdout_performed": metrics["holdout"]["performed"],
+                        "verdict": metrics["verdict"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if experiment_id == "CONTINUOUS_SLIP_REFLEX_DETECTOR_DEVELOPMENT":
             from fastreflex.evaluation.continuous_slip_reflex import (
                 run_continuous_slip_reflex_detector,

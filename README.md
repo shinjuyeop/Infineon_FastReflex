@@ -73,6 +73,8 @@ Latest reflex research status는 `CONTINUOUS_SLIP_REFLEX_PROMISING`이다. Terra
 
 `CAUSAL_SUPPORT_TERRAIN_CONTEXT_FUSION`은 raw Support persistence를 Terrain과 분리한 뒤 current-SAND F0와 predeclared 50 ms recent-SAND F1을 비교했다. F0는 VALIDATION gate를 수치상 통과했지만 TRAIN suppression 7건을 그대로 재현해 선택 불가였다. F1은 TRAIN miss 중 2건만 rescue하고 5건 suppression을 남겼으며, VALIDATION 6/12에서 stale-Sand context가 약 565 ms 이른 raw alert를 system event로 승인해 premature 50%로 실패했다. Frozen Terrain interface에 foot identity/per-foot memory가 없어 F2는 구현하지 않았고, 선택 정책이 없으므로 HOLDOUT access는 0이었다. Verdict는 `CAUSAL_SUPPORT_TERRAIN_FUSION_NOT_SUPPORTED`이며 detector/sensor/terrain 변경이나 grace sweep은 수행하지 않았다.
 
+후속 `PER_FOOT_TERRAIN_MEMORY_SUPPORT_FUSION`은 기존 BILATERAL_SHARED FSR4/MLP/50 ms 후보를 frozen protocol에서 역사적 validation과 exact parity로 재구성하고, Terrain prediction에 causal touchdown-foot provenance를 보존했다. PF1(any loaded SAND-memory foot)은 TRAIN의 역사적 7개 suppression miss를 모두 rescue했고 PF1/PF2 모두 VALIDATION recall 12/12, suppression 0/12, Sand benign·hard specificity 100%를 기록했다. 그러나 두 정책 모두 6/12에서 약 565 ms premature authorization을 만들었고 Ice non-Support 9/40에도 held SAND-memory authorization이 발생했다. 따라서 선택 정책 없이 HOLDOUT access 0을 유지했으며 verdict는 `PER_FOOT_TERRAIN_SUPPORT_FUSION_NOT_SUPPORTED`다. FSR8 + Pelvis IMU6 14-channel system candidate와 final sensor architecture는 승인·freeze하지 않는다.
+
 Dataset, ablation, holdout과 hardware-latency audit의 전체 근거는 [`20260828_terrain_rebuild_sensor_ablation.md`](reports/20260828_terrain_rebuild_sensor_ablation.md)에 기록한다.
 
 Event-centric physical-label corpus와 detector failure evidence는 [`20260828_event_centric_reflex_trigger.md`](reports/20260828_event_centric_reflex_trigger.md)에 기록한다.
@@ -84,6 +86,8 @@ Terrain-independent continuous Slip HNM, one-shot holdout과 asymmetric system �
 Frozen Support TRAIN/VALIDATION failure-mode와 gating evidence는 [`20260829_support_failure_mode_audit.md`](reports/20260829_support_failure_mode_audit.md)에 기록한다.
 
 Continuous raw Support와 causal Terrain context F0/F1/F2 availability 근거는 [`20260829_causal_support_terrain_context_fusion.md`](reports/20260829_causal_support_terrain_context_fusion.md)에 기록한다.
+
+Bilateral touchdown provenance, per-foot memory PF1/PF2와 premature authorization 근거는 [`20260829_per_foot_terrain_memory_support_fusion.md`](reports/20260829_per_foot_terrain_memory_support_fusion.md)에 기록한다.
 
 ## 구조
 

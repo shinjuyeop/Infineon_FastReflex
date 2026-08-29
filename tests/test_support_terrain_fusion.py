@@ -149,11 +149,11 @@ class ContextPolicyTest(unittest.TestCase):
         self.assertEqual(risk.tolist(), [False, False, True, False])
         self.assertEqual(onset.tolist(), [False, False, True, False])
 
-    def test_f2_fails_closed_without_per_foot_provenance(self) -> None:
+    def test_interface_now_exposes_reviewed_per_foot_provenance(self) -> None:
         audit = terrain_interface_audit()
-        self.assertFalse(audit["F2_implementable"])
-        self.assertEqual(audit["F2_result"], PER_FOOT_UNAVAILABLE)
-        self.assertFalse(audit["prediction_foot_identity"])
+        self.assertTrue(audit["F2_implementable"])
+        self.assertIsNone(audit["F2_result"])
+        self.assertTrue(audit["prediction_foot_identity"])
 
 
 class EventAndSelectionTest(unittest.TestCase):

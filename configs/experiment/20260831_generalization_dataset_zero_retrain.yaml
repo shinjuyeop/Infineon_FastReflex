@@ -1,0 +1,341 @@
+schema_version: 1
+
+experiment:
+  id: GENERALIZATION_DATASET_GENERATION_AND_ZERO_RETRAIN_EVALUATION
+  milestone: GENERALIZATION_DATASET_GENERATION_AND_ZERO_RETRAIN_EVALUATION
+  date: 2026-08-31
+  timezone: Asia/Seoul
+  source_commit_at_start: fd4a6981ae2c50d0f5ebe596c68f69dcbae45269
+  origin_main_at_start: fd4a6981ae2c50d0f5ebe596c68f69dcbae45269
+  branch_at_start: main
+  worktree_clean_at_start: true
+  purpose: fresh_five_family_zero_retrain_generalization_evaluation
+
+frozen_sources:
+  coverage_design:
+    config: {path: configs/experiment/20260831_scenario_coverage_matrix_design.yaml, sha256: 81d4b8463717654611b0b790656ccf3b62035325eaba1cc185cf32d0a8c38c05}
+    report: {path: reports/20260831_scenario_coverage_matrix_design.md, sha256: 4471dd557401b8f7f12d51d86d6e652aa8d427c94c51cd2c7952360cbc42e44c}
+  scenario_calibration:
+    config: {path: configs/experiment/20260831_generalization_scenario_calibration.yaml, sha256: 42088569621bf91cce22a12501698f23ae27b529f17fd356bbf8777f2ccab9c6}
+    report: {path: reports/20260831_generalization_scenario_calibration.md, sha256: f78780c580a806bab2ab233072427f9f2db899296b3dcfb298f9ef0828ddb508}
+    physical_selection_freeze_sha256: da275e1d606c4e4592eecd7c41a1ba5ff7e6773f1e3f28cfe050c3f8e39e8ff9
+  Ice_resolution:
+    config: {path: configs/experiment/20260831_ice_generalization_gap_resolution.yaml, sha256: 95ce4b8ce48c47eba785a9a18cac0e6f9bff853050e1b8ad2f42ffaf4008ccd2}
+    report: {path: reports/20260831_ice_generalization_gap_resolution.md, sha256: a25d60bbb1a32c5df91023f37ed74ddabfe95706a80ef14671c4672a105b93bf}
+    physical_selection_freeze_sha256: 5d36b9b63a77bb2ae40f54ea3ed34024a25e50c269742c4cda7689b75a73cc48
+  unified_baseline:
+    config: {path: configs/experiment/20260829_unified_hazard_reflex_system.yaml, sha256: 35036507643540a799510c6bf7dbd3e3c3e6b303146748ffae3d4cec28f825cb}
+    report: {path: reports/20260829_unified_hazard_reflex_system.md, sha256: a5ac9339757c33d5b17a80c56088c2c38b1e8a8260e20cf64c634501438628c8}
+    dataset_id: unified_hazard_reflex_20260829
+    manifest: {path: data/raw/unified_hazard_reflex_20260829/manifest.json, sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6}
+    current_holdout_waveform_reopened: false
+    current_holdout_new_inference: false
+
+protected_implementation:
+  simulator_config: {path: configs/simulator/g1.yaml, sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d}
+  simulation_g1: {path: src/fastreflex/simulation/g1.py, sha256: d41308b6801aa648284ea05b22ce0c304fd97078cf47f6cd56b1f3b0d715bee2}
+  simulation_hazards: {path: src/fastreflex/simulation/hazards.py, sha256: 97d26ff789eea5ba2c4e0a6bba57108fd5ffab59ec8bbd373fe028fba97391a7}
+  simulation_terrain: {path: src/fastreflex/simulation/terrain.py, sha256: 70816edeed3377b940cfaf2a4de089158343b03068604003329b44e50b58ed43}
+  dataset_hazard: {path: src/fastreflex/dataset/hazard.py, sha256: ad08f439e88d3aea6705dcb26b59e5344be53f6e26e926796c5bbb96039f4be2}
+  features: {path: src/fastreflex/features.py, sha256: 2ae549882720f5f9ee26f1ec073664f9e92816ae52b49f8d7d8a5754ac7f08f6}
+  evaluation_hazard: {path: src/fastreflex/evaluation/hazard.py, sha256: 97b6ea6217d7e05a098d409c94f6db1c534c83ac38d39b1aafb6a8ac88888c4e}
+  evaluation_terrain: {path: src/fastreflex/evaluation/terrain.py, sha256: a2472b5ae3f762c4c36bb813f6fa0a067248a28599b03689cf56be1d78bddb72}
+  policy: {path: artifacts/external/unitree_g1/g1_velocity_policy.onnx, sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28}
+
+protected_models:
+  Hazard:
+    freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+    feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+    runtime_input: pelvis_imu6
+    feature_dimension: 80
+    input_shape: [20, 80]
+    family: gru
+    hidden_size: 32
+    layers: 1
+    bidirectional: false
+    ensemble_size: 3
+    threshold: 0.99
+    persistence_ms: 5
+    parameters: 11010
+  Terrain:
+    runtime_input: touchdown_foot_fsr4
+    input_shape: [50, 4]
+    family: mlp
+    observation_ms: 50
+    ensemble_size: 3
+    classes: [CONCRETE, MARBLE, ICE, SAND]
+    deployment_scheme: left_only
+    advisory_only: true
+    normalizer_sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+    checkpoint_sha256:
+      seed_17.pt: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+      seed_29.pt: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+      seed_43.pt: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+
+execution_policy:
+  scenario_family_count: 5
+  scenario_or_split_change_after_simulation: prohibited
+  adaptive_backfill: prohibited
+  calibration_pilot_reuse: prohibited
+  model_outputs_during_generation: prohibited
+  model_load_before_dataset_freeze: prohibited
+  train_split: prohibited
+  Hazard_retraining: prohibited
+  Terrain_retraining: prohibited
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  current_unified_dataset_modification: prohibited
+  current_unified_holdout_access: prohibited
+  model_v2: prohibited
+  deployment_work: prohibited
+
+dataset:
+  dataset_id: generalization_hazard_reflex_20260831
+  path: data/raw/generalization_hazard_reflex_20260831
+  format: one_run_per_npz
+  generation_source_commit: fd4a6981ae2c50d0f5ebe596c68f69dcbae45269
+  duration_s: 8.0
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  expected_samples: 8000
+  split_names: [GENERALIZATION_VALIDATION, GENERALIZATION_HOLDOUT]
+  train_split_count: 0
+  designed_runs: 72
+  split_counts: {GENERALIZATION_VALIDATION: 36, GENERALIZATION_HOLDOUT: 36}
+  family_counts:
+    ONE_CONTACT_DELAYED_ICE_SLIP: {total: 12, GENERALIZATION_VALIDATION: 6, GENERALIZATION_HOLDOUT: 6}
+    ICE_BENIGN_CONTROL: {total: 8, GENERALIZATION_VALIDATION: 4, GENERALIZATION_HOLDOUT: 4}
+    DELAYED_SAND_SUPPORT_ONSET: {total: 8, GENERALIZATION_VALIDATION: 4, GENERALIZATION_HOLDOUT: 4}
+    RIGHT_SAND_SUPPORT: {total: 8, GENERALIZATION_VALIDATION: 4, GENERALIZATION_HOLDOUT: 4}
+    SPEED_STRATIFIED_HAZARD: {total: 36, GENERALIZATION_VALIDATION: 18, GENERALIZATION_HOLDOUT: 18}
+  runtime_fields:
+    timestamp_us: int64_N
+    pelvis_imu6: float32_Nx6
+    foot_fsr8: float32_Nx8
+  privileged_fields:
+    - exact_terrain_contact
+    - physical_contact
+    - target_terrain_touchdown
+    - loaded_contact
+    - contact_episode_id
+    - tangential_anchor_drift_m
+    - tangential_velocity_mps
+    - established_slip
+    - established_slip_onset
+    - support_surface_spread_m
+    - support_surface_max_displacement_m
+    - deformable_sink_onset
+    - i1_active
+    - fall_censor
+
+signature_exclusion:
+  fields: [source_terrain, target_terrain, speed_mps, patch_start_x_m, patch_width_m, slip_pattern, sink_pattern, sink_severity, support_pattern]
+  unified_manifest: data/raw/unified_hazard_reflex_20260829/manifest.json
+  unified_signature_count: 256
+  scenario_calibration_manifest: data/raw/generalization_scenario_calibration_20260831/manifest.json
+  scenario_calibration_signature_count: 78
+  Ice_resolution_manifest: data/raw/ice_generalization_gap_resolution_20260831/manifest.json
+  Ice_resolution_signature_count: 48
+  historical_prior_manifests_from_unified_config: true
+  required_overlap_each: 0
+  required_internal_duplicates: 0
+  required_validation_holdout_signature_overlap: 0
+
+physical_semantics:
+  Hazard_label: established_Slip_OR_established_Support
+  Slip: {observable: touchdown_anchor_tangential_drift_m, threshold_m: 0.050, persistence_ms: 3, aggregation: any_foot}
+  Support: {observable: support_surface_spread_m, threshold_m: 0.010, persistence_ms: 20, reset: contact_episode_change_or_fall_censor}
+  I1: {observable: positive_loaded_foot_spread_derivative_1ms, threshold: 0.0, persistence_ms: 20}
+  primary_no_hazard: no_Slip_AND_no_I1_AND_no_Support
+  Terrain_identity_is_Hazard_label: false
+  fall_is_Hazard_label: false
+  design_intent_is_Hazard_label: false
+  clean_target_touchdown: {exact_identity: true, window_ms: 50, mixed_contact_ratio_max_exclusive: 0.20, pre_fall: true}
+  physical_contact_episode:
+    helper: PhysicalDiagnostics.contact_episode_id
+    definition: per_foot_maximal_contiguous_physical_contact_episode
+    complete: contact_release_before_fall_or_duration_censor
+  one_contact_delayed_Ice:
+    required: at_least_one_complete_benign_target_Ice_episode_before_distinct_Ice_Slip_episode
+    minimum_delay_ms: null
+    time_is_diagnostic_only: true
+  delayed_Sand:
+    required: target_contact_then_at_least_2_clean_target_touchdowns_before_I1_then_left_only_Support
+    contact_to_I1_ms_min: 300
+
+scenario_families:
+  ONE_CONTACT_DELAYED_ICE_SLIP:
+    priority: P0
+    target_terrain: ice
+    expected_design_intent: SLIP_AFTER_COMPLETE_BENIGN_ICE_EPISODE
+    mechanism: existing_full_width_Ice_transition
+    source_terrains: [concrete, marble]
+    speeds_mps: [0.20, 0.25, 0.30]
+    allowed_start_domain_m: [0.29, 0.34]
+    allowed_width_domain_m: [0.71, 0.77]
+    mechanics: {slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft, side_topology: full_width_oracle_decides}
+    split_cells:
+      GENERALIZATION_VALIDATION:
+        - {speed_mps: 0.20, patch_start_x_m: 0.336, patch_width_m: 0.740}
+        - {speed_mps: 0.25, patch_start_x_m: 0.294, patch_width_m: 0.740}
+        - {speed_mps: 0.30, patch_start_x_m: 0.336, patch_width_m: 0.740}
+      GENERALIZATION_HOLDOUT:
+        - {speed_mps: 0.20, patch_start_x_m: 0.338, patch_width_m: 0.745}
+        - {speed_mps: 0.25, patch_start_x_m: 0.298, patch_width_m: 0.745}
+        - {speed_mps: 0.30, patch_start_x_m: 0.338, patch_width_m: 0.745}
+    expansion: each_split_cell_x_each_source
+  ICE_BENIGN_CONTROL:
+    priority: P0
+    target_terrain: ice
+    expected_design_intent: PRIMARY_NO_HAZARD_WITH_CLEAN_ICE
+    mechanism: existing_full_width_Ice_transition_narrow_local_cell
+    source_terrains: [concrete, marble]
+    speeds_mps: [0.20, 0.30]
+    calibrated_seed: {patch_start_x_m: 0.335, patch_width_m: 0.240}
+    frozen_local_width_block_m: [0.236, 0.244]
+    mechanics: {slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft, side_topology: full_width_none_intended}
+    split_cells:
+      GENERALIZATION_VALIDATION: {patch_start_x_m: 0.335, patch_width_m: 0.236}
+      GENERALIZATION_HOLDOUT: {patch_start_x_m: 0.335, patch_width_m: 0.244}
+    expansion: each_split_geometry_x_each_source_x_each_speed
+  DELAYED_SAND_SUPPORT_ONSET:
+    priority: P0
+    target_terrain: sand
+    expected_design_intent: DELAYED_LEFT_SUPPORT_AFTER_BENIGN_SAND
+    mechanism: staged_lateral_deformable
+    source_terrains: [concrete, marble]
+    speed_mps: 0.25
+    patch_starts_m: [0.30, 0.35]
+    calibrated_width_seed_m: 0.80
+    mechanics: {slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: staged_lateral_deformable, side_topology: left_staged_static_then_lateral}
+    split_cells:
+      GENERALIZATION_VALIDATION: {patch_width_m: 0.795}
+      GENERALIZATION_HOLDOUT: {patch_width_m: 0.805}
+    expansion: each_split_width_x_each_source_x_each_start
+  RIGHT_SAND_SUPPORT:
+    priority: P1
+    target_terrain: sand
+    expected_design_intent: RIGHT_ONLY_SUPPORT
+    mechanism: existing_transition_right_lateral_deformable
+    source_terrains: [concrete, marble]
+    speed_mps: 0.25
+    patch_starts_m: [0.30, 0.35]
+    allowed_width_domain_m: [0.67, 0.73]
+    mechanics: {slip_pattern: uniform, sink_pattern: transition_right, sink_severity: moderate, support_pattern: lateral_deformable, side_topology: right_lateral_deformable}
+    split_cells:
+      GENERALIZATION_VALIDATION: {patch_width_m: 0.685}
+      GENERALIZATION_HOLDOUT: {patch_width_m: 0.715}
+    expansion: each_split_width_x_each_source_x_each_start
+  SPEED_STRATIFIED_HAZARD:
+    priority: P1
+    expected_design_intent: MATCHED_SLIP_SUPPORT_SAND_BENIGN_BY_SPEED
+    source_terrains: [concrete, marble]
+    speeds_mps: [0.20, 0.25, 0.30]
+    split_variants:
+      GENERALIZATION_VALIDATION:
+        - {variant_id: ICE_SLIP, target_terrain: ice, patch_start_x_m: 0.318, patch_width_m: 0.718, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft, side_topology: full_width}
+        - {variant_id: SAND_SUPPORT, target_terrain: sand, patch_start_x_m: 0.338, patch_width_m: 0.685, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable, side_topology: left_lateral_deformable}
+        - {variant_id: SAND_BENIGN, target_terrain: sand, patch_start_x_m: 0.358, patch_width_m: 0.725, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable, side_topology: left_balanced_deformable}
+      GENERALIZATION_HOLDOUT:
+        - {variant_id: ICE_SLIP, target_terrain: ice, patch_start_x_m: 0.322, patch_width_m: 0.722, slip_pattern: transition, sink_pattern: uniform, sink_severity: moderate, support_pattern: balanced_soft, side_topology: full_width}
+        - {variant_id: SAND_SUPPORT, target_terrain: sand, patch_start_x_m: 0.342, patch_width_m: 0.695, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, support_pattern: lateral_deformable, side_topology: left_lateral_deformable}
+        - {variant_id: SAND_BENIGN, target_terrain: sand, patch_start_x_m: 0.362, patch_width_m: 0.735, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, support_pattern: balanced_deformable, side_topology: left_balanced_deformable}
+    expansion: each_split_variant_x_each_source_x_each_speed
+
+split_freeze:
+  timing: before_any_simulation
+  deterministic: true
+  outcome_can_change_membership: false
+  model_output_can_change_membership: false
+  geometry_blocks:
+    GENERALIZATION_VALIDATION: lower_or_calibration_side_of_each_bounded_family_cell
+    GENERALIZATION_HOLDOUT: disjoint_upper_side_of_each_bounded_family_cell
+  run_id_order: family_then_split_then_variant_then_source_then_speed_or_start
+  split_membership_hash_required: true
+
+physical_readiness:
+  common:
+    manifest_integrity: required
+    duplicate_signatures_max: 0
+    prior_signature_overlap_max: 0
+    validation_holdout_signature_overlap_max: 0
+    timestamp_delta_us: 1000
+    dropped_samples_max: 0
+    invalid_runs_max: 0
+    nonfinite_valid_runs_max: 0
+  family_per_split:
+    ONE_CONTACT_DELAYED_ICE_SLIP: {delayed_viable_min: 4, source_diversity_min: 2, speed_strata_min: 2}
+    ICE_BENIGN_CONTROL: {clean_primary_no_hazard_min: 2, source_diversity_min: 2}
+    DELAYED_SAND_SUPPORT_ONSET: {delayed_left_support_min: 2, source_diversity_min: 2}
+    RIGHT_SAND_SUPPORT: {right_only_support_min: 2, source_diversity_min: 2}
+    SPEED_STRATIFIED_HAZARD: {per_speed_Slip_min: 1, per_speed_Support_min: 1, per_speed_no_hazard_min: 1, source_diversity_min: 2}
+  pass_verdict: GENERALIZATION_DATASET_READY
+  fail_verdict: GENERALIZATION_DATASET_PHYSICALLY_INADEQUATE
+
+dataset_freeze:
+  required_before_model_load: true
+  status: MODEL_BLIND_DATASET_FREEZE_COMPLETE
+  fields: [config_sha256, dataset_id, manifest_sha256, split_membership_sha256, physical_signatures_sha256, validation_run_ids, holdout_run_ids, physical_summary, protected_model_hashes]
+
+evaluation:
+  sequence: VALIDATION_then_conditional_one_shot_HOLDOUT
+  canonical_Hazard_replay: src/fastreflex/evaluation/hazard.py
+  canonical_Terrain_replay: src/fastreflex/evaluation/terrain.py
+  validation_split: GENERALIZATION_VALIDATION
+  holdout_split: GENERALIZATION_HOLDOUT
+  primary_gates: &primary_gates
+    overall_hazard_recall_min: 0.90
+    slip_hazard_recall_min: 0.95
+    support_hazard_recall_min: 0.85
+    primary_no_hazard_specificity_min: 0.95
+    Ice_benign_specificity_min: 0.95
+    system_premature_run_rate_max: 0.10
+    slip_p95_latency_ms_max: 40
+    support_p95_established_latency_ms_max: 50
+  holdout_gates: *primary_gates
+  Hazard_windows:
+    Slip: [-30, 40]
+    Support: [I1, established_Support_plus_50]
+    pre_I1_Support_alert: premature
+    no_hazard_any_onset: false_reflex
+  Terrain_is_primary_gate: false
+  validation_fail_action:
+    verdict: ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED
+    generalization_holdout_open: prohibited
+    retune_or_retrain: prohibited
+  validation_pass_action:
+    verdict: ZERO_RETRAIN_GENERALIZATION_VALIDATION_PASS
+    write_holdout_open_freeze_before_open: true
+    generalization_holdout_open_count: 1
+  holdout_pass_verdict: ZERO_RETRAIN_GENERALIZATION_SUPPORTED
+  holdout_fail_verdict: ZERO_RETRAIN_GENERALIZATION_FAILED_FRESH_HOLDOUT
+
+holdout_guards:
+  current_unified:
+    waveform_open_allowed: false
+    new_inference_allowed: false
+  generalization:
+    separate_one_shot_guard: required
+    open_count_before_validation_decision: 0
+    validation_fail_open_count: 0
+    validation_pass_open_count: 1
+    visualization_allowed: false
+
+visualization:
+  timing: after_scientific_evaluation
+  split: GENERALIZATION_VALIDATION
+  representative_rule: lexicographically_first_valid_run_per_family_plus_low_and_high_speed_Hazard
+  selection_uses_model_confidence: false
+  holdout_visualization: prohibited
+  gui_launcher: prohibited
+
+outputs:
+  dataset_path: data/raw/generalization_hazard_reflex_20260831
+  artifact_path: artifacts/runs/20260831_generalization_dataset_zero_retrain
+  report_path: reports/20260831_generalization_dataset_zero_retrain.md
+  commit_generated_outputs: false

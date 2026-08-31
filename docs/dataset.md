@@ -21,7 +21,15 @@ Every group has Concrete and Marble sources. Split membership is assigned from s
 
 Physical signatures are unique, split overlap is zero, and prior research-manifest signatures are excluded. Invalid simulation outcomes never move between splits.
 
-## 2. Runtime and diagnostic fields
+## 2. Fresh zero-retrain generalization corpus
+
+The separate dataset identity `generalization_hazard_reflex_20260831` contains 72 fresh runs across five predeclared scenario families. It has 36 `GENERALIZATION_VALIDATION` and 36 sealed `GENERALIZATION_HOLDOUT` runs, with no TRAIN split. Its signatures have zero overlap with the Unified 256, calibration 78, Ice-resolution 48, historical exclusions, or the opposite generalization split.
+
+This corpus was generated model-blind and frozen before any current-candidate replay. It is not part of current model training, normalization, hard-negative mining, checkpoint selection, threshold selection, or persistence selection. Physical readiness is `GENERALIZATION_DATASET_READY`; zero-retrain Validation failed the predeclared model gates, so the generalization Holdout remains unopened at guard count 0. The current supported training/selection corpus remains `unified_hazard_reflex_20260829`.
+
+Generated NPZ, manifest, freeze and evaluation artifacts remain Gitignored. The committed contract and result are `configs/experiment/20260831_generalization_dataset_zero_retrain.yaml` and `reports/20260831_generalization_dataset_zero_retrain.md`.
+
+## 3. Runtime and diagnostic fields
 
 The Hazard model may use only:
 
@@ -45,7 +53,7 @@ fall and Terrain prediction provenance
 
 `HazardRun.features["PELVIS_IMU6"]` is the authoritative raw runtime tensor. `PELVIS_IMU6_FSR8` is retained only as an aligned storage/helper representation and is not accepted by `extract_hazard_features`.
 
-## 3. Physical labels
+## 4. Physical labels
 
 Primary runtime label semantics are exact:
 
@@ -66,7 +74,7 @@ Physical labels used for dataset audit are:
 
 Fall/recovery, intended role and Terrain do not define the label. I1 and the established clocks are prohibited from runtime features.
 
-## 4. Integrity and HOLDOUT
+## 5. Integrity and HOLDOUT
 
 Dataset identity and generated artifact identity remain separate. A manifest records `dataset_id`, creation time, source commit, schema, policy/simulator provenance and per-run SHA-256. Each run is one NPZ with a manifest row containing its file hash, split and diagnostic summary.
 
@@ -80,13 +88,13 @@ Load behavior is fail-closed:
 
 Routine candidate verification reads frozen metadata and artifact hashes only. It does not open HOLDOUT waveforms.
 
-## 5. Hazard preprocessing boundary
+## 6. Hazard preprocessing boundary
 
 Raw Pelvis IMU6 is converted by `src/fastreflex/features.py`, not by an experiment module. The exact output is float32 `[N,80]` with ten bases and eight causal representations. Training and replay take `[20,80]` slices ending at the declared endpoint.
 
 No future sample, Terrain value, physical clock, fall/recovery field or time-to-event field may appear in the schema. The frozen schema hash is `fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb`.
 
-## 6. Terrain dataset
+## 7. Terrain dataset
 
 The current Terrain identity is `terrain_transition_20260828`: 144 run-disjoint simulations and exact per-foot terrain-contact provenance. Clean events are terrain-identity contact rising edges with complete causal observation, persistent same-class contact, pre-fall censoring and mixed-contact ratio `<20%`.
 
@@ -100,10 +108,10 @@ touchdown sample t
 
 Exact terrain identity is a label/scheduler reference, not a model feature. Normalization is fit on TRAIN events only. Current classes are `CONCRETE`, `MARBLE`, `ICE`, and `SAND`.
 
-## 7. Generated artifact boundary
+## 8. Generated artifact boundary
 
 Generated raw datasets and arbitrary training outputs live under Gitignored `data/raw/` and `artifacts/runs/`. They are not source files and are not rewritten by consolidation. Only an explicitly reviewed Research-to-Deployment release may later be placed under `artifacts/releases/` with complete provenance.
 
-## 8. Historical datasets
+## 9. Historical datasets
 
 Pilot NORMAL/SLIP/SINK, deformable-support, dense fall-risk, event-centric and observer datasets remain scientific provenance, not current schemas. Their configs and reports are preserved. Reproduction of a historical config uses the source commit recorded in that config/report; current source does not retain historical runners merely to keep every dated config executable.

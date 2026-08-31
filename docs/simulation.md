@@ -195,6 +195,23 @@ python scripts/fastreflex.py simulate \
   --viewer
 ```
 
+Generalization calibration의 delayed-Support topology는 별도 explicit opt-in이다. 앞 절반은 static Sand entry, 뒤 절반은 기존 reference medial cell과 selected-severity lateral cell을 사용하며 새 material, stiffness, damping 또는 travel 값을 만들지 않는다.
+
+```bash
+python scripts/fastreflex.py simulate \
+  --terrain sand \
+  --sink-pattern transition_left \
+  --sink-support-pattern staged_lateral_deformable \
+  --sink-severity moderate \
+  --patch-start-x 0.30 \
+  --patch-width 0.80 \
+  --speed 0.25 \
+  --duration 8 \
+  --viewer
+```
+
+`staged_lateral_deformable`은 default가 아니며 finite `transition_left/right`에서만 허용된다. Calibration에서는 width 0.80 m 네 source/start cells가 delayed left-only Support를 만들었고 width 1.20 m cells는 I1/Support를 만들지 못했다. 이 option의 current provenance와 제한은 [`../reports/20260831_generalization_scenario_calibration.md`](../reports/20260831_generalization_scenario_calibration.md)에 있다.
+
 환경 변수를 설정하지 않았다면 각 명령 끝에 `--policy artifacts/external/unitree_g1/g1_velocity_policy.onnx`를 추가한다. Viewer를 사용할 수 없는 환경에서는 display 확인 방법과 `--headless` 대안을 포함한 명확한 error를 출력한다.
 
 ## Visualizing supported Hazard/Terrain decisions
@@ -372,7 +389,7 @@ Playback state는 `PLAYING`, `PAUSED`, `ENDED_PAUSED` 세 가지다. 마지막 s
 
 Terrain event GT는 named sole과 실제 ground geom의 exact identity다. Ice transition의 pre/post는 selected Concrete/Marble source, full-width patch는 Ice다. Sand transition은 affected static/deformable cells만 Sand이고 반대 lane과 pre/post는 source terrain이다. 이 geom mapping은 label/diagnostic 전용이며 runtime tensor에 노출하지 않는다.
 
-`uniform`은 기존 scene/profile을 그대로 사용한다. Sink의 `asymmetric_left/right`와 `transition_left/right`는 `scene_sink.xml`에서 한쪽 compliance를 바꾼다. Slip의 `--slip-pattern transition`도 같은 finite topology를 재사용하되 기본 `x=[0.35,1.10] m`의 left/right patch를 모두 기존 Ice profile로 설정하고 그 전후는 concrete로 둔다. Pilot variation에는 `--patch-start-x`와 `--patch-width`를 사용하며 default는 각각 0.35 m와 0.75 m다. 모든 경계의 nominal top은 `z=0`이고 box가 맞닿을 뿐 겹치지 않는다. Hole, step, lowered surface 또는 deformable mesh는 없다. Cyan Ice patch와 Sink의 blue/orange는 visual-only이며 physics/label selection에 사용하지 않는다. Sink non-uniform pattern은 `--terrain sand`, Slip transition은 `--terrain ice`에서만 허용되고 두 pattern을 결합할 수 없다.
+`uniform`은 기존 scene/profile을 그대로 사용한다. Sink의 `asymmetric_left/right`와 `transition_left/right`는 `scene_sink.xml`에서 한쪽 compliance를 바꾼다. `staged_lateral_deformable`은 finite Sand transition의 static entry와 deformable exit를 공간적으로 나누는 opt-in topology다. Slip의 `--slip-pattern transition`도 같은 finite topology를 재사용하되 기본 `x=[0.35,1.10] m`의 left/right patch를 모두 기존 Ice profile로 설정하고 그 전후는 concrete로 둔다. Pilot variation에는 `--patch-start-x`와 `--patch-width`를 사용하며 default는 각각 0.35 m와 0.75 m다. 모든 경계의 nominal top은 `z=0`이고 box가 맞닿을 뿐 겹치지 않는다. Hole, step, lowered surface 또는 deformable mesh는 없다. Cyan Ice patch와 Sink의 blue/orange는 visual-only이며 physics/label selection에 사용하지 않는다. Sink non-uniform pattern은 `--terrain sand`, Slip transition은 `--terrain ice`에서만 허용되고 두 pattern을 결합할 수 없다.
 
 ## Hazard label 설명
 

@@ -1,0 +1,424 @@
+schema_version: 1
+
+experiment:
+  id: GENERALIZATION_SCENARIO_CALIBRATION
+  milestone: GENERALIZATION_SCENARIO_CALIBRATION
+  date: 2026-08-31
+  timezone: Asia/Seoul
+  source_commit_at_start: 49ae692ae202de41464753e7558df423127509ca
+  origin_main_at_start: 49ae692ae202de41464753e7558df423127509ca
+  branch_at_start: main
+  worktree_clean_at_start: true
+  purpose: model_blind_physical_calibration_of_the_seven_frozen_scenario_families
+
+coverage_source:
+  config: configs/experiment/20260831_scenario_coverage_matrix_design.yaml
+  config_sha256: 81d4b8463717654611b0b790656ccf3b62035325eaba1cc185cf32d0a8c38c05
+  report: reports/20260831_scenario_coverage_matrix_design.md
+  report_sha256: 4471dd557401b8f7f12d51d86d6e652aa8d427c94c51cd2c7952360cbc42e44c
+  verdict_required: SCENARIO_COVERAGE_DESIGN_READY
+
+protected_sources_at_start:
+  simulator_config:
+    path: configs/simulator/g1.yaml
+    sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  simulation_g1:
+    path: src/fastreflex/simulation/g1.py
+    sha256: d41308b6801aa648284ea05b22ce0c304fd97078cf47f6cd56b1f3b0d715bee2
+  simulation_terrain:
+    path: src/fastreflex/simulation/terrain.py
+    sha256: 7e4b92ac66eff2a9f168a2bd35d236996cfff3bfc825a7ca22feb0fd28780f76
+  simulation_hazards:
+    path: src/fastreflex/simulation/hazards.py
+    sha256: 97d26ff789eea5ba2c4e0a6bba57108fd5ffab59ec8bbd373fe028fba97391a7
+  policy:
+    path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+    sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  physics:
+    timestep_s: 0.0005
+    sensor_rate_hz: 1000
+    duration_s: 8.0
+    ice_friction: [0.05, 0.001, 0.00001]
+    sand_deformable_support:
+      reference: {travel_m: 0.004, stiffness_n_per_m: 50000.0, damping_n_s_per_m: 1000.0}
+      mild: {travel_m: 0.020, stiffness_n_per_m: 12000.0, damping_n_s_per_m: 490.0}
+      moderate: {travel_m: 0.040, stiffness_n_per_m: 7000.0, damping_n_s_per_m: 374.0}
+      severe: {travel_m: 0.065, stiffness_n_per_m: 4500.0, damping_n_s_per_m: 300.0}
+
+protected_models:
+  hazard:
+    freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+    feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+    input: pelvis_imu6
+    feature_dimension: 80
+    input_shape: [20, 80]
+    model_family: gru
+    hidden_size: 32
+    ensemble_size: 3
+    threshold: 0.99
+    persistence_ms: 5
+  terrain:
+    input: touchdown_fsr4
+    input_shape: [50, 4]
+    model_family: mlp
+    ensemble_size: 3
+    classes: [CONCRETE, MARBLE, ICE, SAND]
+    deployment_scheme: left_only
+    normalizer_sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+    checkpoint_sha256:
+      seed_17.pt: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+      seed_29.pt: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+      seed_43.pt: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+
+execution_policy:
+  calibration_evidence: simulator_physical_only
+  model_blind_selection: true
+  model_outputs_forbidden_until_selection_freeze: true
+  forbidden_selection_inputs:
+    - hazard_probability
+    - reflex_required
+    - terrain_prediction
+    - terrain_probability
+    - frozen_model_success_or_failure
+  no_retraining: true
+  no_full_dataset_generation: true
+  no_threshold_search: true
+  no_normalizer_refit: true
+  no_checkpoint_write: true
+  no_current_dataset_rewrite: true
+  no_current_holdout_access: true
+  current_holdout_waveform_reopened: false
+  current_holdout_new_inference: false
+
+physical_semantics:
+  slip:
+    observable: touchdown_anchor_tangential_foot_drift_m
+    threshold_m: 0.050
+    persistence_ms: 3
+  support:
+    observable: support_surface_spread_m
+    threshold_m: 0.010
+    persistence_ms: 20
+    reset: contact_episode_change_or_fall_censor
+  i1:
+    observable: positive_loaded_foot_spread_derivative_1ms
+    threshold: 0.0
+    persistence_ms: 20
+  clean_target_touchdown:
+    exact_terrain_identity_required: true
+    persistent_window_ms: 50
+    mixed_contact_ratio_max_exclusive: 0.20
+  gait_phase:
+    reference: first_established_physical_hazard
+    edge_lookback_inclusive_ms: 10
+    priority: [TOUCHDOWN_LOADING, CONTACT_RELEASE, DOUBLE_SUPPORT, LEFT_SINGLE_SUPPORT, RIGHT_SINGLE_SUPPORT, NO_SUPPORT]
+
+common_viability:
+  finite_runtime_required: true
+  target_contact_required: true
+  normal_prefix_ms_min: 500
+  pretransition_fall_max: 0
+  physical_signature_unique_required: true
+  classifications:
+    - VIABLE_AS_DESIGNED
+    - PHYSICAL_OUTCOME_MISMATCH
+    - PRETRANSITION_FALL
+    - NO_TARGET_CONTACT
+    - TIMING_ORDER_MISMATCH
+    - SIDE_MISMATCH
+    - NONFINITE
+
+selection:
+  evidence: physical_only
+  priority:
+    - family_semantics_satisfied
+    - no_invalid_or_pretransition_fall
+    - required_timing_relation_satisfied
+    - intended_side_relation_satisfied
+    - unique_physical_signature
+    - parameter_diversity
+  tie_break: deterministic_lexicographic_pilot_id
+  selection_may_change_after_model_smoke: false
+  round_1_grid_frozen_before_simulation: true
+  round_2_status: NOT_AUTHORIZED_IN_THIS_CONFIG
+
+pilot_signature_exclusion:
+  all_calibration_pilot_signatures_excluded_from_future_evaluation: true
+  required_intersection_with_future_dataset: 0
+  signature_fields:
+    - source_terrain
+    - target_terrain
+    - speed_mps
+    - patch_start_x_m
+    - patch_width_m
+    - slip_pattern
+    - sink_pattern
+    - sink_severity
+    - support_pattern
+
+scenario_families:
+  ICE_BENIGN_CONTROL:
+    priority: P0
+    scientific_purpose: Ice_identity_hard_negative_without_physical_hazard
+    source_terrains: [concrete, marble]
+    target_terrain: ice
+    hazard_intent: BENIGN
+    temporal_intent: clean_Ice_contact_opportunity_without_hazard
+    affected_side_intent: NONE
+    speeds_mps: [0.25]
+    gait_phase_intent: any_natural
+    mechanism: existing_bilateral_Ice_transition
+    calibration_required: true
+    viability:
+      established_slip: absent
+      i1: absent
+      established_support: absent
+      clean_target_touchdowns_min: 1
+    select_max: 4
+    pilot_matrix:
+      expansion_order: [source_terrain, patch_start_x_m, patch_width_m]
+      source_terrain: [concrete, marble]
+      speed_mps: [0.25]
+      patch_start_x_m: [0.30, 0.35]
+      patch_width_m: [0.10, 0.20, 0.35]
+      slip_pattern: transition
+      sink_pattern: uniform
+      sink_severity: moderate
+      support_pattern: balanced_soft
+
+  DELAYED_ICE_SLIP:
+    priority: P0
+    scientific_purpose: later_Slip_after_benign_exact_Ice_contact_opportunity
+    source_terrains: [concrete, marble]
+    target_terrain: ice
+    hazard_intent: SLIP
+    temporal_intent: physical_delay_before_established_Slip
+    affected_side_intent: BILATERAL_REFERENCE_ORACLE_DECIDES
+    speeds_mps: [0.25]
+    gait_phase_intent: any_natural
+    mechanism: existing_bilateral_Ice_transition
+    calibration_required: true
+    viability:
+      established_slip: required
+      contact_to_slip_ms_min: 1000
+      clean_target_touchdowns_ending_before_slip_min: 1
+      i1: absent
+      established_support: absent
+    select_max: 4
+    pilot_matrix:
+      expansion_order: [source_terrain, patch_start_x_m, patch_width_m]
+      source_terrain: [concrete, marble]
+      speed_mps: [0.25]
+      patch_start_x_m: [0.28, 0.33]
+      patch_width_m: [0.75, 1.00]
+      slip_pattern: transition
+      sink_pattern: uniform
+      sink_severity: moderate
+      support_pattern: balanced_soft
+
+  DELAYED_SAND_SUPPORT_ONSET:
+    priority: P0
+    scientific_purpose: benign_Sand_interval_before_I1_and_established_Support
+    source_terrains: [concrete, marble]
+    target_terrain: sand
+    hazard_intent: SUPPORT
+    temporal_intent: clean_Sand_contact_then_delayed_I1_then_established_Support
+    affected_side_intent: LEFT_ONLY
+    speeds_mps: [0.25]
+    gait_phase_intent: any_natural
+    mechanism: staged_lateral_deformable
+    calibration_required: true
+    requires_new_physics_calibration: true
+    new_physics_scope: explicit_opt_in_spatial_topology_using_only_existing_material_and_joint_profiles
+    viability:
+      established_slip: absent
+      i1: required
+      established_support: required
+      contact_to_i1_ms_min: 300
+      clean_target_touchdowns_ending_before_i1_min: 1
+      support_side: LEFT_ONLY
+    select_max: 4
+    pilot_matrix:
+      expansion_order: [source_terrain, patch_start_x_m, patch_width_m]
+      source_terrain: [concrete, marble]
+      speed_mps: [0.25]
+      patch_start_x_m: [0.30, 0.35]
+      patch_width_m: [0.80, 1.20]
+      slip_pattern: uniform
+      sink_pattern: transition_left
+      sink_severity: moderate
+      support_pattern: staged_lateral_deformable
+
+  RIGHT_DOMINANT_ICE_SLIP:
+    priority: P1
+    scientific_purpose: actual_right_only_Slip_with_bilateral_frozen_Ice_geometry
+    source_terrains: [concrete, marble]
+    target_terrain: ice
+    hazard_intent: SLIP
+    temporal_intent: current_order_reference
+    affected_side_intent: RIGHT_ONLY
+    speeds_mps: [0.25]
+    gait_phase_intent: any_natural
+    mechanism: existing_bilateral_Ice_transition_with_phase_shifted_geometry
+    calibration_required: true
+    viability:
+      slip_side: RIGHT_ONLY
+      i1: absent
+      established_support: absent
+    select_max: 4
+    pilot_matrix:
+      expansion_order: [source_terrain, patch_start_x_m, patch_width_m]
+      source_terrain: [concrete, marble]
+      speed_mps: [0.25]
+      patch_start_x_m: [0.27, 0.35]
+      patch_width_m: [0.70, 0.80]
+      slip_pattern: transition
+      sink_pattern: uniform
+      sink_severity: moderate
+      support_pattern: balanced_soft
+
+  RIGHT_SAND_SUPPORT:
+    priority: P1
+    scientific_purpose: actual_right_only_Support_with_existing_side_specific_mechanics
+    source_terrains: [concrete, marble]
+    target_terrain: sand
+    hazard_intent: SUPPORT
+    temporal_intent: current_precursor_and_established_order_reported_separately
+    affected_side_intent: RIGHT_ONLY
+    speeds_mps: [0.25]
+    gait_phase_intent: right_side_natural
+    mechanism: existing_transition_right_lateral_deformable
+    calibration_required: true
+    viability:
+      established_slip: absent
+      i1: required
+      established_support: required
+      support_side: RIGHT_ONLY
+    select_max: 4
+    pilot_matrix:
+      expansion_order: [source_terrain, patch_start_x_m, patch_width_m]
+      source_terrain: [concrete, marble]
+      speed_mps: [0.25]
+      patch_start_x_m: [0.30, 0.35]
+      patch_width_m: [0.67, 0.73]
+      slip_pattern: uniform
+      sink_pattern: transition_right
+      sink_severity: moderate
+      support_pattern: lateral_deformable
+
+  SPEED_STRATIFIED_HAZARD:
+    priority: P1
+    scientific_purpose: lower_reference_higher_speed_physical_viability
+    source_terrains: [concrete, marble]
+    target_terrains: [ice, sand]
+    hazard_intent: MATCHED_SLIP_SUPPORT_BENIGN
+    temporal_intent: existing_reference_order_reported_per_speed
+    affected_side_intent: existing_reference_side
+    speeds_mps: [0.20, 0.25, 0.30]
+    gait_phase_intent: any_natural
+    mechanism: existing_frozen_materials_and_topologies
+    calibration_required: true
+    viability:
+      per_speed_hazard_min: 1
+      per_speed_benign_min: 1
+      viable_sources_required: [concrete, marble]
+    select_rule: retain_all_viable_cells_needed_to_cover_each_speed_role_and_source
+    pilot_variants:
+      - id: ICE_SLIP
+        source_terrain: [concrete, marble]
+        target_terrain: ice
+        speed_mps: [0.20, 0.25, 0.30]
+        patch_start_x_m: 0.32
+        patch_width_m: 0.72
+        slip_pattern: transition
+        sink_pattern: uniform
+        sink_severity: moderate
+        support_pattern: balanced_soft
+        physical_intent: SLIP
+      - id: SAND_SUPPORT
+        source_terrain: [concrete, marble]
+        target_terrain: sand
+        speed_mps: [0.20, 0.25, 0.30]
+        patch_start_x_m: 0.34
+        patch_width_m: 0.69
+        slip_pattern: uniform
+        sink_pattern: transition_left
+        sink_severity: moderate
+        support_pattern: lateral_deformable
+        physical_intent: SUPPORT
+      - id: SAND_BENIGN
+        source_terrain: [concrete, marble]
+        target_terrain: sand
+        speed_mps: [0.20, 0.25, 0.30]
+        patch_start_x_m: 0.36
+        patch_width_m: 0.73
+        slip_pattern: uniform
+        sink_pattern: transition_left
+        sink_severity: mild
+        support_pattern: balanced_deformable
+        physical_intent: BENIGN
+
+  PHASE_SHIFTED_HAZARD:
+    priority: P1
+    scientific_purpose: natural_missing_phase_viability_without_policy_state_manipulation
+    source_terrains: [concrete, marble]
+    target_terrains: [ice, sand]
+    hazard_intent: SLIP_OR_SUPPORT
+    temporal_intent: phase_is_a_post_simulation_physical_audit_only
+    affected_side_intent: existing_reference_side
+    speeds_mps: [0.25]
+    gait_phase_intent: [CONTACT_RELEASE, DOUBLE_SUPPORT]
+    mechanism: existing_patch_start_timing_only
+    calibration_required: true
+    viability:
+      accepted_phases: [CONTACT_RELEASE, DOUBLE_SUPPORT]
+      each_accepted_phase_runs_min: 2
+      accepted_phase_source_diversity_min: 2
+    select_max_per_phase: 4
+    pilot_variants:
+      - id: ICE_SLIP
+        source_terrain: [concrete, marble]
+        target_terrain: ice
+        speed_mps: 0.25
+        patch_start_x_m: [0.285, 0.315, 0.345, 0.375]
+        patch_width_m: 0.735
+        slip_pattern: transition
+        sink_pattern: uniform
+        sink_severity: moderate
+        support_pattern: balanced_soft
+        physical_intent: SLIP
+      - id: SAND_SUPPORT
+        source_terrain: [concrete, marble]
+        target_terrain: sand
+        speed_mps: 0.25
+        patch_start_x_m: [0.285, 0.315, 0.345, 0.375]
+        patch_width_m: 0.705
+        slip_pattern: uniform
+        sink_pattern: transition_left
+        sink_severity: moderate
+        support_pattern: lateral_deformable
+        physical_intent: SUPPORT
+
+post_freeze_model_smoke:
+  enabled_after_model_blind_selection_freeze_only: true
+  representative_rule: lexicographically_first_selected_pilot_per_ready_family
+  hazard: current_protected_unified_gru_read_only
+  terrain: current_protected_left_fsr4_mlp_read_only
+  performance_denominator_claim: prohibited
+  result_may_change_selection: false
+
+visualization_sanity:
+  timing: after_selection_freeze
+  representative_rule: same_as_model_smoke
+  capture_render_trace: true
+  selection_input: prohibited
+
+outputs:
+  pilot_data_path: data/raw/generalization_scenario_calibration_20260831
+  artifact_path: artifacts/runs/20260831_generalization_scenario_calibration
+  report_path: reports/20260831_generalization_scenario_calibration.md
+  commit_generated_outputs: false
+
+next_milestone:
+  id: GENERALIZATION_DATASET_GENERATION_AND_ZERO_RETRAIN_EVALUATION
+  auto_start: false

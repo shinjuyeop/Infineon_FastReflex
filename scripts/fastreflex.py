@@ -68,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
             "medial_deformable",
             "lateral_deformable",
             "localized_deformable",
+            "staged_lateral_deformable",
         ),
     )
     simulate.add_argument(

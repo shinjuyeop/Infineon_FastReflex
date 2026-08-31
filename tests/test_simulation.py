@@ -65,6 +65,7 @@ from fastreflex.simulation.terrain import (
     SINK_SEVERITY_PROFILES,
     SINK_SUPPORT_PATTERNS,
     SLIP_PATTERNS,
+    TERRAIN_CLASS_ORDER,
     TERRAIN_PROFILES,
     TRANSITION_GROUND_GEOM_NAMES,
     TRANSITION_PATCH_END_X_M,
@@ -73,6 +74,8 @@ from fastreflex.simulation.terrain import (
     TRANSITION_PATCH_WIDTH_M,
     deformable_support_layout,
     read_deformable_support_sample,
+    soft_sink_geom_ids,
+    terrain_contact_class_by_geom_id,
 )
 from scripts.fastreflex import build_parser
 
@@ -1323,6 +1326,20 @@ class SimulationTest(unittest.TestCase):
         self.assertEqual(
             deformable_args.sink_support_pattern, "lateral_deformable"
         )
+        staged_args = parser.parse_args(
+            [
+                "simulate",
+                "--terrain",
+                "sand",
+                "--sink-pattern",
+                "transition_left",
+                "--sink-support-pattern",
+                "staged_lateral_deformable",
+            ]
+        )
+        self.assertEqual(
+            staged_args.sink_support_pattern, "staged_lateral_deformable"
+        )
         slip_transition_args = parser.parse_args(
             ["simulate", "--terrain", "ice", "--slip-pattern", "transition"]
         )
@@ -1361,6 +1378,103 @@ class SimulationTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "viewer is unavailable"):
                 launch_passive_viewer(model, mujoco.MjData(model))
+
+    def test_staged_deformable_support_is_explicit_and_spatially_bounded(self) -> None:
+        model, ground_ids = load_g1_model(
+            "sand",
+            sink_pattern="transition_left",
+            sink_severity="moderate",
+            sink_support_pattern="staged_lateral_deformable",
+            patch_start_x_m=0.35,
+            patch_width_m=0.80,
+        )
+        midpoint = 0.75
+        entry = model.geom("terrain_transition_left").id
+        self.assertIn(entry, ground_ids)
+        self.assertEqual(int(model.geom_contype[entry]), 2)
+        self.assertAlmostEqual(
+            float(model.geom_pos[entry, 0] - model.geom_size[entry, 0]),
+            0.35,
+        )
+        self.assertAlmostEqual(
+            float(model.geom_pos[entry, 0] + model.geom_size[entry, 0]),
+            midpoint,
+        )
+        np.testing.assert_allclose(
+            model.geom_friction[entry],
+            TERRAIN_PROFILES["sand"].friction,
+        )
+        for cell in ("entry_medial", "entry_lateral"):
+            geom_id = model.geom(f"terrain_deformable_left_{cell}").id
+            self.assertEqual(int(model.geom_contype[geom_id]), 0)
+        for cell in ("exit_medial", "exit_lateral"):
+            geom_id = model.geom(f"terrain_deformable_left_{cell}").id
+            self.assertIn(geom_id, ground_ids)
+            self.assertEqual(int(model.geom_contype[geom_id]), 4)
+            self.assertAlmostEqual(
+                float(model.geom_pos[geom_id, 0] - model.geom_size[geom_id, 0]),
+                midpoint,
+            )
+            self.assertAlmostEqual(
+                float(model.geom_pos[geom_id, 0] + model.geom_size[geom_id, 0]),
+                1.15,
+            )
+        soft_ids = soft_sink_geom_ids(
+            model,
+            "transition_left",
+            "staged_lateral_deformable",
+        )
+        self.assertEqual(
+            soft_ids,
+            frozenset(
+                {
+                    entry,
+                    model.geom("terrain_deformable_left_exit_medial").id,
+                    model.geom("terrain_deformable_left_exit_lateral").id,
+                }
+            ),
+        )
+        terrain_classes = terrain_contact_class_by_geom_id(
+            model,
+            "sand",
+            "uniform",
+            "transition_left",
+            "staged_lateral_deformable",
+            "concrete",
+        )
+        sand_id = TERRAIN_CLASS_ORDER.index("sand")
+        self.assertTrue(
+            all(terrain_classes[geom_id] == sand_id for geom_id in soft_ids)
+        )
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        self.assertFalse(
+            any(
+                int(data.contact[index].geom1) in ground_ids
+                and int(data.contact[index].geom2) in ground_ids
+                for index in range(data.ncon)
+            )
+        )
+        layout = deformable_support_layout(
+            model,
+            "staged_lateral_deformable",
+        )
+        np.testing.assert_array_equal(layout.qpos_addresses[0, :2], (-1, -1))
+        self.assertTrue(np.all(layout.qpos_addresses[0, 2:] >= 0))
+        np.testing.assert_array_equal(layout.qpos_addresses[1], (-1, -1, -1, -1))
+        config = load_simulation_config(SIMULATOR_CONFIG)
+        replace(
+            config,
+            terrain="sand",
+            sink_pattern="transition_left",
+            sink_support_pattern="staged_lateral_deformable",
+        ).validate()
+        with self.assertRaisesRegex(ValueError, "requires a finite transition"):
+            replace(
+                config,
+                terrain="sand",
+                sink_support_pattern="staged_lateral_deformable",
+            ).validate()
 
     def test_physical_diagnostics_and_dataset_threshold_parity(self) -> None:
         with DATASET_CONFIG.open("r", encoding="utf-8") as stream:

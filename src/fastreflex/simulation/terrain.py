@@ -102,9 +102,11 @@ DEFORMABLE_SUPPORT_PATTERNS = (
     "lateral_deformable",
     "localized_deformable",
 )
+STAGED_SUPPORT_PATTERNS = ("staged_lateral_deformable",)
 ALL_SINK_SUPPORT_PATTERNS = (
     *SINK_SUPPORT_PATTERNS,
     *DEFORMABLE_SUPPORT_PATTERNS,
+    *STAGED_SUPPORT_PATTERNS,
 )
 DEFORMABLE_CELL_ORDER = (
     "entry_medial",
@@ -264,6 +266,9 @@ def terrain_contact_class_by_geom_id(
     if sink_support_pattern == "balanced_deformable":
         for cell in DEFORMABLE_CELL_ORDER:
             add(f"terrain_deformable_balanced_{target_side}_{cell}", "sand")
+    elif sink_support_pattern == "staged_lateral_deformable":
+        for cell in ("exit_medial", "exit_lateral"):
+            add(f"terrain_deformable_{target_side}_{cell}", "sand")
     elif sink_support_pattern in DEFORMABLE_SUPPORT_PATTERNS:
         for cell in DEFORMABLE_CELL_ORDER:
             add(f"terrain_deformable_{target_side}_{cell}", "sand")
@@ -296,7 +301,7 @@ def get_deformable_support_profile(name: str) -> DeformableSupportProfile:
 
 
 def is_deformable_support_pattern(pattern: str) -> bool:
-    return pattern in DEFORMABLE_SUPPORT_PATTERNS
+    return pattern in (*DEFORMABLE_SUPPORT_PATTERNS, *STAGED_SUPPORT_PATTERNS)
 
 
 def validate_sink_scenario(
@@ -430,6 +435,33 @@ def apply_sink_patch_profiles(
         for name in TRANSITION_GROUND_GEOM_NAMES
     }
     soft_side = pattern.removeprefix("transition_")
+    if support_pattern == "staged_lateral_deformable":
+        # Keep passive tiles collidable with the robot while preventing
+        # tile/static edge contacts from constraining their vertical motion.
+        for geom_id in ground_ids.values():
+            model.geom_contype[geom_id] = 2
+        affected_name = f"terrain_transition_{soft_side}"
+        patch_midpoint_x_m = patch_start_x_m + patch_width_m / 2.0
+        affected_id = model.geom(affected_name).id
+        model.geom_pos[affected_id, 0] = (
+            patch_start_x_m + patch_midpoint_x_m
+        ) / 2.0
+        model.geom_size[affected_id, 0] = (
+            patch_midpoint_x_m - patch_start_x_m
+        ) / 2.0
+        apply_terrain_profile(
+            model,
+            get_terrain_profile("sand"),
+            affected_name,
+        )
+        ground_ids.update(
+            _configure_staged_deformable_support(
+                model,
+                soft_side,
+                severity,
+            )
+        )
+        return frozenset(ground_ids.values())
     if is_deformable_support_pattern(support_pattern):
         # Robot geoms use bit 1. Static transition geoms use type bit 2 and
         # moving tiles type bit 4, both with affinity bit 1. This keeps both
@@ -554,6 +586,41 @@ def _configure_deformable_support(
             profile,
         )
         enable_geom(f"terrain_deformable_{side}_{cell}", cell in selected_cells)
+    return active
+
+
+def _configure_staged_deformable_support(
+    model: mujoco.MjModel,
+    side: str,
+    severity: str,
+) -> dict[str, int]:
+    """Enable existing exit cells after a static benign-Sand entry region."""
+    selected_profile = get_deformable_support_profile(severity)
+    reference_profile = get_deformable_support_profile("reference")
+    active: dict[str, int] = {}
+    for cell, profile in (
+        ("exit_medial", reference_profile),
+        ("exit_lateral", selected_profile),
+    ):
+        name = f"terrain_deformable_{side}_{cell}"
+        geom_id = model.geom(name).id
+        model.geom_contype[geom_id] = 4
+        model.geom_conaffinity[geom_id] = 1
+        body_id = int(model.geom_bodyid[geom_id])
+        model.body_contype[body_id] = 4
+        model.body_conaffinity[body_id] = 1
+        model.geom_rgba[geom_id] = (
+            (0.65, 0.18, 0.72, 1.0)
+            if cell == "exit_lateral"
+            else (0.35, 0.62, 0.42, 1.0)
+        )
+        apply_terrain_profile(model, DEFORMABLE_CONTACT_PROFILE, name)
+        _set_deformable_joint_profile(
+            model,
+            f"deformable_{side}_{cell}_slide",
+            profile,
+        )
+        active[name] = int(geom_id)
     return active
 
 
@@ -696,6 +763,12 @@ def soft_sink_geom_ids(
         side = pattern.removeprefix("transition_")
         if support_pattern == "balanced_soft":
             names = (f"terrain_transition_{side}",)
+        elif support_pattern == "staged_lateral_deformable":
+            names = (
+                f"terrain_transition_{side}",
+                f"terrain_deformable_{side}_exit_medial",
+                f"terrain_deformable_{side}_exit_lateral",
+            )
         elif support_pattern == "balanced_deformable":
             names = tuple(
                 f"terrain_deformable_balanced_{side}_{cell}"
@@ -733,6 +806,11 @@ def deformable_support_layout(
     for side_index, side in enumerate(("left", "right")):
         balanced = support_pattern == "balanced_deformable"
         for cell_index, cell in enumerate(DEFORMABLE_CELL_ORDER):
+            if (
+                support_pattern == "staged_lateral_deformable"
+                and not cell.startswith("exit_")
+            ):
+                continue
             geom_name = (
                 f"terrain_deformable_balanced_{side}_{cell}"
                 if balanced

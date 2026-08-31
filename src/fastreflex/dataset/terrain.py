@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Callable, Iterable, Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 import numpy as np

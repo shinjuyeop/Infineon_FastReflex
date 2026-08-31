@@ -1,284 +1,171 @@
+"""Tests for generic training and current Hazard TRAIN-only contracts."""
+
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 import torch
 
-from fastreflex.dataset.loader import (
-    ManifestRecord,
-    WindowSet,
-    _early_target_annotations,
-    build_windows,
-    fit_normalizer,
-    extract_sensor_profile,
-    fit_profile_normalizer,
-    validate_split,
+from fastreflex.dataset.hazard import (
+    EVENT_TYPE_NONE,
+    PELVIS_IMU6,
+    PELVIS_IMU6_FSR8,
+    HazardRun,
 )
-from fastreflex.evaluation.metrics import classification_metrics, confusion_matrix
+from fastreflex.dataset.loader import WindowSet
 from fastreflex.models.baselines import build_model, parameter_count
+from fastreflex.training.hazard import (
+    HNM_MINIMUM_SPACING_MS,
+    HNM_REPLAY_STRIDE_MS,
+    HNM_ROUNDS,
+    HNM_TOP_K_PER_RUN,
+    fit_hazard_normalizer,
+)
 from fastreflex.training.trainer import (
     load_checkpoint,
-    predict_model,
     save_checkpoint,
     train_model,
 )
-from fastreflex.training.sensor_ablation import (
-    BINARY_CLASS_NAMES,
-    _assert_holdout_waveforms_sealed,
-)
 
 
-def write_run(
-    path: Path,
-    labels: np.ndarray,
-    eligible: np.ndarray,
-    offset: float = 0.0,
-) -> None:
-    samples = len(labels)
-    time = np.arange(samples, dtype=np.float32)[:, None]
-    channels = np.arange(6, dtype=np.float32)[None, :]
-    imu = time + channels + offset
-    np.savez(
-        path,
-        pelvis_imu=imu,
-        hazard_class_id=labels.astype(np.int8),
-        training_eligible=eligible.astype(bool),
+def _run(split: str) -> HazardRun:
+    samples = 60
+    rng = np.random.default_rng(4)
+    imu = rng.normal(size=(samples, 6)).astype(np.float32)
+    fsr = np.zeros((samples, 8), dtype=np.float32)
+    zeros = np.zeros((samples, 2), dtype=np.float32)
+    return HazardRun(
+        run_id=split,
+        split=split,
+        source_terrain="concrete",
+        target_terrain="concrete",
+        design_role="normal",
+        first_contact_sample=0,
+        first_touchdown_sample=0,
+        censor_sample=samples,
+        outcome_diagnostic="VALID_STABLE",
+        fall_sample_diagnostic=None,
+        features={
+            PELVIS_IMU6: imu,
+            PELVIS_IMU6_FSR8: np.concatenate((imu, fsr), axis=1),
+        },
+        timestamp_us=np.arange(samples, dtype=np.int64) * 1000,
+        slip_event_samples_per_foot=(None, None),
+        support_event_samples_per_foot=(None, None),
+        event_sample=None,
+        event_type=EVENT_TYPE_NONE,
+        hard_stable_control=True,
+        drift_m=zeros,
+        tangential_velocity_mps=zeros,
+        support_spread_m=zeros,
+        support_max_displacement_m=zeros,
+        loaded_contact=np.zeros((samples, 2), dtype=bool),
+        sink_pattern="uniform",
+        support_pattern="balanced_soft",
     )
 
 
-def record(path: Path, run_id: str, outcome: str = "BENIGN") -> ManifestRecord:
-    return ManifestRecord(
-        run_id=run_id,
-        path=path,
-        observed_outcome=outcome,
-        scenario_family="normal",
-        terrain="concrete",
-        speed_mps=0.15,
-        patch_start_x=None,
-        sink_side=None,
-    )
-
-
-def window_set(inputs: np.ndarray, targets: np.ndarray) -> WindowSet:
-    run_ids = np.asarray([f"run_{index // 3}" for index in range(len(targets))])
-    counts = tuple(int(value) for value in np.bincount(targets, minlength=3))
+def _windows(seed: int) -> WindowSet:
+    rng = np.random.default_rng(seed)
+    inputs = rng.normal(size=(20, 5, 3)).astype(np.float32)
+    targets = np.asarray([0, 1] * 10, dtype=np.int64)
     return WindowSet(
-        inputs=inputs.astype(np.float32),
-        targets=targets.astype(np.int64),
-        run_ids=run_ids,
-        endpoint_samples=np.arange(len(targets), dtype=np.int64),
-        available_by_class=counts,
+        inputs=inputs,
+        targets=targets,
+        run_ids=np.asarray([f"run_{index // 2}" for index in range(20)]),
+        endpoint_samples=np.arange(20, dtype=np.int64),
+        available_by_class=(10, 10, 0),
     )
 
 
 class TrainingTest(unittest.TestCase):
-    def test_sensor_profile_extraction_shapes_and_raw_order(self) -> None:
-        imu = np.arange(30, dtype=np.float32).reshape(5, 6)
-        fsr = np.arange(40, dtype=np.float32).reshape(5, 8)
-        np.testing.assert_array_equal(extract_sensor_profile(imu, fsr, "imu6"), imu)
-        np.testing.assert_array_equal(extract_sensor_profile(imu, fsr, "fsr8"), fsr)
-        fusion = extract_sensor_profile(imu, fsr, "fusion14")
-        self.assertEqual(fusion.shape, (5, 14))
-        np.testing.assert_array_equal(fusion[:, :6], imu)
-        np.testing.assert_array_equal(fusion[:, 6:], fsr)
+    def test_supported_gru_architecture_is_80_32_one_layer_two_outputs(self) -> None:
+        model = build_model("gru", 20, 80, class_count=2)
+        self.assertEqual(model.gru.input_size, 80)
+        self.assertEqual(model.gru.hidden_size, 32)
+        self.assertEqual(model.gru.num_layers, 1)
+        self.assertFalse(model.gru.bidirectional)
+        self.assertEqual(model.classifier.out_features, 2)
+        self.assertEqual(parameter_count(model), 11_010)
+        self.assertEqual(tuple(model(torch.zeros(3, 20, 80)).shape), (3, 2))
 
-    def test_early_target_labels_sink_from_t1_and_keeps_transition_excluded(self) -> None:
-        samples = 10
-        arrays = {
-            "sample_valid": np.ones(samples, dtype=bool),
-            "pre_fall_valid": np.ones(samples, dtype=bool),
-            "first_censor_sample": np.asarray(-1, dtype=np.int64),
-            "first_patch_contact_sample_per_foot": np.asarray([2, -1]),
-            "first_any_slip_onset_sample": np.asarray(5, dtype=np.int64),
-            "first_sink_physical_onset_sample_per_foot": np.asarray([5, -1]),
-            "hazardous_sink_episode": np.asarray(True),
-        }
-        sink, eligible = _early_target_annotations(arrays, "SINK")
-        np.testing.assert_array_equal(sink, [0, 0, -1, -1, -1, 2, 2, 2, 2, 2])
-        np.testing.assert_array_equal(eligible, sink >= 0)
-        slip, _ = _early_target_annotations(arrays, "SLIP")
-        np.testing.assert_array_equal(slip, [0, 0, -1, -1, -1, 1, 1, 1, 1, 1])
-        benign, _ = _early_target_annotations(arrays, "BENIGN")
-        np.testing.assert_array_equal(benign, np.zeros(samples, dtype=np.int8))
-
-    def test_profile_normalization_uses_train_run_only(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            records = {}
-            for run_id, offset in (("train", 0.0), ("validation", 1000.0)):
-                time = np.arange(20, dtype=np.float32)[:, None]
-                fsr = time + np.arange(8, dtype=np.float32)[None, :] + offset
-                path = root / f"{run_id}.npz"
-                np.savez(
-                    path,
-                    pelvis_imu=np.zeros((20, 6), dtype=np.float32),
-                    foot_fsr=fsr,
-                    hazard_class_id=np.zeros(20, dtype=np.int8),
-                    training_eligible=np.ones(20, dtype=bool),
-                )
-                records[run_id] = record(path, run_id)
-            normalizer = fit_profile_normalizer(
-                records, ("train",), "fsr8", early_targets=False
-            )
-            np.testing.assert_allclose(
-                normalizer.mean,
-                np.arange(8, dtype=np.float32) + 9.5,
-            )
-            self.assertEqual(normalizer.fit_run_ids, ("train",))
-
-    def test_split_is_disjoint_and_invalid_is_excluded(self) -> None:
-        records = {
-            "normal": record(Path("normal.npz"), "normal", "BENIGN"),
-            "slip": record(Path("slip.npz"), "slip", "SLIP"),
-            "sink": record(Path("sink.npz"), "sink", "SINK"),
-            "invalid": record(Path("invalid.npz"), "invalid", "INVALID"),
-        }
-        counts = validate_split(
-            records,
-            {"train": ["normal"], "validation": ["slip"], "holdout": ["sink"]},
-        )
-        self.assertEqual(counts["train"]["BENIGN"], 1)
-        with self.assertRaisesRegex(ValueError, "excluded outcome"):
-            validate_split(
-                records,
-                {
-                    "train": ["normal", "invalid"],
-                    "validation": ["slip"],
-                    "holdout": ["sink"],
-                },
-            )
-        with self.assertRaisesRegex(ValueError, "run-disjoint"):
-            validate_split(
-                records,
-                {
-                    "train": ["normal"],
-                    "validation": ["normal", "slip"],
-                    "holdout": ["sink"],
-                },
-            )
-
-    def test_windows_are_causal_same_class_and_have_expected_shape(self) -> None:
-        labels = np.asarray([0] * 120 + [-1] * 10 + [1] * 120)
-        eligible = labels >= 0
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "run.npz"
-            write_run(path, labels, eligible)
-            records = {"run": record(path, "run", "SLIP")}
-            windows_50 = build_windows(records, ["run"], 50, 10, normalizer=None)
-            windows_100 = build_windows(records, ["run"], 100, 10, normalizer=None)
-        self.assertEqual(windows_50.inputs.shape, (16, 50, 6))
-        self.assertEqual(windows_50.selected_by_class, (8, 8, 0))
-        self.assertEqual(windows_100.inputs.shape, (6, 100, 6))
-        self.assertEqual(windows_100.selected_by_class, (3, 3, 0))
-        self.assertEqual(windows_100.endpoint_samples.tolist(), [99, 109, 119, 229, 239, 249])
-        self.assertTrue(np.all(windows_100.targets[:3] == 0))
-        self.assertTrue(np.all(windows_100.targets[3:] == 1))
-
-    def test_normalizer_uses_only_declared_training_run(self) -> None:
-        labels = np.zeros(60, dtype=np.int8)
-        eligible = np.ones(60, dtype=bool)
-        with tempfile.TemporaryDirectory() as directory:
-            train_path = Path(directory) / "train.npz"
-            holdout_path = Path(directory) / "holdout.npz"
-            write_run(train_path, labels, eligible, offset=0.0)
-            write_run(holdout_path, labels, eligible, offset=10_000.0)
-            records = {
-                "train": record(train_path, "train"),
-                "holdout": record(holdout_path, "holdout"),
-            }
-            normalizer = fit_normalizer(records, ["train"])
+    def test_normalizer_is_train_only_and_records_provenance(self) -> None:
+        train = _run("train")
+        normalizer = fit_hazard_normalizer({"train": train}, ("train",))
         self.assertEqual(normalizer.fit_run_ids, ("train",))
-        self.assertLess(float(normalizer.mean.max()), 100.0)
-        self.assertEqual(normalizer.sample_count, 60)
+        self.assertEqual(normalizer.mean.shape, (80,))
+        self.assertEqual(normalizer.std.shape, (80,))
+        with self.assertRaises(ValueError):
+            fit_hazard_normalizer({"validation": _run("validation")}, ("validation",))
 
-    def test_model_forward_shapes_and_parameter_counts(self) -> None:
-        inputs = torch.zeros(4, 50, 6)
-        mlp = build_model("mlp", 50)
-        gru = build_model("gru", 50)
-        self.assertEqual(tuple(mlp(inputs).shape), (4, 3))
-        self.assertEqual(tuple(gru(inputs).shape), (4, 3))
-        self.assertEqual(parameter_count(mlp), 21_443)
-        self.assertEqual(parameter_count(gru), 3_939)
-        binary = build_model("mlp", 50, input_channels=14, class_count=2)
-        self.assertEqual(tuple(binary(torch.zeros(4, 50, 14)).shape), (4, 2))
+    def test_hnm_constants_are_the_frozen_train_only_protocol(self) -> None:
+        self.assertEqual(HNM_ROUNDS, 3)
+        self.assertEqual(HNM_REPLAY_STRIDE_MS, 1)
+        self.assertEqual(HNM_TOP_K_PER_RUN, 12)
+        self.assertEqual(HNM_MINIMUM_SPACING_MS, 30)
 
-    def test_holdout_waveforms_are_guarded_until_selection(self) -> None:
-        _assert_holdout_waveforms_sealed(("train", "validation"), ("holdout",), False)
-        with self.assertRaisesRegex(RuntimeError, "before selection"):
-            _assert_holdout_waveforms_sealed(("holdout",), ("holdout",), False)
-        _assert_holdout_waveforms_sealed(("holdout",), ("holdout",), True)
-
-    def test_binary_metrics_and_training_protocol(self) -> None:
-        targets = np.tile(np.arange(2), 6)
-        inputs = np.random.default_rng(5).normal(size=(12, 5, 14)).astype(np.float32)
-        inputs += targets[:, None, None]
-        windows = window_set(inputs, targets)
-        model, _ = train_model(
+    def test_generic_training_is_deterministic(self) -> None:
+        train = _windows(1)
+        validation = _windows(2)
+        first, first_result = train_model(
             "mlp",
             5,
-            windows,
-            windows,
-            7,
-            batch_size=4,
+            train,
+            validation,
+            seed=9,
+            batch_size=8,
             max_epochs=2,
-            patience=1,
-            class_names=BINARY_CLASS_NAMES,
+            patience=2,
+            class_names=("NORMAL", "HAZARD"),
         )
-        metrics = classification_metrics(
-            targets,
-            predict_model(model, windows),
-            windows.run_ids,
-            BINARY_CLASS_NAMES,
+        second, second_result = train_model(
+            "mlp",
+            5,
+            train,
+            validation,
+            seed=9,
+            batch_size=8,
+            max_epochs=2,
+            patience=2,
+            class_names=("NORMAL", "HAZARD"),
         )
-        self.assertEqual(tuple(metrics["per_class"]), BINARY_CLASS_NAMES)
-        self.assertIn("run_balanced_macro_f1", metrics)
+        self.assertEqual(first_result.history, second_result.history)
+        for left, right in zip(first.parameters(), second.parameters()):
+            self.assertTrue(torch.equal(left, right))
 
-    def test_training_smoke_is_deterministic(self) -> None:
-        rng = np.random.default_rng(7)
-        targets = np.tile(np.arange(3), 12)
-        inputs = rng.normal(size=(36, 5, 6)).astype(np.float32)
-        inputs += targets[:, None, None] * 2.0
-        windows = window_set(inputs, targets)
-        first_model, first = train_model(
-            "mlp", 5, windows, windows, 123, batch_size=12, max_epochs=3, patience=2
-        )
-        second_model, second = train_model(
-            "mlp", 5, windows, windows, 123, batch_size=12, max_epochs=3, patience=2
-        )
-        self.assertEqual(first.best_epoch, second.best_epoch)
-        np.testing.assert_array_equal(
-            predict_model(first_model, windows), predict_model(second_model, windows)
-        )
-
-    def test_confusion_matrix_and_metrics(self) -> None:
-        targets = np.asarray([0, 0, 1, 1, 2, 2])
-        predictions = np.asarray([0, 1, 1, 1, 0, 2])
-        expected = np.asarray([[1, 1, 0], [0, 2, 0], [1, 0, 1]])
-        np.testing.assert_array_equal(confusion_matrix(targets, predictions), expected)
-        metrics = classification_metrics(
-            targets, predictions, ["a", "a", "b", "b", "c", "c"]
-        )
-        self.assertAlmostEqual(metrics["accuracy"], 4 / 6)
-        self.assertIn("run_balanced_accuracy", metrics)
-
-    def test_checkpoint_round_trip(self) -> None:
-        rng = np.random.default_rng(11)
-        targets = np.tile(np.arange(3), 4)
-        windows = window_set(rng.normal(size=(12, 5, 6)), targets)
+    def test_checkpoint_round_trip_preserves_identity_and_output(self) -> None:
+        train = _windows(3)
         model, result = train_model(
-            "gru", 5, windows, windows, 17, batch_size=6, max_epochs=2, patience=1
+            "gru",
+            5,
+            train,
+            _windows(4),
+            seed=11,
+            max_epochs=1,
+            patience=1,
+            class_names=("NORMAL", "HAZARD"),
         )
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "model.pt"
-            save_checkpoint(path, model, "gru", 5, 17, result)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "candidate.pt"
+            save_checkpoint(
+                path,
+                model,
+                "gru",
+                5,
+                11,
+                result,
+                input_channels=3,
+                class_names=("NORMAL", "HAZARD"),
+            )
             loaded, metadata = load_checkpoint(path)
-        self.assertEqual(metadata["seed"], 17)
-        np.testing.assert_array_equal(
-            predict_model(model, windows), predict_model(loaded, windows)
-        )
+        self.assertEqual(metadata["family"], "gru")
+        self.assertEqual(metadata["input_channels"], 3)
+        self.assertEqual(metadata["class_names"], ["NORMAL", "HAZARD"])
+        inputs = torch.from_numpy(train.inputs)
+        self.assertTrue(torch.equal(model(inputs), loaded(inputs)))
 
 
 if __name__ == "__main__":

@@ -1,14 +1,10 @@
-"""Authoritative raw Hazard dataset collection boundary."""
+"""Canonical Hazard and Terrain dataset boundaries."""
 
-from .collector import collect_dataset, load_collection_config, validate_dataset
-from .loader import build_windows, fit_normalizer, load_manifest, validate_split
+from .hazard import HazardRun, HoldoutGuard, load_hazard_manifest, load_hazard_runs
 
 __all__ = (
-    "build_windows",
-    "collect_dataset",
-    "fit_normalizer",
-    "load_collection_config",
-    "load_manifest",
-    "validate_dataset",
-    "validate_split",
+    "HazardRun",
+    "HoldoutGuard",
+    "load_hazard_manifest",
+    "load_hazard_runs",
 )

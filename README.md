@@ -1,206 +1,132 @@
 # Infineon FastReflex
 
-## 목적
-
-Unitree G1 simulation 기반 센서로 physical hazard reflex와 terrain context를 독립적으로 추정하는 구조를 연구한다.
-
-현재 supported research candidate는 다음 두 stream이다.
-
-- Hazard Reflex: Pelvis IMU6 기반 `NORMAL / HAZARD_REFLEX_REQUIRED`
-- Terrain advisory: FSR4 기반 `CONCRETE / MARBLE / ICE / SAND / UNKNOWN`
-
-Reflex를 Terrain보다 먼저 독립적으로 결정하고, held Terrain은 이후 `SLIP_RISK / SUPPORT_RISK / GENERIC_DISTURBANCE` cause refinement에만 사용한다. Terrain은 reflex를 gate하거나 지연하지 않는다. Historical Stability와 `NORMAL/SLIP/SINK` direct-classification 연구 및 physical oracle evidence는 보존한다.
-
-Hazard Reflex runtime input은 Waist/Pelvis IMU 6-axis다. Current rebuilt Terrain research candidate는 touchdown foot의 FSR4를 50 ms 관측하는 shared MLP이며, LEFT_ONLY 배치가 최소-channel candidate다. 최종 sensor architecture는 E84 resource와 hardware-realism 검증 전까지 고정하지 않는다.
-
-- accelerometer: x/y/z
-- gyroscope: x/y/z
-
-## 기본 원칙
-
-- 1 kHz sensor sequence를 기준으로 연구한다.
-- Terrain producer와 Hazard Reflex producer를 독립 update하고 latest valid terrain은 cause refinement용으로만 hold한다.
-- Hazard Reflex는 actual established Slip/Support와 privileged I1 precursor로 평가하되 이 exact clock을 runtime tensor에 넣지 않는다.
-- Exact COM/XCoM/support state와 fall/recovery outcome은 historical ground truth/analysis에만 사용한다.
-- Runtime sequence model은 bounded candidate와 TRAIN-only hard-negative mining 뒤 sealed holdout으로 검증한다.
-- dataset, training, validation, Float model export를 이 저장소에서 관리한다.
-- 실험 차이는 새 runner가 아니라 config로 표현한다.
-- quantization과 E84 deployment는 별도 저장소에서 수행한다.
-
-## Pipeline
-
-```text
-MuJoCo runtime streams
-  ├─ Pelvis IMU6 -> continuous unified Hazard Reflex -> REFLEX_REQUIRED
-  └─ FSR4 touchdown -> held Terrain Recognition -----> cause refinement only
-```
-
-## Repository boundary
-
-이 저장소가 담당하는 범위:
-
-- Unitree G1 MuJoCo simulation을 이용한 데이터 설계 및 수집
-- terrain/stability dataset contract와 historical NORMAL/SLIP/SINK evidence 관리
-- 모델 설계, 학습, run-disjoint / group-disjoint validation
-- 검증된 Float model과 계약 artifact export
-
-이 저장소가 담당하지 않는 범위:
-
-- quantization, target conversion, Vela
-- KIT_PSE84_AI / PSoC Edge E84 firmware integration
-- HIL 및 target runtime validation
-
-위 deployment 작업은 [`Infineon_FastReflex_E84`](https://github.com/shinjuyeop/Infineon_FastReflex_E84)에서 수행한다. 기존 `/d/shin/Infineon`의 코드와 asset은 자동으로 복사하지 않으며, 향후 명시적으로 검토된 migration만 허용한다.
+Unitree G1 MuJoCo에서 검증된 physical Hazard Reflex와 Terrain advisory를 관리하는 research repository다.
 
 ## Current Status
 
-`TERRAIN_RECOGNITION_SUPPORTED`
-
-Calibrated Concrete/Marble→Ice/Sand에서 fresh `terrain_transition_20260828` dataset을 생성했다. 144 run, 1,152,000 raw samples와 3,139 clean 50 ms touchdown events가 four-class/side/source/stable-fall acceptance를 통과했고 drop, duplicate condition, split overlap과 pre-transition fall은 0이다. Exact terrain geom identity는 label-only이며 model tensor에는 해당 foot의 raw sensor만 들어간다.
-
-50 ms validation sensor ablation의 mean macro F1/worst recall은 FSR4 0.9284/0.8571, Foot IMU6 0.9129/0.8095, Fusion10 0.9309/0.8333이었다. Qualification을 함께 통과한 최소 profile인 FSR4와 MLP/50 ms/LEFT_ONLY를 holdout 전에 선택했다. One-shot holdout은 macro F1 0.9713, worst recall 0.95, run-balanced macro F1 0.9563으로 통과했다. Recommendation은 `LEFT_FSR4_RECOMMENDED`이고 Pelvis IMU6 포함 10 physical channels다.
-
-LEFT_ONLY는 126/144 transition에서 update가 가능했고 median/p95 delay는 1114.5/1238 ms였지만 right-only Sand 18 runs에는 clean left target touchdown이 없었다. BILATERAL_SHARED는 144/144, median/p95 922/1238 ms이고 Pelvis IMU 포함 14 channels다. 따라서 Terrain research candidate는 supported지만 `FINAL_SENSOR_ARCHITECTURE_FROZEN`은 아니다. Historical phase-aware exact MoS clock과 Stability detector는 계속 미지원 상태이며, legacy Terrain v4와 direct Slip/Sink 연구는 historical comparison으로만 보존한다.
-
-Previous cause-specific Slip research status는 `CONTINUOUS_SLIP_REFLEX_PROMISING`이다. Terrain-independent continuous Slip Phase A의 12 candidates를 Round 0과 TRAIN-only HNM 3회까지 완료한 결과, Pelvis IMU6 derived features + GRU + 20 ms, threshold 0.58, persistence 5 ms가 validation에서 Slip recall/no-hazard specificity 100%/100%, premature 0%로 선택됐다. One-shot holdout에서도 Slip 24/24, no-hazard 16/16, hard-ground 4/4, premature/negative-time alert 0%, latency median/p95 -27.5/-27 ms로 모든 Slip gate를 통과했고 24/24 reflex가 frozen ICE output보다 먼저 발생했다. Foot IMU Phase B는 필요하지 않았다.
-
-동일 one-shot holdout에서 변경하지 않은 frozen Sand Support branch는 benign specificity 12/12와 premature 0%를 유지했지만 recall 9/12=75%로 85% gate에 미달했다. Integrated event union recall 33/36=91.67%, no-hazard/hard-ground specificity 100%는 통과했지만 branch gate를 존중해 final asymmetric architecture는 supported로 선언하지 않는다. Recommended research candidate의 unique physical set은 LEFT_ONLY Terrain FSR4 + shared Pelvis IMU6 = 10 channels이며 final sensor architecture는 freeze하지 않는다.
-
-후속 `SUPPORT_FAILURE_MODE_AUDIT`은 HOLDOUT을 재사용하지 않고 frozen Support branch를 TRAIN/VALIDATION에 replay했다. TRAIN은 29/36=80.56%, VALIDATION은 12/12=100%, negative false reflex는 0/156이었다. TRAIN miss 7건 모두 ungated Support score가 threshold를 넘고 16–63 ms 지속됐지만 Support onset 직전 frozen Terrain state가 SAND에서 ICE/MARBLE로 바뀌어 gated persistence가 0 ms였다. 따라서 development evidence의 primary failure는 sensor/score 부족이 아니라 `GATING_SUPPRESSION`이며 observability 판단은 `SUPPORT_SIGNAL_PRESENT_BUT_DECISION_WEAK`이다. Detector, threshold, persistence, Terrain, Slip, sensor set은 변경하지 않았고 기존 HOLDOUT은 소비된 evidence로 유지한다.
-
-`CAUSAL_SUPPORT_TERRAIN_CONTEXT_FUSION`은 raw Support persistence를 Terrain과 분리한 뒤 current-SAND F0와 predeclared 50 ms recent-SAND F1을 비교했다. F0는 VALIDATION gate를 수치상 통과했지만 TRAIN suppression 7건을 그대로 재현해 선택 불가였다. F1은 TRAIN miss 중 2건만 rescue하고 5건 suppression을 남겼으며, VALIDATION 6/12에서 stale-Sand context가 약 565 ms 이른 raw alert를 system event로 승인해 premature 50%로 실패했다. Frozen Terrain interface에 foot identity/per-foot memory가 없어 F2는 구현하지 않았고, 선택 정책이 없으므로 HOLDOUT access는 0이었다. Verdict는 `CAUSAL_SUPPORT_TERRAIN_FUSION_NOT_SUPPORTED`이며 detector/sensor/terrain 변경이나 grace sweep은 수행하지 않았다.
-
-후속 `PER_FOOT_TERRAIN_MEMORY_SUPPORT_FUSION`은 기존 BILATERAL_SHARED FSR4/MLP/50 ms 후보를 frozen protocol에서 역사적 validation과 exact parity로 재구성하고, Terrain prediction에 causal touchdown-foot provenance를 보존했다. PF1(any loaded SAND-memory foot)은 TRAIN의 역사적 7개 suppression miss를 모두 rescue했고 PF1/PF2 모두 VALIDATION recall 12/12, suppression 0/12, Sand benign·hard specificity 100%를 기록했다. 그러나 두 정책 모두 6/12에서 약 565 ms premature authorization을 만들었고 Ice non-Support 9/40에도 held SAND-memory authorization이 발생했다. 따라서 선택 정책 없이 HOLDOUT access 0을 유지했으며 verdict는 `PER_FOOT_TERRAIN_SUPPORT_FUSION_NOT_SUPPORTED`다. FSR8 + Pelvis IMU6 14-channel system candidate와 final sensor architecture는 승인·freeze하지 않는다.
-
-`SUPPORT_EARLY_MODE_RESOLUTION`은 이 약 -565 ms raw mode를 TRAIN/VALIDATION에서 물리·gait audit했다. 24/24 episode가 한 same-foot stride(581–582 ms)와 맞았지만 조기 alert 시 loaded-foot spread는 6.508–6.553 mm였고 TRAIN no-Support phase envelope를 20 ms 이상 벗어났다. Cause verdict는 `SUPPORT_EARLY_MODE_PHYSICAL_PRECURSOR`다. TRAIN-only q99.5로 만든 I1/I2/I3 incipient reference는 모두 VALIDATION physical gate를 통과했지만, frozen Pelvis-IMU Support detector는 Ice non-Support specificity 9/24=37.5%로 continuous validation에 실패했다. 따라서 primary verdict는 `CONTINUOUS_SUPPORT_REFLEX_NOT_SUPPORTED`, HOLDOUT access는 0이며 HNM·sensor augmentation·integrated replay는 수행하지 않았다.
-
-`UNIFIED_HAZARD_REFLEX_SYSTEM_VALIDATION`은 fresh signature-disjoint 256-run corpus에서 cause correctness와 control-facing reflex decision을 분리했다. Dataset은 physical Slip 64, established Support 64(I1 coverage 100%), Sand benign 64, hard normal 64였고 invalid/pre-transition fall/duplicate/prior overlap은 모두 0이었다. Frozen Slip+Support OR Phase A는 validation overall 24/26와 specificity 26/26을 보였지만 Slip 11/13=84.62%로 gate를 실패했다. Predeclared Phase B의 Pelvis IMU6-derived 80D GRU 20 ms, threshold 0.99, persistence 5 ms는 validation과 one-shot fresh holdout에서 각각 hazard 26/26, Slip 13/13, Support 13/13, no-hazard 26/26, premature 0을 기록했다. Verdict는 `UNIFIED_HAZARD_REFLEX_SUPPORTED_SINGLE_IMU`다. Terrain FSR4는 advisory로만 유지하며 provisional unique set은 10 channels이고 final sensor architecture는 freeze하지 않았다.
-
-Dataset, ablation, holdout과 hardware-latency audit의 전체 근거는 [`20260828_terrain_rebuild_sensor_ablation.md`](reports/20260828_terrain_rebuild_sensor_ablation.md)에 기록한다.
-
-Event-centric physical-label corpus와 detector failure evidence는 [`20260828_event_centric_reflex_trigger.md`](reports/20260828_event_centric_reflex_trigger.md)에 기록한다.
-
-Terrain-conditioned branch timing, HNM, Support validation과 Foot IMU fallback 근거는 [`20260828_terrain_conditioned_reflex_detector.md`](reports/20260828_terrain_conditioned_reflex_detector.md)에 기록한다.
-
-Terrain-independent continuous Slip HNM, one-shot holdout과 asymmetric system 근거는 [`20260829_continuous_slip_reflex_detector.md`](reports/20260829_continuous_slip_reflex_detector.md)에 기록한다.
-
-Frozen Support TRAIN/VALIDATION failure-mode와 gating evidence는 [`20260829_support_failure_mode_audit.md`](reports/20260829_support_failure_mode_audit.md)에 기록한다.
-
-Continuous raw Support와 causal Terrain context F0/F1/F2 availability 근거는 [`20260829_causal_support_terrain_context_fusion.md`](reports/20260829_causal_support_terrain_context_fusion.md)에 기록한다.
-
-Bilateral touchdown provenance, per-foot memory PF1/PF2와 premature authorization 근거는 [`20260829_per_foot_terrain_memory_support_fusion.md`](reports/20260829_per_foot_terrain_memory_support_fusion.md)에 기록한다.
-
-Support early mode의 gait periodicity, physical precursor와 continuous specificity 근거는 [`20260829_support_early_mode_resolution.md`](reports/20260829_support_early_mode_resolution.md)에 기록한다.
-
-Fresh unified physical-label corpus, frozen OR failure, conditional unified HNM과 one-shot holdout 근거는 [`20260829_unified_hazard_reflex_system.md`](reports/20260829_unified_hazard_reflex_system.md)에 기록한다.
-
-## 구조
+`SUPPORTED`
 
 ```text
-configs/              실험 차이를 표현할 configuration
-src/fastreflex/       canonical Python package
-scripts/fastreflex.py 단일 CLI entry point
-docs/                 architecture와 연구 protocol
-data/                 local dataset 경계
-artifacts/            model 및 run artifact 경계
-reports/              생성된 분석 보고서 경계
-tests/                simulator와 이후 pipeline의 contract test
+Hazard
+Pelvis IMU6 -> causal 80D -> GRU(20 ms) -> threshold 0.99
+            -> persistence 5 ms -> NORMAL / HAZARD_REFLEX_REQUIRED
+
+Terrain
+touchdown-foot FSR4 -> clean 50 ms -> MLP -> held Terrain state
+                    -> advisory cause refinement only
 ```
 
-설계 개요는 [`docs/architecture.md`](docs/architecture.md), dataset 원칙은 [`docs/dataset.md`](docs/dataset.md), 검증 원칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)를 참고한다.
+Hazard verdict는 `UNIFIED_HAZARD_REFLEX_SUPPORTED_SINGLE_IMU`다. Final candidate는 11,010 parameters이며 fresh one-shot HOLDOUT에서 Hazard 26/26, Slip 13/13, Support 13/13, no-hazard 26/26, Sand benign specificity 100%, hard-ground specificity 100%, premature 0을 기록했다. Candidate freeze SHA-256은 `91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2`다.
+
+Terrain verdict는 `TERRAIN_RECOGNITION_SUPPORTED`다. Current candidate는 FSR4/MLP/50 ms이고 `CONCRETE / MARBLE / ICE / SAND`를 출력한다. Terrain은 `REFLEX_REQUIRED`를 gate하거나 지연하지 않는다. Reflex 뒤의 cause만 다음처럼 보완한다.
+
+```text
+REFLEX_REQUIRED + ICE  -> SLIP_RISK
+REFLEX_REQUIRED + SAND -> SUPPORT_RISK
+REFLEX_REQUIRED + other/unknown -> GENERIC_DISTURBANCE
+```
+
+Final sensor architecture는 E84 resource와 hardware-realism 검증 전까지 freeze하지 않는다.
+
+## Canonical source flow
+
+```text
+Hazard:
+simulation/g1.py -> dataset/hazard.py -> features.py
+                 -> training/hazard.py -> models/baselines.py
+                 -> evaluation/hazard.py
+
+Terrain:
+simulation/{g1,sensors,terrain}.py -> dataset/terrain.py
+                                  -> training/terrain.py
+                                  -> evaluation/terrain.py -> advisory cause
+```
+
+주요 책임은 다음과 같다.
+
+- `simulation/`: G1 physics, runtime sensors, physical Slip/Support/I1 관련 diagnostics
+- `dataset/hazard.py`: unified run, physical labels, split, manifest integrity, HOLDOUT guard
+- `features.py`: selected Pelvis IMU6 → causal 80D contract
+- `training/hazard.py`: TRAIN-only normalization/windowing와 3-round HNM
+- `evaluation/hazard.py`: continuous replay, 0.99/5 ms decision, metrics, frozen-candidate verification
+- `dataset/terrain.py`: exact clean-touchdown indexing과 Terrain dataset contract
+- `training/terrain.py`: Terrain training responsibility
+- `evaluation/terrain.py`: FSR4/50 ms inference, held state, advisory cause refinement
+- `models/baselines.py`: shared MLP/GRU definitions
+- `scripts/fastreflex.py`: single fail-closed CLI
+
+## Scientific boundaries
+
+Unified physical label은 다음과 같다.
+
+```text
+ESTABLISHED_SLIP OR ESTABLISHED_SUPPORT
+-> HAZARD_REFLEX_REQUIRED
+```
+
+Primary no-hazard는 established Slip, I1 precursor, established Support가 모두 없는 run이다. Physical Slip/Support clock과 I1은 label/scoring reference이며 runtime feature가 아니다. Fall/recovery와 Terrain도 Hazard tensor 또는 Hazard label에 들어가지 않는다.
+
+Current preprocessing은 정확히 10 base × 8 causal transforms = 80D다. Feature order, float32 dtype, causal prefix behavior와 schema hash `fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb`를 test로 고정한다.
+
+## Repository boundary
+
+이 repository가 담당한다.
+
+- Unitree G1 MuJoCo simulation과 runtime/diagnostic separation
+- Hazard/Terrain dataset contract와 provenance
+- Float model training/evaluation code와 protected research artifacts
+- run-disjoint split, TRAIN-only preprocessing/HNM, sealed HOLDOUT protocol
+
+이 repository가 담당하지 않는다.
+
+- quantization, Vela, target conversion
+- KIT_PSE84_AI / PSoC Edge E84 integration
+- firmware, HIL, Recovery controller
+
+Deployment 작업은 별도 `Infineon_FastReflex_E84` repository에서 명시적으로 시작한다. 기존 `/d/shin/Infineon`의 코드·데이터·artifact는 자동으로 복사하지 않는다.
 
 ## CLI
 
-Canonical `simulate` command는 display 없는 headless 실행과 visual-only MuJoCo viewer를 모두 지원한다. Policy path는 CLI 또는 `FASTREFLEX_G1_POLICY` 환경 변수로 제공한다. 다음 명령은 trace를 파일로 저장하지 않는 2초 headless smoke다.
+Canonical top-level commands는 `simulate`, `collect`, `train`, `evaluate`, `export`다.
+
+G1 smoke simulation:
 
 ```bash
 python scripts/fastreflex.py simulate \
-  --terrain concrete \
-  --speed 0.15 \
-  --duration 2.0 \
-  --headless \
-  --policy /path/to/policy.onnx
+  --terrain concrete --speed 0.15 --duration 2.0 --headless \
+  --policy /path/to/g1_velocity_policy.onnx
 ```
 
-첫 raw Pilot Dataset은 기존 final directory를 덮어쓰지 않는 fail-closed `collect` command로 생성한다.
-
-```bash
-python scripts/fastreflex.py collect \
-  --config configs/experiment/20260827_hazard_pilot_dataset.yaml
-```
-
-첫 bounded classification PoC는 fixed experiment config를 사용하는 canonical `train` command로 재현한다. 기존 local artifact가 있으면 덮어쓰지 않고 fail-closed한다.
-
-```bash
-python scripts/fastreflex.py train \
-  --config configs/experiment/20260827_first_classification_poc.yaml
-```
-
-Frozen first-PoC classifier의 Time-to-Separation은 재학습 없이 canonical `evaluate` command로 replay한다. Config에 기록된 split, normalizer와 checkpoint SHA가 다르면 fail-closed한다.
+Frozen Unified Hazard candidate의 read-only verification:
 
 ```bash
 python scripts/fastreflex.py evaluate \
-  --config configs/experiment/20260827_time_to_separation.yaml
+  --config configs/experiment/20260829_unified_hazard_reflex_system.yaml
 ```
 
-Terrain/Stability integrated sanity는 같은 canonical `evaluate` command에서 frozen 44-run matrix, exact-state gate, IMU rule, fusion과 terminal status replay를 실행한다. Existing artifact는 덮어쓰지 않는다.
+Frozen Terrain candidate의 read-only verification:
 
 ```bash
 python scripts/fastreflex.py evaluate \
-  --config configs/experiment/20260827_terrain_stability_integrated_sanity.yaml
-```
-
-Transition scenario calibration은 prefix parity가 실패하면 calibration 전에 중단하고, PASS하면 frozen calibration, fresh Concrete validation과 Marble robustness를 순서대로 실행한다.
-
-```bash
-python scripts/fastreflex.py evaluate \
-  --config configs/experiment/20260828_transition_scenario_calibration.yaml
-```
-
-Rebuilt Terrain dataset과 sensor ablation은 같은 canonical `collect`/`train` command를 사용한다. Raw NPZ, event index, checkpoints와 metrics는 Gitignored 경계에 생성된다.
-
-```bash
-python scripts/fastreflex.py collect \
-  --config configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml \
-  --policy /path/to/policy.onnx
-
-python scripts/fastreflex.py train \
   --config configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml
 ```
 
-Integrated calibration이 존재하면 canonical `simulate` 결과의 timestamp-synchronized status replay도 사용할 수 있다.
+`collect`, `train`, `evaluate`는 explicit `--config`를 요구한다. Historical experiment config는 current source에서 다른 runner로 fallback하지 않고, report/config에 기록된 source commit을 사용하라는 메시지와 함께 fail-closed한다. Current frozen Hazard corpus는 이 consolidated CLI에서 재생성하지 않으며, current candidate를 같은 artifact identity에 암묵적으로 재학습하지 않는다. `export`는 reviewed Research-to-Deployment release가 생길 때까지 reserved다.
+
+## Historical evidence
+
+과거 MoS/Stability, direct classification, event-centric, Terrain-gated fusion, continuous Slip와 Support 진단 과정의 결론은 삭제하지 않았다. [`reports/`](reports/)와 Git history가 authoritative evidence/archive다. Current lineage의 핵심 보고서는 다음 두 개다.
+
+- [`reports/20260829_unified_hazard_reflex_system.md`](reports/20260829_unified_hazard_reflex_system.md)
+- [`reports/20260828_terrain_rebuild_sensor_ablation.md`](reports/20260828_terrain_rebuild_sensor_ablation.md)
+
+Current architecture는 [`docs/architecture.md`](docs/architecture.md), dataset contract는 [`docs/dataset.md`](docs/dataset.md), 검증 규칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)에 있다.
+
+## Verification
 
 ```bash
-python scripts/fastreflex.py simulate \
-  --terrain ice --slip-pattern transition --speed 0.15 --duration 8 \
-  --policy /path/to/policy.onnx \
-  --status-calibration artifacts/runs/20260827_terrain_stability_integrated_sanity/calibration.json
+PYTHONPATH=src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
+python -m compileall src scripts
 ```
 
-FSR observability ablation은 동일한 canonical `collect`와 `train` command에 sensor Pilot config를 제공한다. Existing dataset/artifact는 덮어쓰지 않는다.
-
-```bash
-python scripts/fastreflex.py collect \
-  --config configs/experiment/20260827_fsr_observability_pilot.yaml
-
-python scripts/fastreflex.py train \
-  --config configs/experiment/20260827_fsr_observability_pilot.yaml
-```
-
-같은 sensor Pilot의 FSR load distribution은 simulation이나 재학습 없이 canonical `evaluate` command로 재현한다. Generated CSV/PNG는 Gitignored artifact에만 저장한다.
-
-```bash
-python scripts/fastreflex.py evaluate \
-  --config configs/experiment/20260827_fsr_load_distribution_analysis.yaml
-
-python scripts/fastreflex.py evaluate \
-  --config configs/experiment/20260827_fsr_temporal_redistribution_analysis.yaml
-```
-
-`export`는 같은 entry point의 placeholder로 유지한다.
-
-Viewer, 네 terrain 예제, policy 준비와 summary 해석은 [`docs/simulation.md`](docs/simulation.md)를 참고한다.
-
-## Dependency
-
-MuJoCo/runtime dependency에 더해 첫 raw-IMU PoC는 `torch`와 sanity plot용 `matplotlib`을 사용한다. Confusion matrix와 precision/recall/F1은 source에 작게 구현하며 `scikit-learn`이나 별도 ML framework는 추가하지 않는다.
+기본 `pytest` command는 project environment의 pytest/plugin version이 일치할 때 사용한다.

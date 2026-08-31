@@ -213,7 +213,9 @@ Stored NPZ는 완전한 robot `qpos/qvel` trajectory를 갖고 있지 않으므�
 - censor sample
 - tangential drift, support spread, loaded-contact diagnostic trace
 
-Parity 하나라도 실패하면 viewer는 열리지 않는다. Viewer replay가 끝난 뒤에도 저장 trace와 다시 비교해 rendering/pacing이 physics에 영향을 주지 않았음을 확인한다.
+Parity 하나라도 실패하면 viewer는 열리지 않는다. 통과한 headless simulation은 visualization을 요청한 경우에만 각 1 kHz sample의 full MuJoCo `mjSTATE_INTEGRATION`을 memory-only snapshot으로 캡처한다. 이 상태에는 Sand deformable support의 추가 joint state도 포함된다. 기본 `run_simulation()`에서는 capture가 꺼져 있고, snapshot은 model input, dataset, scientific evidence 또는 stored NPZ가 아니다.
+
+Interactive viewer는 canonical physics를 다시 실행하지 않는다. 선택된 snapshot을 render-only model에 `mj_setState`로 복원하고 `mj_forward`와 `viewer.sync`만 수행한다. 따라서 backward seek, event jump, replay와 final-frame hold 중 `mj_step`이 호출되지 않으며 interactive state는 IMU/FSR, physical clock, frozen inference를 바꿀 수 없다.
 
 ### Basic command
 
@@ -223,7 +225,45 @@ Canonical policy가 `artifacts/external/unitree_g1/g1_velocity_policy.onnx`에 �
 python scripts/fastreflex.py visualize --run-id <RUN_ID>
 ```
 
-다른 위치에 같은 verified policy가 있다면 `FASTREFLEX_G1_POLICY` 또는 `--policy`를 사용한다. 재생 속도는 `--speed 0.5`, `--speed 1.0`, `--speed 2.0` 중 하나이며 기본값은 near-real-time `1.0`이다. `--show-debug`는 threshold 상태, tensor provenance와 parity 설명을 HUD에 추가한다.
+다른 위치에 같은 verified policy가 있다면 `FASTREFLEX_G1_POLICY` 또는 `--policy`를 사용한다. 재생 속도는 `--speed 0.5`, `--speed 1.0`, `--speed 2.0` 중 하나이며 기본값은 near-real-time `1.0`이다. 기본 `--mode analysis`는 상세 확률, threshold, physical diagnostic, event timing과 timeline을 표시한다. 발표용 `--mode demo`는 run/time, playback, Hazard, current/history Reflex, Terrain, advisory cause와 physical reference만 간결하게 표시한다. `--show-debug`는 analysis HUD에 tensor provenance와 parity 설명을 추가한다.
+
+특정 simulation time에 자동으로 멈추려면 seconds 단위의 `--pause-at`을 사용한다.
+
+```bash
+python scripts/fastreflex.py visualize \
+  --run-id uhr_ice_h_c20 \
+  --pause-at 1.891
+```
+
+첫 frozen `REFLEX_REQUIRED` onset에서 멈추려면 다음과 같이 실행한다. Reflex가 없는 run은 자동 정지 없이 끝까지 재생된다.
+
+```bash
+python scripts/fastreflex.py visualize \
+  --run-id uhr_ice_h_c20 \
+  --pause-on-reflex
+```
+
+처음부터 정지한 채 1 ms씩 확인하려면 `--single-step`을 사용한다.
+
+```bash
+python scripts/fastreflex.py visualize \
+  --run-id uhr_ice_h_c20 \
+  --single-step \
+  --show-debug
+```
+
+발표용 HUD와 0.5x slow motion 예시는 다음과 같다.
+
+```bash
+python scripts/fastreflex.py visualize \
+  --run-id uhr_ice_h_c20 \
+  --mode demo
+
+python scripts/fastreflex.py visualize \
+  --run-id uhr_ice_h_c20 \
+  --speed 0.5 \
+  --pause-on-reflex
+```
 
 사용 가능한 TRAIN/VALIDATION ID와 canonical representative ID는 다음 명령으로 확인한다. 이 목록에는 HOLDOUT ID가 포함되지 않는다.
 
@@ -263,10 +303,10 @@ python scripts/fastreflex.py visualize --run-id uhr_hard_n_c20
 
 왼쪽 `MODEL OUTPUT` panel은 model/runtime output만 표시한다.
 
-- 현재 Hazard probability, `p >= 0.99`, `REFLEX_REQUIRED`, 첫 reflex time
+- 현재 Hazard probability, `p >= 0.99`, instantaneous `Current reflex`, visualization-only `Reflex occurred`, 첫 reflex time
 - held Terrain state, latest update time, touchdown foot
 - Concrete/Marble/Ice/Sand probability
-- Hazard 결정 뒤에만 계산되는 advisory cause refinement
+- current advisory cause, 첫 reflex 당시 cause, event 이후의 latest Terrain context
 
 오른쪽 `SIMULATOR GT / DIAGNOSTIC` panel은 `NEVER USED AS MODEL INPUT`이라고 명시하며 다음 simulator-only reference를 표시한다.
 
@@ -275,6 +315,11 @@ python scripts/fastreflex.py visualize --run-id uhr_hard_n_c20
 - 현재 I1 precursor active와 first event
 - 현재 established Support active와 first event, support spread, 10 mm / 20 ms 기준
 - censor time
+- detector, I1, physical Hazard, target Terrain update의 timing과 text timeline
+
+`Current reflex`는 선택한 sample의 instantaneous frozen `REFLEX_REQUIRED`다. `Reflex occurred`는 현재 sample까지 onset이 있었는지만 보여 주는 display history이며 controller latch나 recovery state가 아니다. Censor 이후 current Hazard probability와 current reflex는 평가하지 않고 `N/A`/`CENSORED`로 표시하지만, first reflex와 physical event history는 지우지 않는다.
+
+Event delta는 `detector_time - reference_time`이다. 예를 들어 `First reflex 1.891 s`, `Established Slip 1.915 s`, `Reflex -> Slip -24 ms`는 detector가 established Slip보다 24 ms 먼저였다는 뜻이다. Terrain이 뒤늦게 ICE/SAND로 갱신되어도 첫 reflex 당시 cause를 retroactive model output처럼 바꾸지 않으며, 이후 문맥은 `display only`로 따로 표시한다.
 
 Terrain은 Hazard tensor, threshold, persistence 또는 `REFLEX_REQUIRED` gate에 들어가지 않는다. GT와 diagnostic도 model input이 아니며 parity와 시각적 해석에만 사용한다.
 
@@ -287,12 +332,27 @@ Terrain은 Hazard tensor, threshold, persistence 또는 `REFLEX_REQUIRED` gate�
 
 ### Controls
 
-MuJoCo passive viewer의 기본 mouse camera orbit/pan/zoom control을 그대로 사용한다. Window를 닫으면 replay가 종료된다. Replay 완료 전에 닫으면 최종 viewer/physics parity를 확인할 수 없으므로 command는 fail closed한다. 재생 속도는 command 시작 시 `--speed`로 선택한다.
+MuJoCo passive viewer의 기본 mouse camera orbit/pan/zoom control을 그대로 사용한다. 모든 seek는 `0 <= sample < total_samples`로 clamp되고, 재생 중 seek key를 누르면 선택한 frame에서 `PAUSED`가 된다.
+
+| Key | Action |
+|---|---|
+| `Space` | `PLAYING`/`PAUSED` 전환; `ENDED_PAUSED`에서는 first sample부터 restart |
+| `Left` / `Right` | -1 ms / +1 ms; `.`도 +1 ms |
+| `A` / `D` | -10 ms / +10 ms |
+| `Home` / `End` | first sample / last sample에서 pause |
+| `R` | first `REFLEX_REQUIRED` onset |
+| `H` | primary physical Hazard: Slip run은 established Slip, Support run은 established Support |
+| `I` | I1 Support precursor; 없으면 state를 바꾸지 않고 HUD message 표시 |
+| `T` / `G` | next / previous Terrain update |
+
+`--pause-at <SECONDS>`는 가장 가까운 1 kHz sample, `--pause-on-reflex`는 first frozen reflex onset에서 한 번 자동 정지한다. 둘 다 주어지면 timeline에서 먼저 도달하는 sample을 사용한다. `--single-step`은 first stored sample에서 정지한 채 시작한다. Step/seek는 physics를 진행하거나 다시 계산하지 않고 이미 캡처한 snapshot index만 바꾼다.
+
+Playback state는 `PLAYING`, `PAUSED`, `ENDED_PAUSED` 세 가지다. 마지막 sample에 자연스럽게 도달하면 HUD는 `PLAYBACK: ENDED / PAUSED`를 표시하고 viewer와 process는 종료되지 않는다. 이 상태에서도 backward seek, event jump와 `Space` restart가 가능하며, 사용자가 window를 직접 닫을 때만 visualization이 clean exit한다. Headless parity는 viewer를 열기 전에 이미 끝났으므로 중간에 window를 닫아도 scientific parity failure가 아니다.
 
 ### Limitations
 
-- Visualization은 stored NPZ trajectory 재생이 아니라 frozen scenario의 deterministic re-simulation이다.
-- Stored NPZ에는 전체 `qpos/qvel` replay가 없으며 parity를 통과하지 못한 근사 animation은 허용하지 않는다.
+- Visualization은 stored NPZ trajectory 재생이 아니라 frozen scenario의 deterministic headless re-simulation 뒤 생성한 memory-only snapshot playback이다.
+- Stored NPZ에는 전체 state replay가 없으며 parity를 통과하지 못한 근사 animation은 허용하지 않는다. Snapshot은 command가 끝나면 보존되지 않는다.
 - Physical GT와 diagnostics는 visualization/evaluation reference일 뿐 model tensor가 아니다.
 - 이 결과는 simulation evidence이며 real-robot validation이 아니다.
 - HOLDOUT run ID는 명시적으로 거부하며 waveform을 열지 않는다.

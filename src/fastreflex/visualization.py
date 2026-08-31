@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from enum import Enum
 from pathlib import Path
-from typing import Mapping, Sequence
+from threading import Lock
+from typing import Any
 
+import mujoco
 import numpy as np
 
 from fastreflex.dataset.hazard import (
@@ -43,6 +48,8 @@ from fastreflex.simulation.g1 import (
     TESTED_POLICY_SHA256,
     SimulationConfig,
     SimulationResult,
+    launch_passive_viewer,
+    load_g1_model,
     load_simulation_config,
     run_simulation,
 )
@@ -60,6 +67,232 @@ TERRAIN_MODEL_PATH = Path(
 )
 SUPPORTED_SPLITS = frozenset(("train", "validation"))
 SENSOR_ABSOLUTE_TOLERANCE = 0.0
+VISUALIZATION_MODES = ("demo", "analysis")
+
+
+class PlaybackState(str, Enum):
+    """User-visible snapshot playback states."""
+
+    PLAYING = "PLAYING"
+    PAUSED = "PAUSED"
+    ENDED_PAUSED = "ENDED_PAUSED"
+
+
+@dataclass(frozen=True)
+class PlaybackEvents:
+    """Read-only destinations on the 1 kHz visualization timeline."""
+
+    first_reflex: int | None = None
+    physical_hazard: int | None = None
+    i1_precursor: int | None = None
+    terrain_updates: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class PlaybackView:
+    """Atomic display snapshot of interactive playback state."""
+
+    current_sample: int
+    state: PlaybackState
+    speed: float
+    notice: str
+    revision: int
+    ended_reached: bool
+
+    @property
+    def status(self) -> str:
+        if self.state is PlaybackState.ENDED_PAUSED:
+            return "ENDED / PAUSED"
+        return self.state.value
+
+
+class SnapshotPlaybackControl:
+    """Thread-safe keyboard state machine over immutable 1 kHz snapshots."""
+
+    SPACE_KEY = 32
+    PERIOD_KEY = 46
+    A_KEY = 65
+    D_KEY = 68
+    G_KEY = 71
+    H_KEY = 72
+    I_KEY = 73
+    R_KEY = 82
+    T_KEY = 84
+    RIGHT_ARROW_KEY = 262
+    LEFT_ARROW_KEY = 263
+    HOME_KEY = 268
+    END_KEY = 269
+
+    def __init__(
+        self,
+        total_samples: int,
+        *,
+        speed: float = 1.0,
+        events: PlaybackEvents | None = None,
+        auto_pause_sample: int | None = None,
+        start_paused: bool = False,
+    ) -> None:
+        if total_samples <= 0:
+            raise ValueError("snapshot playback requires at least one sample")
+        if not np.isfinite(speed) or speed <= 0.0:
+            raise ValueError("snapshot playback speed must be positive and finite")
+        if auto_pause_sample is not None and not (
+            0 <= auto_pause_sample < total_samples
+        ):
+            raise ValueError("automatic pause sample is outside the render trace")
+        self._total_samples = int(total_samples)
+        self._speed = float(speed)
+        self._events = events or PlaybackEvents()
+        self._current_sample = 0
+        self._state = (
+            PlaybackState.PAUSED
+            if start_paused or auto_pause_sample == 0
+            else PlaybackState.PLAYING
+        )
+        self._auto_pause_sample = auto_pause_sample
+        self._auto_pause_consumed = auto_pause_sample == 0
+        self._notice = (
+            "Automatic pause at sample 0"
+            if auto_pause_sample == 0
+            else ("Single-step start" if start_paused else "")
+        )
+        self._revision = 0
+        self._ended_reached = False
+        self._lock = Lock()
+
+    @property
+    def total_samples(self) -> int:
+        return self._total_samples
+
+    def view(self) -> PlaybackView:
+        with self._lock:
+            return PlaybackView(
+                current_sample=self._current_sample,
+                state=self._state,
+                speed=self._speed,
+                notice=self._notice,
+                revision=self._revision,
+                ended_reached=self._ended_reached,
+            )
+
+    def _changed(self, notice: str = "") -> None:
+        self._notice = notice
+        self._revision += 1
+
+    def _seek(self, sample: int, notice: str) -> None:
+        self._current_sample = min(max(int(sample), 0), self._total_samples - 1)
+        self._state = PlaybackState.PAUSED
+        self._changed(notice)
+
+    def _event_seek(self, sample: int | None, name: str) -> None:
+        if sample is None:
+            self._changed(f"{name} is not present in this run")
+            return
+        self._seek(sample, f"Jumped to {name}")
+
+    def _next_terrain_update(self) -> None:
+        target = next(
+            (
+                sample
+                for sample in self._events.terrain_updates
+                if sample > self._current_sample
+            ),
+            None,
+        )
+        self._event_seek(target, "next Terrain update")
+
+    def _previous_terrain_update(self) -> None:
+        target = next(
+            (
+                sample
+                for sample in reversed(self._events.terrain_updates)
+                if sample < self._current_sample
+            ),
+            None,
+        )
+        self._event_seek(target, "previous Terrain update")
+
+    def key_callback(self, keycode: int) -> None:
+        """Apply canonical MuJoCo/GLFW key codes without touching physics."""
+        with self._lock:
+            if keycode == self.SPACE_KEY:
+                if self._state is PlaybackState.PLAYING:
+                    self._state = PlaybackState.PAUSED
+                    self._changed("Playback paused")
+                elif self._state is PlaybackState.ENDED_PAUSED:
+                    self._current_sample = 0
+                    self._state = PlaybackState.PLAYING
+                    self._changed("Restarted from first sample")
+                else:
+                    self._state = PlaybackState.PLAYING
+                    self._changed("Playback resumed")
+            elif keycode == self.LEFT_ARROW_KEY:
+                self._seek(self._current_sample - 1, "Stepped -1 ms")
+            elif keycode in (self.RIGHT_ARROW_KEY, self.PERIOD_KEY):
+                self._seek(self._current_sample + 1, "Stepped +1 ms")
+            elif keycode == self.A_KEY:
+                self._seek(self._current_sample - 10, "Stepped -10 ms")
+            elif keycode == self.D_KEY:
+                self._seek(self._current_sample + 10, "Stepped +10 ms")
+            elif keycode == self.HOME_KEY:
+                self._seek(0, "Jumped to first sample")
+            elif keycode == self.END_KEY:
+                self._seek(self._total_samples - 1, "Jumped to last sample")
+            elif keycode == self.R_KEY:
+                self._event_seek(self._events.first_reflex, "first Reflex")
+            elif keycode == self.H_KEY:
+                self._event_seek(self._events.physical_hazard, "physical Hazard")
+            elif keycode == self.I_KEY:
+                self._event_seek(self._events.i1_precursor, "I1 precursor")
+            elif keycode == self.T_KEY:
+                self._next_terrain_update()
+            elif keycode == self.G_KEY:
+                self._previous_terrain_update()
+
+    def advance_by(self, sample_count: int) -> PlaybackView:
+        """Advance wall-clock playback, stopping exactly at pause/end boundaries."""
+        if sample_count <= 0:
+            return self.view()
+        with self._lock:
+            if self._state is not PlaybackState.PLAYING:
+                return PlaybackView(
+                    self._current_sample,
+                    self._state,
+                    self._speed,
+                    self._notice,
+                    self._revision,
+                    self._ended_reached,
+                )
+            target = min(
+                self._current_sample + int(sample_count),
+                self._total_samples - 1,
+            )
+            auto_pause = self._auto_pause_sample
+            if (
+                not self._auto_pause_consumed
+                and auto_pause is not None
+                and self._current_sample < auto_pause <= target
+            ):
+                self._current_sample = auto_pause
+                self._state = PlaybackState.PAUSED
+                self._auto_pause_consumed = True
+                self._changed("Automatic pause condition reached")
+            elif target == self._total_samples - 1:
+                self._current_sample = target
+                self._state = PlaybackState.ENDED_PAUSED
+                self._ended_reached = True
+                self._changed("End reached; viewer remains open")
+            elif target != self._current_sample:
+                self._current_sample = target
+                self._revision += 1
+            return PlaybackView(
+                self._current_sample,
+                self._state,
+                self._speed,
+                self._notice,
+                self._revision,
+                self._ended_reached,
+            )
 
 
 @dataclass(frozen=True)
@@ -137,9 +370,7 @@ def _validate_manifest_specification(
         or str(row["group"]) != str(specification["group"])
         or tuple(row["physical_signature"]) != physical_signature(specification)
     ):
-        raise RuntimeError(
-            f"stored scenario specification changed for {row['run_id']}"
-        )
+        raise RuntimeError(f"stored scenario specification changed for {row['run_id']}")
 
 
 def resolve_visualization_run(
@@ -175,8 +406,7 @@ def resolve_visualization_run(
         raise ValueError(f"run is marked invalid and cannot be visualized: {run_id}")
 
     specifications = {
-        str(value["id"]): value
-        for value in generate_hazard_specifications(document)
+        str(value["id"]): value for value in generate_hazard_specifications(document)
     }
     if run_id not in specifications:
         raise RuntimeError(f"run is absent from the frozen scenario matrix: {run_id}")
@@ -201,8 +431,7 @@ def representative_validation_runs(repository_root: Path) -> dict[str, str]:
     document = load_yaml(_experiment_path(root))
     manifest = load_hazard_manifest(_dataset_path(root, document))
     specifications = {
-        str(value["id"]): value
-        for value in generate_hazard_specifications(document)
+        str(value["id"]): value for value in generate_hazard_specifications(document)
     }
     invalid_ids = {
         str(value.get("run_id", value)) if isinstance(value, Mapping) else str(value)
@@ -276,10 +505,9 @@ def reconstruct_simulation_config(
         raise RuntimeError("canonical simulator config changed")
     config = load_simulation_config(simulator_path)
     common = resolved.document["common"]
-    if (
-        config.physics_timestep_s != float(common["physics_timestep_s"])
-        or config.sensor_rate_hz != int(common["sensor_rate_hz"])
-    ):
+    if config.physics_timestep_s != float(
+        common["physics_timestep_s"]
+    ) or config.sensor_rate_hz != int(common["sensor_rate_hz"]):
         raise RuntimeError("simulator timing differs from the frozen dataset")
 
     selected_policy = (
@@ -368,9 +596,7 @@ def compare_stored_runtime(
     simulated_i1 = i1_support_precursor_sample(simulated_run)
     row = resolved.manifest_row
     checks = {
-        "timestamp_us": np.array_equal(
-            run.timestamp_us, result.runtime.timestamp_us
-        ),
+        "timestamp_us": np.array_equal(run.timestamp_us, result.runtime.timestamp_us),
         "pelvis_imu6": np.array_equal(
             run.features["PELVIS_IMU6"], result.runtime.pelvis_imu
         ),
@@ -379,15 +605,10 @@ def compare_stored_runtime(
             run.features["PELVIS_IMU6_FSR8"][:, 6:], result.runtime.foot_fsr
         ),
         "first_target_contact_sample": first_contact == run.first_contact_sample,
-        "first_target_touchdown_sample": first_touchdown
-        == run.first_touchdown_sample,
-        "slip_event_samples": _first_true_per_foot(
-            diagnostics.established_slip_onset
-        )
+        "first_target_touchdown_sample": first_touchdown == run.first_touchdown_sample,
+        "slip_event_samples": _first_true_per_foot(diagnostics.established_slip_onset)
         == run.slip_event_samples_per_foot,
-        "support_event_samples": _first_true_per_foot(
-            diagnostics.deformable_sink_onset
-        )
+        "support_event_samples": _first_true_per_foot(diagnostics.deformable_sink_onset)
         == run.support_event_samples_per_foot,
         "i1_precursor_sample": simulated_i1
         == (
@@ -434,8 +655,7 @@ def _load_frozen_hazard(
     selection = freeze["selection"]
     normalizer = load_hazard_normalizer(root / str(selection["normalizer_path"]))
     models = [
-        load_checkpoint(root / str(path))[0]
-        for path in selection["checkpoint_sha256"]
+        load_checkpoint(root / str(path))[0] for path in selection["checkpoint_sha256"]
     ]
     return normalizer, models
 
@@ -538,9 +758,11 @@ def prepare_visualization(
     """Re-simulate, require parity, and compute frozen model traces headlessly."""
     resolved = resolve_visualization_run(repository_root, run_id)
     config = reconstruct_simulation_config(resolved, policy_path)
-    result = run_simulation(config)
+    result = run_simulation(config, capture_render_trace=True)
     parity = compare_stored_runtime(resolved, result)
     require_parity(parity)
+    if result.render_trace is None:
+        raise RuntimeError("visualization render trace capture was not produced")
     traces = build_visualization_traces(resolved, result)
     return PreparedVisualization(resolved, config, result, parity, traces)
 
@@ -568,53 +790,282 @@ def _metric(value: float | None, scale: float = 1.0, suffix: str = "") -> str:
     return "N/A" if value is None else f"{value * scale:.1f}{suffix}"
 
 
+def _first_event_sample(values: Sequence[int | None]) -> int | None:
+    return min((value for value in values if value is not None), default=None)
+
+
+def _physical_reference(
+    prepared: PreparedVisualization,
+) -> tuple[str, str | None, int | None]:
+    group = str(prepared.resolved.manifest_row["group"])
+    run = prepared.resolved.run
+    if group == "ICE_SLIP_HAZARD":
+        return (
+            "SLIP",
+            "Established Slip",
+            _first_event_sample(run.slip_event_samples_per_foot),
+        )
+    if group == "SAND_SUPPORT_HAZARD":
+        return (
+            "SUPPORT",
+            "Established Support",
+            _first_event_sample(run.support_event_samples_per_foot),
+        )
+    return "NO HAZARD", None, None
+
+
+def playback_events(prepared: PreparedVisualization) -> PlaybackEvents:
+    """Build display-only event destinations from already-approved traces."""
+    _, _, physical_sample = _physical_reference(prepared)
+    updates = tuple(
+        sorted({int(value) for value in prepared.traces.terrain.update_samples})
+    )
+    return PlaybackEvents(
+        first_reflex=prepared.traces.first_reflex_sample,
+        physical_hazard=physical_sample,
+        i1_precursor=prepared.traces.i1_sample,
+        terrain_updates=updates,
+    )
+
+
+def _delta_text(
+    run: HazardRun, detector_sample: int | None, reference_sample: int | None
+) -> str:
+    if detector_sample is None or reference_sample is None:
+        return "N/A"
+    delta_ms = (
+        int(run.timestamp_us[detector_sample]) - int(run.timestamp_us[reference_sample])
+    ) / 1000.0
+    return f"{delta_ms:+.0f} ms"
+
+
+def _event_timing_lines(prepared: PreparedVisualization) -> list[str]:
+    run = prepared.resolved.run
+    reflex = prepared.traces.first_reflex_sample
+    _, physical_name, physical_sample = _physical_reference(prepared)
+    terrain = prepared.traces.terrain.first_target_valid_sample
+    lines = ["EVENT TIMING", "delta = detector - reference"]
+    lines.append(f"First Reflex: {_time_text(run, reflex)}")
+    if prepared.traces.i1_sample is not None or physical_name == "Established Support":
+        lines.extend(
+            (
+                f"I1 Precursor: {_time_text(run, prepared.traces.i1_sample)}",
+                "Reflex -> I1: " + _delta_text(run, reflex, prepared.traces.i1_sample),
+            )
+        )
+    if physical_name is not None:
+        lines.extend(
+            (
+                f"{physical_name}: {_time_text(run, physical_sample)}",
+                f"Reflex -> {physical_name.removeprefix('Established ')}: "
+                + _delta_text(run, reflex, physical_sample),
+            )
+        )
+    lines.extend(
+        (
+            f"Terrain target: {_time_text(run, terrain)}",
+            "Reflex -> Terrain: " + _delta_text(run, reflex, terrain),
+        )
+    )
+    return lines
+
+
+def _timeline_lines(
+    prepared: PreparedVisualization, current_sample: int, width: int = 42
+) -> list[str]:
+    run = prepared.resolved.run
+    sample_count = len(run.timestamp_us)
+    markers: list[tuple[str, int | None]] = [
+        ("R", prepared.traces.first_reflex_sample),
+    ]
+    _, physical_name, physical_sample = _physical_reference(prepared)
+    if physical_name == "Established Slip":
+        markers.append(("S", physical_sample))
+    elif physical_name == "Established Support":
+        markers.append(("U", physical_sample))
+    markers.extend(
+        (
+            ("I", prepared.traces.i1_sample),
+            ("T", prepared.traces.terrain.first_target_valid_sample),
+            (
+                "C",
+                run.censor_sample if run.censor_sample < sample_count else None,
+            ),
+        )
+    )
+
+    def position(sample: int) -> int:
+        if sample_count <= 1:
+            return 0
+        return int(round(sample * (width - 1) / (sample_count - 1)))
+
+    timeline = ["-"] * width
+    legend: list[str] = []
+    used: dict[int, list[str]] = {}
+    for marker, sample in markers:
+        if sample is None:
+            continue
+        pos = position(sample)
+        used.setdefault(pos, []).append(marker)
+        timeline[pos] = marker if len(used[pos]) == 1 else "*"
+        legend.append(marker)
+    cursor = [" "] * width
+    cursor[position(min(max(current_sample, 0), sample_count - 1))] = "^"
+    end_s = run.timestamp_us[-1] / 1_000_000.0
+    legend_text = " ".join(
+        f"{value}={name}"
+        for value, name in (
+            ("R", "Reflex"),
+            ("S", "Slip"),
+            ("I", "I1"),
+            ("U", "Support"),
+            ("T", "Terrain"),
+            ("C", "Censor"),
+        )
+        if value in legend
+    )
+    return [
+        f"0.0s |{''.join(timeline)}| {end_s:.1f}s",
+        f"      {''.join(cursor)}  NOW",
+        legend_text
+        + (
+            " (* = co-located)"
+            if any(len(values) > 1 for values in used.values())
+            else ""
+        ),
+    ]
+
+
 def format_viewer_overlay(
-    prepared: PreparedVisualization, sample: int, *, show_debug: bool = False
+    prepared: PreparedVisualization,
+    sample: int,
+    *,
+    show_debug: bool = False,
+    mode: str = "analysis",
+    playback: PlaybackView | None = None,
 ) -> tuple[str, str]:
     """Format explicitly separated MODEL OUTPUT and SIMULATOR GT panels."""
+    if mode not in VISUALIZATION_MODES:
+        raise ValueError(f"visualization mode must be one of {VISUALIZATION_MODES}")
     run = prepared.resolved.run
     row = prepared.resolved.manifest_row
     traces = prepared.traces
     diagnostics = prepared.simulation.diagnostics
-    sample = min(max(int(sample), 0), len(run.timestamp_us) - 1)
-    censored = sample >= run.censor_sample
+    current_sample = min(int(sample), len(run.timestamp_us) - 1)
+    initial = current_sample < 0
+    sample = max(current_sample, 0)
+    censored = not initial and sample >= run.censor_sample
     probability = traces.hazard_probability[sample]
     probability_text = (
         "N/A"
-        if censored or not np.isfinite(probability)
+        if initial or censored or not np.isfinite(probability)
         else f"{probability:.6f}"
     )
     above_text = (
         "N/A"
-        if censored or not np.isfinite(probability)
+        if initial or censored or not np.isfinite(probability)
         else str(bool(traces.hazard_above_threshold[sample])).upper()
     )
     reflex_text = (
         "CENSORED"
         if censored
-        else str(bool(traces.reflex_required[sample])).upper()
+        else str(bool(not initial and traces.reflex_required[sample])).upper()
     )
-    terrain_state = int(traces.terrain.state[sample])
+    reflex_occurred = bool(
+        not initial
+        and traces.first_reflex_sample is not None
+        and traces.first_reflex_sample <= sample
+    )
+    terrain_state = 0 if initial else int(traces.terrain.state[sample])
     terrain_name = TERRAIN_STATE_NAMES[terrain_state]
-    terrain_update = int(traces.terrain_latest_update[sample])
-    terrain_probability = traces.terrain_probabilities[sample]
-    foot = str(traces.terrain_touchdown_foot[sample]) or "N/A"
-    cause = (
+    terrain_update = -1 if initial else int(traces.terrain_latest_update[sample])
+    terrain_probability = (
+        np.zeros(4, dtype=np.float32)
+        if initial
+        else traces.terrain_probabilities[sample]
+    )
+    foot = "N/A" if initial else (str(traces.terrain_touchdown_foot[sample]) or "N/A")
+    current_cause = (
+        "N/A (CENSORED)"
+        if censored
+        else refine_hazard_cause(
+            bool(not initial and traces.reflex_required[sample]), terrain_state
+        )
+    )
+    first_reflex_cause = "not reached"
+    if reflex_occurred and traces.first_reflex_sample is not None:
+        first_reflex_cause = refine_hazard_cause(
+            True, int(traces.terrain.state[traces.first_reflex_sample])
+        )
+    latest_context = "N/A"
+    if (
+        reflex_occurred
+        and traces.first_reflex_sample is not None
+        and terrain_update > traces.first_reflex_sample
+    ):
+        latest_context = f"{terrain_name} (display only)"
+    playback_status = "PLAYING" if playback is None else playback.status
+    playback_notice = "" if playback is None else playback.notice
+    simulation_time = (
+        "0.000 s" if initial else f"{run.timestamp_us[sample] / 1_000_000.0:.3f} s"
+    )
+    hazard_status = (
         "CENSORED"
         if censored
-        else refine_hazard_cause(bool(traces.reflex_required[sample]), terrain_state)
+        else ("REFLEX DETECTED" if reflex_text == "TRUE" else "NORMAL")
     )
+    physical_reference, _, _ = _physical_reference(prepared)
+
+    if mode == "demo":
+        model_lines = [
+            "MODEL OUTPUT / DEMO",
+            f"Run: {run.run_id} [{run.split.upper()}]",
+            f"Time: {simulation_time}",
+            f"PLAYBACK: {playback_status} ({playback.speed:.1f}x)"
+            if playback is not None
+            else f"PLAYBACK: {playback_status}",
+            *([f"Message: {playback_notice}"] if playback_notice else []),
+            "",
+            f"Hazard: {hazard_status}",
+            f"Current reflex: {reflex_text}",
+            "Reflex occurred: " + str(reflex_occurred).upper() + " (display history)",
+            "First reflex: "
+            + _observed_time_text(run, traces.first_reflex_sample, current_sample),
+            "",
+            f"Terrain: {terrain_name} (advisory only)",
+            f"Current advisory cause: {current_cause}",
+            f"Cause at first reflex: {first_reflex_cause}",
+        ]
+        diagnostic_lines = [
+            "SIMULATOR GT / DIAGNOSTIC",
+            "NEVER USED AS MODEL INPUT",
+            f"Physical reference: {physical_reference}",
+            "",
+            *_event_timing_lines(prepared),
+            "",
+            *_timeline_lines(prepared, current_sample),
+            "",
+            "Space play/pause | Left/Right +/-1 ms | A/D +/-10 ms",
+            "R Reflex | H Hazard | I I1 | T/G Terrain | Home/End",
+        ]
+        return "\n".join(model_lines), "\n".join(diagnostic_lines)
 
     model_lines = [
         "MODEL OUTPUT",
         f"Run: {run.run_id} [{run.split.upper()}]",
-        f"Simulation time: {run.timestamp_us[sample] / 1_000_000.0:.3f} s",
+        f"Simulation time: {simulation_time}",
+        f"PLAYBACK: {playback_status}"
+        + ("" if playback is None else f" ({playback.speed:.1f}x)"),
+        *([f"Message: {playback_notice}"] if playback_notice else []),
+        "Space play/pause | Left/Right +/-1 ms | A/D +/-10 ms",
+        "R Reflex | H Hazard | I I1 | T/G Terrain | Home/End",
         "",
         f"Hazard probability: {probability_text}",
         f"p >= 0.99: {above_text}",
-        f"REFLEX_REQUIRED: {reflex_text}",
+        f"Current reflex (REFLEX_REQUIRED): {reflex_text}",
+        "Reflex occurred: " + str(reflex_occurred).upper() + " (display history only)",
         "First reflex: "
-        + _observed_time_text(run, traces.first_reflex_sample, sample),
+        + _observed_time_text(run, traces.first_reflex_sample, current_sample),
         "",
         f"Terrain state: {terrain_name} (advisory only)",
         "Latest update: "
@@ -624,7 +1075,9 @@ def format_viewer_overlay(
         f"Marble:  {terrain_probability[1]:.4f}",
         f"Ice:     {terrain_probability[2]:.4f}",
         f"Sand:    {terrain_probability[3]:.4f}",
-        f"Cause refinement: {cause}",
+        f"Current advisory cause: {current_cause}",
+        f"Cause at first reflex: {first_reflex_cause}",
+        f"Latest terrain context after event: {latest_context}",
     ]
     if show_debug:
         model_lines.extend(
@@ -635,41 +1088,46 @@ def format_viewer_overlay(
             )
         )
 
-    slip_active = bool(np.any(diagnostics.established_slip[sample]))
-    support_active = bool(np.any(diagnostics.deformable_sink_active[sample]))
-    i1_active = bool(traces.i1_active[sample])
-    slip_sample = min(
-        (value for value in run.slip_event_samples_per_foot if value is not None),
-        default=None,
+    slip_active = bool(not initial and np.any(diagnostics.established_slip[sample]))
+    support_active = bool(
+        not initial and np.any(diagnostics.deformable_sink_active[sample])
     )
-    support_sample = min(
-        (value for value in run.support_event_samples_per_foot if value is not None),
-        default=None,
+    i1_active = bool(not initial and traces.i1_active[sample])
+    slip_sample = _first_event_sample(run.slip_event_samples_per_foot)
+    support_sample = _first_event_sample(run.support_event_samples_per_foot)
+    drift = (
+        None if initial else _finite_max(diagnostics.tangential_anchor_drift_m[sample])
     )
-    drift = _finite_max(diagnostics.tangential_anchor_drift_m[sample])
-    spread = _finite_max(diagnostics.support_surface_spread_m[sample])
+    spread = (
+        None if initial else _finite_max(diagnostics.support_surface_spread_m[sample])
+    )
     diagnostic_lines = [
         "SIMULATOR GT / DIAGNOSTIC",
         "NEVER USED AS MODEL INPUT",
+        f"Physical reference: {physical_reference}",
         f"Physical label: {row['physical_label']}",
         "",
         f"Slip active: {str(slip_active).upper()}",
-        f"Slip event: {_observed_time_text(run, slip_sample, sample)}",
+        f"Slip event: {_observed_time_text(run, slip_sample, current_sample)}",
         f"Tangential drift: {_metric(drift, 1000.0, ' mm')}",
         "Established Slip: 50 mm / 3 ms",
         "",
         f"I1 precursor active: {str(i1_active).upper()}",
-        f"I1 event: {_observed_time_text(run, traces.i1_sample, sample)}",
+        f"I1 event: {_observed_time_text(run, traces.i1_sample, current_sample)}",
         f"Support active: {str(support_active).upper()}",
-        f"Support event: {_observed_time_text(run, support_sample, sample)}",
+        f"Support event: {_observed_time_text(run, support_sample, current_sample)}",
         f"Support spread: {_metric(spread, 1000.0, ' mm')}",
         "Established Support: 10 mm / 20 ms",
         "Censor: "
         + _observed_time_text(
             run,
             run.censor_sample if run.censor_sample < len(run.timestamp_us) else None,
-            sample,
+            current_sample,
         ),
+        "",
+        *_event_timing_lines(prepared),
+        "",
+        *_timeline_lines(prepared, current_sample),
     ]
     if show_debug:
         diagnostic_lines.extend(
@@ -682,34 +1140,233 @@ def format_viewer_overlay(
     return "\n".join(model_lines), "\n".join(diagnostic_lines)
 
 
+def _nearest_sample(run: HazardRun, seconds: float) -> int:
+    times_s = run.timestamp_us.astype(np.float64) / 1_000_000.0
+    return int(np.argmin(np.abs(times_s - seconds)))
+
+
+def _validate_render_trace(
+    prepared: PreparedVisualization, model: mujoco.MjModel
+) -> np.ndarray:
+    trace = prepared.simulation.render_trace
+    if trace is None:
+        raise RuntimeError("prepared visualization has no render-state snapshots")
+    state_spec = mujoco.mjtState.mjSTATE_INTEGRATION
+    expected_shape = (
+        len(prepared.resolved.run.timestamp_us),
+        mujoco.mj_stateSize(model, state_spec),
+    )
+    if trace.integration_state.shape != expected_shape:
+        raise RuntimeError(
+            "render-state snapshot shape differs from the reconstructed model"
+        )
+    if (
+        trace.state_spec != state_spec
+        or trace.model_nq != model.nq
+        or trace.model_nv != model.nv
+    ):
+        raise RuntimeError("render-state snapshot model contract changed")
+    return trace.integration_state
+
+
+def _restore_render_snapshot(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    snapshots: np.ndarray,
+    sample: int,
+) -> None:
+    state_spec = mujoco.mjtState.mjSTATE_INTEGRATION
+    mujoco.mj_setState(model, data, snapshots[sample], state_spec)
+    mujoco.mj_forward(model, data)
+
+
+def _set_viewer_overlay(
+    viewer: Any,
+    prepared: PreparedVisualization,
+    view: PlaybackView,
+    *,
+    show_debug: bool,
+    mode: str,
+) -> None:
+    if not hasattr(viewer, "set_texts"):
+        raise RuntimeError("installed MuJoCo viewer does not support text overlays")
+    model_text, diagnostic_text = format_viewer_overlay(
+        prepared,
+        view.current_sample,
+        show_debug=show_debug,
+        mode=mode,
+        playback=view,
+    )
+    viewer.set_texts(
+        [
+            (
+                mujoco.mjtFontScale.mjFONTSCALE_100,
+                mujoco.mjtGridPos.mjGRID_TOPLEFT,
+                model_text,
+                "",
+            ),
+            (
+                mujoco.mjtFontScale.mjFONTSCALE_100,
+                mujoco.mjtGridPos.mjGRID_TOPRIGHT,
+                diagnostic_text,
+                "",
+            ),
+        ]
+    )
+
+
+def play_snapshot_trace(
+    prepared: PreparedVisualization,
+    playback: SnapshotPlaybackControl,
+    *,
+    show_debug: bool = False,
+    mode: str = "analysis",
+) -> PlaybackView:
+    """Render immutable states until the user closes the passive viewer."""
+    config = prepared.simulation_config
+    model, _ = load_g1_model(
+        terrain_name=config.terrain,
+        sink_pattern=config.sink_pattern,
+        sink_severity=config.sink_severity,
+        slip_pattern=config.slip_pattern,
+        patch_start_x_m=config.patch_start_x_m,
+        patch_width_m=config.patch_width_m,
+        sink_support_pattern=config.sink_support_pattern,
+        source_terrain=config.source_terrain,
+    )
+    snapshots = _validate_render_trace(prepared, model)
+    data = mujoco.MjData(model)
+    initial = playback.view()
+    _restore_render_snapshot(model, data, snapshots, initial.current_sample)
+    viewer_context = launch_passive_viewer(
+        model,
+        data,
+        key_callback=playback.key_callback,
+    )
+    with viewer_context as viewer:
+        rendered_revision = -1
+        last_wall_s = time.monotonic()
+        next_sync_s = last_wall_s
+        sample_accumulator = 0.0
+        while viewer.is_running():
+            now_s = time.monotonic()
+            view = playback.view()
+            if view.state is PlaybackState.PLAYING:
+                sample_accumulator += max(now_s - last_wall_s, 0.0) * (
+                    config.sensor_rate_hz * view.speed
+                )
+                advance = int(sample_accumulator)
+                if advance:
+                    view = playback.advance_by(advance)
+                    sample_accumulator -= advance
+                    if view.state is not PlaybackState.PLAYING:
+                        sample_accumulator = 0.0
+            else:
+                sample_accumulator = 0.0
+            last_wall_s = now_s
+
+            paused_change = (
+                view.state is not PlaybackState.PLAYING
+                and view.revision != rendered_revision
+            )
+            if rendered_revision < 0 or paused_change or now_s >= next_sync_s:
+                with viewer.lock():
+                    _restore_render_snapshot(
+                        model,
+                        data,
+                        snapshots,
+                        view.current_sample,
+                    )
+                _set_viewer_overlay(
+                    viewer,
+                    prepared,
+                    view,
+                    show_debug=show_debug,
+                    mode=mode,
+                )
+                viewer.sync(state_only=True)
+                rendered_revision = view.revision
+                next_sync_s = now_s + 1.0 / 60.0
+            time.sleep(0.005)
+    return playback.view()
+
+
 def visualize_prepared_run(
     prepared: PreparedVisualization,
     *,
     playback_speed: float = 1.0,
     show_debug: bool = False,
+    pause_at_s: float | None = None,
+    pause_on_reflex: bool = False,
+    single_step: bool = False,
+    mode: str = "analysis",
 ) -> dict[str, object]:
-    """Open the viewer only after parity, then verify viewer/physics parity."""
+    """Open snapshot playback only after scientific headless parity passes."""
     require_parity(prepared.parity)
-    config = replace(prepared.simulation_config, headless=False)
-    viewer_result = run_simulation(
-        config,
-        viewer_overlay=lambda sample: format_viewer_overlay(
-            prepared, sample, show_debug=show_debug
-        ),
-        playback_speed=playback_speed,
-    )
-    if bool(viewer_result.metadata["terminated_by_viewer"]):
-        raise RuntimeError(
-            "viewer closed before replay completed; final viewer/physics parity "
-            "could not be confirmed"
+    if mode not in VISUALIZATION_MODES:
+        raise ValueError(f"visualization mode must be one of {VISUALIZATION_MODES}")
+    if not np.isfinite(playback_speed) or playback_speed <= 0.0:
+        raise ValueError("viewer playback speed must be positive and finite")
+    duration_s = prepared.simulation_config.duration_s
+    if pause_at_s is not None and (
+        not np.isfinite(pause_at_s) or not 0.0 <= pause_at_s < duration_s
+    ):
+        raise ValueError(
+            f"--pause-at must be in [0.0, {duration_s:.3f}) simulation seconds"
         )
-    viewer_parity = compare_stored_runtime(prepared.resolved, viewer_result)
-    require_parity(viewer_parity)
+    pause_samples: list[int] = []
+    pause_at_sample = None
+    if pause_at_s is not None:
+        pause_at_sample = _nearest_sample(prepared.resolved.run, pause_at_s)
+        pause_samples.append(pause_at_sample)
+    reflex_pause_sample = None
+    if pause_on_reflex and prepared.traces.first_reflex_sample is not None:
+        reflex_pause_sample = prepared.traces.first_reflex_sample
+        pause_samples.append(reflex_pause_sample)
+    auto_pause_sample = min(pause_samples) if pause_samples else None
+    playback = SnapshotPlaybackControl(
+        len(prepared.resolved.run.timestamp_us),
+        speed=playback_speed,
+        events=playback_events(prepared),
+        auto_pause_sample=auto_pause_sample,
+        start_paused=single_step,
+    )
+    final_view = play_snapshot_trace(
+        prepared,
+        playback,
+        show_debug=show_debug,
+        mode=mode,
+    )
+    reflex_pause_s = (
+        None
+        if reflex_pause_sample is None
+        else float(
+            prepared.resolved.run.timestamp_us[reflex_pause_sample] / 1_000_000.0
+        )
+    )
+    render_trace = prepared.simulation.render_trace
+    assert render_trace is not None
     return {
         "run_id": prepared.resolved.run.run_id,
         "split": prepared.resolved.run.split,
         "stored_resimulation_parity": prepared.parity.passed,
-        "viewer_physics_parity": viewer_parity.passed,
+        "viewer_physics_parity": None,
+        "viewer_physics_executed": False,
+        "snapshot_playback": True,
+        "scientific_parity_prechecked": True,
+        "viewer_closed_cleanly": True,
         "sensor_absolute_tolerance": SENSOR_ABSOLUTE_TOLERANCE,
         "holdout_opened": False,
+        "mode": mode,
+        "pause_at_s": pause_at_s,
+        "pause_at_sample": pause_at_sample,
+        "pause_on_reflex": pause_on_reflex,
+        "reflex_pause_s": reflex_pause_s,
+        "auto_pause_sample": auto_pause_sample,
+        "single_step_started_paused": single_step,
+        "playback_state_at_close": final_view.state.value,
+        "current_sample_at_close": final_view.current_sample,
+        "ended_paused_reached": final_view.ended_reached,
+        "render_state_samples": render_trace.integration_state.shape[0],
+        "render_state_size": render_trace.integration_state.shape[1],
     }

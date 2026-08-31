@@ -123,6 +123,8 @@ python scripts/fastreflex.py visualize --run-id uhr_ice_h_c20
 
 Representative run과 HUD 해석은 [`docs/simulation.md`](docs/simulation.md#visualizing-supported-hazardterrain-decisions)를 참고한다. HOLDOUT run은 visualization 대상에서 제외된다.
 
+Viewer는 검증된 memory-only snapshot을 재생하며 종료 시 마지막 frame의 `ENDED / PAUSED` 상태로 열린 채 유지된다. `Space`, 방향키, `A/D`, `Home/End`, `R/H/I/T/G`로 재생·seek·event jump를 수행하고, `--pause-at`, `--pause-on-reflex`, `--single-step`, `--mode demo|analysis`를 지원한다.
+
 ## Historical evidence
 
 과거 MoS/Stability, direct classification, event-centric, Terrain-gated fusion, continuous Slip와 Support 진단 과정의 결론은 삭제하지 않았다. [`reports/`](reports/)와 Git history가 authoritative evidence/archive다. Current lineage의 핵심 보고서는 다음 두 개다.

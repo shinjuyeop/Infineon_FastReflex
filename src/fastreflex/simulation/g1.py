@@ -145,6 +145,7 @@ POLICY_PERIOD_S = 0.6
 CONTROL_PERIOD_S = 0.02
 VIEWER_SYNC_PERIOD_S = 1.0 / 60.0
 ViewerOverlay = Callable[[int], tuple[str, str]]
+ViewerKeyCallback = Callable[[int], None]
 
 
 @dataclass(frozen=True)
@@ -236,6 +237,16 @@ class SimulationStateTrace:
 
 
 @dataclass(frozen=True)
+class RenderStateTrace:
+    """Memory-only full MuJoCo state snapshots for visualization playback."""
+
+    integration_state: np.ndarray
+    state_spec: int
+    model_nq: int
+    model_nv: int
+
+
+@dataclass(frozen=True)
 class SimulationResult:
     """Runtime trace plus separately named simulator-only diagnostics."""
 
@@ -245,6 +256,7 @@ class SimulationResult:
     stability: StabilityDiagnostics | None = None
     state_trace: SimulationStateTrace | None = None
     exact_terrain_contact: np.ndarray | None = None
+    render_trace: RenderStateTrace | None = None
 
 
 def load_simulation_config(path: Path) -> SimulationConfig:
@@ -407,6 +419,7 @@ def load_g1_model(
 def launch_passive_viewer(
     model: mujoco.MjModel,
     data: mujoco.MjData,
+    key_callback: ViewerKeyCallback | None = None,
 ) -> ContextManager[Any]:
     """Launch MuJoCo's optional GUI with a clear availability error."""
     try:
@@ -421,6 +434,7 @@ def launch_passive_viewer(
         viewer = viewer_module.launch_passive(
             model,
             data,
+            key_callback=key_callback,
             show_left_ui=False,
             show_right_ui=False,
         )
@@ -448,9 +462,18 @@ def _copy_integration_state(
 ) -> None:
     """Copy render state without exposing canonical physics to GUI inputs."""
     state_spec = mujoco.mjtState.mjSTATE_INTEGRATION
-    state = np.empty(mujoco.mj_stateSize(source_model, state_spec), dtype=np.float64)
-    mujoco.mj_getState(source_model, source_data, state, state_spec)
+    state = _capture_integration_state(source_model, source_data)
     mujoco.mj_setState(viewer_model, viewer_data, state, state_spec)
+
+
+def _capture_integration_state(
+    model: mujoco.MjModel, data: mujoco.MjData
+) -> np.ndarray:
+    """Read the complete integration state without advancing or mutating physics."""
+    state_spec = mujoco.mjtState.mjSTATE_INTEGRATION
+    state = np.empty(mujoco.mj_stateSize(model, state_spec), dtype=np.float64)
+    mujoco.mj_getState(model, data, state, state_spec)
+    return state
 
 
 def _pace_viewer(
@@ -644,6 +667,7 @@ def run_simulation(
     observe_fsr: bool = True,
     observe_foot_imu: bool = True,
     capture_state_trace: bool = False,
+    capture_render_trace: bool = False,
     viewer_overlay: ViewerOverlay | None = None,
     playback_speed: float = 1.0,
 ) -> SimulationResult:
@@ -732,6 +756,7 @@ def run_simulation(
     controller_action: list[np.ndarray] = []
     policy_updated: list[bool] = []
     pelvis_pose: list[np.ndarray] = []
+    render_integration_state: list[np.ndarray] = []
     first_fall_sample: int | None = None
     first_fall_reasons: tuple[str, ...] = ()
     pelvis_id = model.body("pelvis").id
@@ -869,6 +894,10 @@ def run_simulation(
                 controller_action.append(controller.action.copy())
                 policy_updated.append(updated)
                 pelvis_pose.append(data.qpos[:7].copy())
+            if capture_render_trace:
+                render_integration_state.append(
+                    _capture_integration_state(model, data)
+                )
 
     timestamps = np.asarray(timestamp_us, dtype=np.int64)
     sequence = np.arange(len(timestamps), dtype=np.int64)
@@ -968,6 +997,7 @@ def run_simulation(
         "timestamp_delta_us": 1000,
         "viewer": not config.headless,
         "terminated_by_viewer": terminated_by_viewer,
+        "render_trace_captured": capture_render_trace,
         "command_speed_mps": config.command_speed_mps,
         "policy_sha256": controller.policy_sha256,
         "policy_upstream_revision": UPSTREAM_REVISION,
@@ -991,6 +1021,18 @@ def run_simulation(
             pelvis_pose=np.asarray(pelvis_pose, dtype=np.float64).reshape(-1, 7),
             whole_body_com=np.asarray(whole_body_com, dtype=np.float64).reshape(-1, 3),
         )
+    render_trace = None
+    if capture_render_trace:
+        state_spec = mujoco.mjtState.mjSTATE_INTEGRATION
+        state_size = mujoco.mj_stateSize(model, state_spec)
+        render_trace = RenderStateTrace(
+            integration_state=np.asarray(
+                render_integration_state, dtype=np.float64
+            ).reshape(-1, state_size),
+            state_spec=state_spec,
+            model_nq=model.nq,
+            model_nv=model.nv,
+        )
     return SimulationResult(
         runtime=runtime,
         diagnostics=diagnostics,
@@ -1000,6 +1042,7 @@ def run_simulation(
         exact_terrain_contact=np.asarray(
             exact_terrain_contact, dtype=bool
         ).reshape(-1, 2, 4),
+        render_trace=render_trace,
     )
 
 

@@ -56,9 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
             "transition_right",
         ),
     )
-    simulate.add_argument(
-        "--sink-severity", choices=("mild", "moderate", "severe")
-    )
+    simulate.add_argument("--sink-severity", choices=("mild", "moderate", "severe"))
     simulate.add_argument(
         "--sink-support-pattern",
         choices=(
@@ -110,6 +108,28 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(0.5, 1.0, 2.0),
         default=1.0,
         help="viewer playback speed (default: 1.0)",
+    )
+    visualize.add_argument(
+        "--pause-at",
+        type=float,
+        metavar="SECONDS",
+        help="pause once at the requested simulation time",
+    )
+    visualize.add_argument(
+        "--pause-on-reflex",
+        action="store_true",
+        help="pause at the first frozen REFLEX_REQUIRED onset",
+    )
+    visualize.add_argument(
+        "--single-step",
+        action="store_true",
+        help="start paused for keyboard frame stepping",
+    )
+    visualize.add_argument(
+        "--mode",
+        choices=("demo", "analysis"),
+        default="analysis",
+        help="compact demo or detailed analysis overlay (default: analysis)",
     )
     visualize.add_argument("--show-debug", action="store_true")
     visualize.add_argument(
@@ -187,9 +207,7 @@ def _simulate(args: argparse.Namespace) -> int:
             else args.sink_support_pattern
         ),
         patch_start_x_m=(
-            config.patch_start_x_m
-            if args.patch_start_x is None
-            else args.patch_start_x
+            config.patch_start_x_m if args.patch_start_x is None else args.patch_start_x
         ),
         patch_width_m=(
             config.patch_width_m if args.patch_width is None else args.patch_width
@@ -197,9 +215,7 @@ def _simulate(args: argparse.Namespace) -> int:
         headless=headless,
     )
     print(
-        json.dumps(
-            summarize_result(run_simulation(config)), indent=2, sort_keys=True
-        )
+        json.dumps(summarize_result(run_simulation(config)), indent=2, sort_keys=True)
     )
     return 0
 
@@ -274,6 +290,14 @@ def _visualize(args: argparse.Namespace) -> int:
         return 0
     policy = _policy_path(args.policy)
     prepared = prepare_visualization(REPOSITORY_ROOT, args.run_id, policy)
+    first_reflex_s = (
+        None
+        if prepared.traces.first_reflex_sample is None
+        else float(
+            prepared.resolved.run.timestamp_us[prepared.traces.first_reflex_sample]
+            / 1_000_000.0
+        )
+    )
     print(
         json.dumps(
             {
@@ -284,6 +308,18 @@ def _visualize(args: argparse.Namespace) -> int:
                     prepared.parity.sensor_absolute_tolerance
                 ),
                 "status": "PARITY_PASSED_OPENING_VIEWER",
+                "pause_at_s": args.pause_at,
+                "pause_on_reflex": args.pause_on_reflex,
+                "first_reflex_s": first_reflex_s,
+                "single_step": args.single_step,
+                "mode": args.mode,
+                "controls": {
+                    "pause_play": "Space",
+                    "step_1ms": "Left/Right Arrow (period also steps forward)",
+                    "step_10ms": "A/D",
+                    "first_last": "Home/End",
+                    "event_jumps": "R Reflex, H Hazard, I I1, T/G Terrain",
+                },
             },
             indent=2,
             sort_keys=True,
@@ -294,6 +330,10 @@ def _visualize(args: argparse.Namespace) -> int:
         prepared,
         playback_speed=args.speed,
         show_debug=args.show_debug,
+        pause_at_s=args.pause_at,
+        pause_on_reflex=args.pause_on_reflex,
+        single_step=args.single_step,
+        mode=args.mode,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

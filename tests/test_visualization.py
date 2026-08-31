@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from dataclasses import replace
+from contextlib import nullcontext
 from pathlib import Path
 from unittest import mock
 
@@ -11,17 +11,21 @@ import numpy as np
 
 from fastreflex.dataset.hazard import GROUPS, PELVIS_IMU6
 from fastreflex.evaluation.hazard import reflex_required_trace
-from fastreflex.simulation.g1 import run_simulation
 from fastreflex.visualization import (
     ParityReport,
-    compare_stored_runtime,
+    PlaybackEvents,
+    PlaybackState,
+    SnapshotPlaybackControl,
     format_viewer_overlay,
+    play_snapshot_trace,
+    playback_events,
     prepare_visualization,
     reconstruct_simulation_config,
     representative_validation_runs,
     require_parity,
     resolve_visualization_run,
     visualization_run_ids,
+    visualize_prepared_run,
 )
 from scripts.fastreflex import build_parser
 
@@ -37,9 +41,11 @@ REPRESENTATIVES = {
 
 
 class _FakeViewer:
-    def __init__(self) -> None:
+    def __init__(self, running_checks: int = 3) -> None:
         self.sync_count = 0
         self.texts: list[object] = []
+        self.running_checks = running_checks
+        self.is_running_count = 0
 
     def __enter__(self) -> "_FakeViewer":
         return self
@@ -48,10 +54,14 @@ class _FakeViewer:
         return None
 
     def is_running(self) -> bool:
-        return True
+        self.is_running_count += 1
+        return self.is_running_count <= self.running_checks
 
     def sync(self, state_only: bool = False) -> None:
         self.sync_count += 1
+
+    def lock(self) -> nullcontext[None]:
+        return nullcontext()
 
     def set_texts(self, texts: object) -> None:
         self.texts.append(texts)
@@ -66,7 +76,25 @@ class VisualizationResolutionTest(unittest.TestCase):
         )
         self.assertEqual(args.command, "visualize")
         self.assertEqual(args.speed, 2.0)
+        self.assertEqual(args.mode, "analysis")
         self.assertFalse(args.show_debug)
+        controls = parser.parse_args(
+            [
+                "visualize",
+                "--run-id",
+                "uhr_ice_h_c20",
+                "--pause-at",
+                "1.5",
+                "--pause-on-reflex",
+                "--single-step",
+                "--mode",
+                "demo",
+            ]
+        )
+        self.assertEqual(controls.pause_at, 1.5)
+        self.assertTrue(controls.pause_on_reflex)
+        self.assertTrue(controls.single_step)
+        self.assertEqual(controls.mode, "demo")
 
         validation = resolve_visualization_run(ROOT, "uhr_ice_h_c20")
         train = resolve_visualization_run(ROOT, "uhr_ice_h_c01")
@@ -109,6 +137,75 @@ class VisualizationResolutionTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "viewer will not open: pelvis_imu6"):
             require_parity(report)
 
+    def test_playback_state_machine_seek_events_and_end_hold(self) -> None:
+        events = PlaybackEvents(
+            first_reflex=20,
+            physical_hazard=30,
+            i1_precursor=None,
+            terrain_updates=(5, 15, 25),
+        )
+        control = SnapshotPlaybackControl(40, events=events)
+        self.assertEqual(control.view().state, PlaybackState.PLAYING)
+
+        control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
+        self.assertEqual(control.view().state, PlaybackState.PAUSED)
+        control.key_callback(SnapshotPlaybackControl.RIGHT_ARROW_KEY)
+        self.assertEqual(control.view().current_sample, 1)
+        control.key_callback(SnapshotPlaybackControl.D_KEY)
+        self.assertEqual(control.view().current_sample, 11)
+        control.key_callback(SnapshotPlaybackControl.A_KEY)
+        self.assertEqual(control.view().current_sample, 1)
+        control.key_callback(SnapshotPlaybackControl.LEFT_ARROW_KEY)
+        control.key_callback(SnapshotPlaybackControl.LEFT_ARROW_KEY)
+        self.assertEqual(control.view().current_sample, 0)
+
+        control.key_callback(SnapshotPlaybackControl.R_KEY)
+        self.assertEqual(control.view().current_sample, 20)
+        control.key_callback(SnapshotPlaybackControl.H_KEY)
+        self.assertEqual(control.view().current_sample, 30)
+        control.key_callback(SnapshotPlaybackControl.I_KEY)
+        self.assertEqual(control.view().current_sample, 30)
+        self.assertIn("not present", control.view().notice)
+        control.key_callback(SnapshotPlaybackControl.HOME_KEY)
+        control.key_callback(SnapshotPlaybackControl.T_KEY)
+        self.assertEqual(control.view().current_sample, 5)
+        control.key_callback(SnapshotPlaybackControl.T_KEY)
+        self.assertEqual(control.view().current_sample, 15)
+        control.key_callback(SnapshotPlaybackControl.G_KEY)
+        self.assertEqual(control.view().current_sample, 5)
+
+        control.key_callback(SnapshotPlaybackControl.END_KEY)
+        self.assertEqual(control.view().current_sample, 39)
+        self.assertEqual(control.view().state, PlaybackState.PAUSED)
+        control.key_callback(SnapshotPlaybackControl.HOME_KEY)
+        control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
+        control.key_callback(SnapshotPlaybackControl.D_KEY)
+        self.assertEqual(control.view().current_sample, 10)
+        self.assertEqual(control.view().state, PlaybackState.PAUSED)
+
+        control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
+        ended = control.advance_by(100)
+        self.assertEqual(ended.current_sample, 39)
+        self.assertEqual(ended.state, PlaybackState.ENDED_PAUSED)
+        self.assertTrue(ended.ended_reached)
+        self.assertEqual(control.advance_by(100).state, PlaybackState.ENDED_PAUSED)
+        control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
+        self.assertEqual(control.view().current_sample, 0)
+        self.assertEqual(control.view().state, PlaybackState.PLAYING)
+
+    def test_auto_pause_uses_exact_earliest_sample(self) -> None:
+        control = SnapshotPlaybackControl(50, auto_pause_sample=12)
+        paused = control.advance_by(40)
+        self.assertEqual(paused.current_sample, 12)
+        self.assertEqual(paused.state, PlaybackState.PAUSED)
+        control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
+        self.assertEqual(control.advance_by(100).state, PlaybackState.ENDED_PAUSED)
+
+        at_start = SnapshotPlaybackControl(50, auto_pause_sample=0)
+        self.assertEqual(at_start.view().state, PlaybackState.PAUSED)
+        with self.assertRaisesRegex(ValueError, "positive and finite"):
+            SnapshotPlaybackControl(50, speed=0.0)
+
 
 @unittest.skipUnless(
     DATASET.is_dir() and POLICY.is_file(),
@@ -134,13 +231,22 @@ class VisualizationIntegrationTest(unittest.TestCase):
             prepared.traces.terrain.state.shape,
             prepared.traces.reflex_required.shape,
         )
+        render_trace = prepared.simulation.render_trace
+        self.assertIsNotNone(render_trace)
+        assert render_trace is not None
+        self.assertEqual(
+            render_trace.integration_state.shape[0],
+            len(prepared.resolved.run.timestamp_us),
+        )
+        self.assertGreater(render_trace.integration_state.shape[1], 71)
+        self.assertTrue(prepared.simulation.metadata["render_trace_captured"])
+        with self.assertRaisesRegex(ValueError, "--pause-at must be in"):
+            visualize_prepared_run(prepared, pause_at_s=8.0)
 
     def test_gt_and_terrain_metadata_never_enter_hazard_tensor(self) -> None:
         run = self.prepared.resolved.run
         self.assertEqual(run.features[PELVIS_IMU6].shape[1], 6)
-        self.assertEqual(
-            set(run.features), {"PELVIS_IMU6", "PELVIS_IMU6_FSR8"}
-        )
+        self.assertEqual(set(run.features), {"PELVIS_IMU6", "PELVIS_IMU6_FSR8"})
         original = self.prepared.traces.reflex_required.copy()
         altered_terrain = self.prepared.traces.terrain.state.copy()
         altered_terrain[:] = 4
@@ -148,43 +254,167 @@ class VisualizationIntegrationTest(unittest.TestCase):
         self.assertFalse(np.shares_memory(run.features[PELVIS_IMU6], altered_terrain))
 
     def test_overlay_separates_model_output_from_simulator_gt(self) -> None:
+        initial_model, initial_diagnostics = format_viewer_overlay(self.prepared, -1)
+        self.assertIn("Simulation time: 0.000 s", initial_model)
+        self.assertIn("Hazard probability: N/A", initial_model)
+        self.assertIn("Terrain state: UNKNOWN", initial_model)
+        self.assertIn("Tangential drift: N/A", initial_diagnostics)
+
+        first_reflex = self.prepared.traces.first_reflex_sample
+        self.assertIsNotNone(first_reflex)
+        assert first_reflex is not None
         model, diagnostics = format_viewer_overlay(
-            self.prepared, 1914, show_debug=True
+            self.prepared, first_reflex, show_debug=True
         )
         self.assertIn("MODEL OUTPUT", model)
         self.assertIn("Hazard probability", model)
         self.assertIn("Terrain state", model)
-        self.assertIn("Cause refinement", model)
+        self.assertIn("Current reflex (REFLEX_REQUIRED): TRUE", model)
+        self.assertIn("Reflex occurred: TRUE (display history only)", model)
+        self.assertIn("Current advisory cause", model)
+        self.assertIn("Cause at first reflex", model)
         self.assertIn("SIMULATOR GT / DIAGNOSTIC", diagnostics)
         self.assertIn("NEVER USED AS MODEL INPUT", diagnostics)
         self.assertIn("Tangential drift", diagnostics)
         self.assertIn("Support spread", diagnostics)
+        self.assertIn("EVENT TIMING", diagnostics)
+        self.assertIn("delta = detector - reference", diagnostics)
+        self.assertIn("Reflex -> Slip: -24 ms", diagnostics)
+        self.assertIn("Reflex -> Terrain: -456 ms", diagnostics)
+        self.assertIn("R=Reflex", diagnostics)
 
-    def test_viewer_overlay_and_pacing_do_not_change_physics(self) -> None:
-        fake_viewer = _FakeViewer()
-        config = replace(self.prepared.simulation_config, headless=False)
-        with mock.patch(
-            "fastreflex.simulation.g1.launch_passive_viewer",
-            return_value=fake_viewer,
-        ), mock.patch("fastreflex.simulation.g1._pace_viewer"):
-            viewer_result = run_simulation(
-                config,
-                viewer_overlay=lambda sample: format_viewer_overlay(
-                    self.prepared, sample
-                ),
-                playback_speed=2.0,
+        later_false = np.flatnonzero(
+            (~self.prepared.traces.reflex_required)
+            & (np.arange(len(self.prepared.traces.reflex_required)) > first_reflex)
+            & (
+                np.arange(len(self.prepared.traces.reflex_required))
+                < self.prepared.resolved.run.censor_sample
             )
-        self.assertGreater(fake_viewer.sync_count, 1)
-        self.assertTrue(fake_viewer.texts)
-        viewer_parity = compare_stored_runtime(
-            self.prepared.resolved, viewer_result
         )
-        self.assertTrue(viewer_parity.passed)
-        for field in ("timestamp_us", "pelvis_imu", "foot_fsr"):
-            np.testing.assert_equal(
-                getattr(self.prepared.simulation.runtime, field),
-                getattr(viewer_result.runtime, field),
+        self.assertTrue(later_false.size)
+        history_model, _ = format_viewer_overlay(self.prepared, int(later_false[0]))
+        self.assertIn("Current reflex (REFLEX_REQUIRED): FALSE", history_model)
+        self.assertIn("Reflex occurred: TRUE", history_model)
+
+        censor = self.prepared.resolved.run.censor_sample
+        censored_model, censored_diagnostics = format_viewer_overlay(
+            self.prepared, min(censor, len(self.prepared.resolved.run.timestamp_us) - 1)
+        )
+        self.assertIn("Current reflex (REFLEX_REQUIRED): CENSORED", censored_model)
+        self.assertIn("Reflex occurred: TRUE", censored_model)
+        self.assertNotIn("First reflex: not reached", censored_model)
+        self.assertIn("Hazard probability: N/A", censored_model)
+        self.assertIn("Slip event:", censored_diagnostics)
+
+        demo_model, demo_diagnostics = format_viewer_overlay(
+            self.prepared,
+            first_reflex,
+            mode="demo",
+        )
+        self.assertIn("MODEL OUTPUT / DEMO", demo_model)
+        self.assertIn("Physical reference: SLIP", demo_diagnostics)
+        self.assertIn("Reflex -> Slip", demo_diagnostics)
+
+    def test_event_destinations_are_exact_and_missing_i1_is_safe(self) -> None:
+        events = playback_events(self.prepared)
+        self.assertEqual(events.first_reflex, self.prepared.traces.first_reflex_sample)
+        self.assertEqual(
+            events.physical_hazard,
+            min(
+                value
+                for value in self.prepared.resolved.run.slip_event_samples_per_foot
+                if value is not None
+            ),
+        )
+        self.assertIsNone(events.i1_precursor)
+        self.assertEqual(
+            events.terrain_updates,
+            tuple(sorted(set(self.prepared.traces.terrain.update_samples.tolist()))),
+        )
+
+    def test_snapshot_playback_never_steps_or_changes_frozen_traces(self) -> None:
+        playback = SnapshotPlaybackControl(
+            len(self.prepared.resolved.run.timestamp_us),
+            events=playback_events(self.prepared),
+            start_paused=True,
+        )
+        fake_viewer = _FakeViewer()
+        runtime_before = self.prepared.simulation.runtime.pelvis_imu.copy()
+        reflex_before = self.prepared.traces.reflex_required.copy()
+        with (
+            mock.patch(
+                "fastreflex.visualization.launch_passive_viewer",
+                return_value=fake_viewer,
+            ),
+            mock.patch("fastreflex.visualization.time.sleep"),
+            mock.patch(
+                "fastreflex.visualization.mujoco.mj_step",
+                side_effect=AssertionError("snapshot playback must not call mj_step"),
+            ),
+        ):
+            final = play_snapshot_trace(
+                self.prepared,
+                playback,
+                mode="analysis",
             )
+        self.assertGreaterEqual(fake_viewer.sync_count, 1)
+        self.assertTrue(fake_viewer.texts)
+        self.assertEqual(final.state, PlaybackState.PAUSED)
+        np.testing.assert_array_equal(
+            self.prepared.simulation.runtime.pelvis_imu, runtime_before
+        )
+        np.testing.assert_array_equal(
+            self.prepared.traces.reflex_required, reflex_before
+        )
+
+    def test_ended_paused_remains_open_until_viewer_closes(self) -> None:
+        playback = SnapshotPlaybackControl(len(self.prepared.resolved.run.timestamp_us))
+        ended = playback.advance_by(playback.total_samples)
+        self.assertEqual(ended.state, PlaybackState.ENDED_PAUSED)
+        fake_viewer = _FakeViewer(running_checks=5)
+        with (
+            mock.patch(
+                "fastreflex.visualization.launch_passive_viewer",
+                return_value=fake_viewer,
+            ),
+            mock.patch("fastreflex.visualization.time.sleep"),
+        ):
+            final = play_snapshot_trace(self.prepared, playback)
+        self.assertEqual(final.state, PlaybackState.ENDED_PAUSED)
+        self.assertEqual(final.current_sample, playback.total_samples - 1)
+        self.assertEqual(fake_viewer.is_running_count, 6)
+        self.assertIn("PLAYBACK: ENDED / PAUSED", str(fake_viewer.texts[-1]))
+
+    def test_early_viewer_close_is_clean_after_headless_parity(self) -> None:
+        fake_viewer = _FakeViewer(running_checks=1)
+        first_reflex = self.prepared.traces.first_reflex_sample
+        assert first_reflex is not None
+        later_pause_s = float(
+            self.prepared.resolved.run.timestamp_us[first_reflex + 100] / 1_000_000.0
+        ) + 0.0004
+        with (
+            mock.patch(
+                "fastreflex.visualization.launch_passive_viewer",
+                return_value=fake_viewer,
+            ),
+            mock.patch("fastreflex.visualization.time.sleep"),
+            mock.patch(
+                "fastreflex.visualization.mujoco.mj_step",
+                side_effect=AssertionError("viewer must not execute physics"),
+            ),
+        ):
+            result = visualize_prepared_run(
+                self.prepared,
+                pause_at_s=later_pause_s,
+                pause_on_reflex=True,
+            )
+        self.assertTrue(result["viewer_closed_cleanly"])
+        self.assertTrue(result["scientific_parity_prechecked"])
+        self.assertFalse(result["viewer_physics_executed"])
+        self.assertIsNone(result["viewer_physics_parity"])
+        self.assertEqual(result["pause_at_sample"], first_reflex + 100)
+        self.assertEqual(result["auto_pause_sample"], first_reflex)
+        self.assertFalse(result["holdout_opened"])
 
 
 if __name__ == "__main__":

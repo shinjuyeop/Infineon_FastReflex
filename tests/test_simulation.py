@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from contextlib import redirect_stderr
-from dataclasses import replace
 import io
 import os
-from pathlib import Path
 import unittest
+from contextlib import redirect_stderr
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 import mujoco
@@ -45,9 +45,9 @@ from fastreflex.simulation.hazards import (
     SURFACE_SPREAD_THRESHOLD_M,
     TOUCHDOWN_TRANSIENT_SAMPLES,
     derive_physical_diagnostics,
-    support_penetration_diagnostics,
     read_exact_foot_sample,
     support_loss_diagnostics,
+    support_penetration_diagnostics,
     surface_displacement_diagnostics,
     uneven_support_oracle,
 )
@@ -75,7 +75,6 @@ from fastreflex.simulation.terrain import (
     read_deformable_support_sample,
 )
 from scripts.fastreflex import build_parser
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SIMULATOR_CONFIG = ROOT / "configs" / "simulator" / "g1.yaml"
@@ -797,13 +796,37 @@ class SimulationTest(unittest.TestCase):
             sink_support_pattern="medial_deformable",
             headless=True,
         )
-        headless = run_simulation(config)
+        headless = run_simulation(config, capture_render_trace=True)
         self.assertEqual(headless.runtime.pelvis_imu.shape, (2200, 6))
         self.assertEqual(headless.runtime.foot_fsr.shape, (2200, 8))
         np.testing.assert_array_equal(
             np.diff(headless.runtime.timestamp_us), np.full(2199, 1000)
         )
         self.assertEqual(headless.metadata["dropped_samples"], 0)
+        self.assertTrue(headless.metadata["render_trace_captured"])
+        self.assertIsNotNone(headless.render_trace)
+        assert headless.render_trace is not None
+        self.assertEqual(headless.render_trace.model_nq, 46)
+        self.assertEqual(headless.render_trace.model_nv, 45)
+        self.assertEqual(
+            headless.render_trace.integration_state.shape[0], 2200
+        )
+        render_model, _ = load_g1_model(
+            "sand",
+            "transition_left",
+            "moderate",
+            sink_support_pattern="medial_deformable",
+        )
+        self.assertEqual(
+            headless.render_trace.integration_state.shape,
+            (
+                2200,
+                mujoco.mj_stateSize(
+                    render_model,
+                    mujoco.mjtState.mjSTATE_INTEGRATION,
+                ),
+            ),
+        )
         displacement = headless.diagnostics.support_surface_displacement_m
         self.assertEqual(displacement.shape, (2200, 2, 4))
         d0 = np.flatnonzero(
@@ -813,6 +836,20 @@ class SimulationTest(unittest.TestCase):
         np.testing.assert_allclose(displacement[: d0[0], 0], 0.0, atol=1.0e-12)
         self.assertGreater(float(np.max(displacement[d0[0] :, 0])), 0.0)
 
+        without_capture = run_simulation(config)
+        self.assertFalse(without_capture.metadata["render_trace_captured"])
+        self.assertIsNone(without_capture.render_trace)
+        for field in RuntimeTrace.__dataclass_fields__:
+            np.testing.assert_equal(
+                getattr(headless.runtime, field),
+                getattr(without_capture.runtime, field),
+            )
+        for field in type(headless.diagnostics).__dataclass_fields__:
+            np.testing.assert_equal(
+                getattr(headless.diagnostics, field),
+                getattr(without_capture.diagnostics, field),
+            )
+
         fake_viewer = FakeViewer()
         with mock.patch(
             "fastreflex.simulation.g1.launch_passive_viewer",
@@ -820,6 +857,8 @@ class SimulationTest(unittest.TestCase):
         ), mock.patch("fastreflex.simulation.g1._pace_viewer"):
             viewer = run_simulation(replace(config, headless=False))
         self.assertGreater(fake_viewer.sync_count, 1)
+        self.assertFalse(viewer.metadata["render_trace_captured"])
+        self.assertIsNone(viewer.render_trace)
         for field in RuntimeTrace.__dataclass_fields__:
             np.testing.assert_equal(
                 getattr(headless.runtime, field), getattr(viewer.runtime, field)

@@ -136,9 +136,9 @@ These references are privileged scoring/label fields. They are excluded from run
 - `simulation/hazards.py`: contact/touchdown, Slip, support spread/loss and I1 inputs
 - `simulation/stability.py`: simulator diagnostics still computed by `g1.py` to preserve physics/viewer result parity; it is not a supported runtime Hazard detector
 
-The viewer copies physics state into a render-only model. Viewer input cannot feed back into the canonical simulation.
+The ordinary simulation viewer copies physics state into a render-only model. Viewer input cannot feed back into the canonical simulation.
 
-`visualization.py` owns read-only run resolution, HOLDOUT rejection, exact stored/re-simulated parity, frozen inference alignment and HUD formatting. It opens the viewer only after timestamp, IMU6, FSR8 and physical event-clock parity passes. The viewer performs the same full parity check again after playback; overlay text and wall-clock speed never enter controller, physics, sensor, feature or model tensors.
+`visualization.py` owns read-only run resolution, HOLDOUT rejection, exact stored/re-simulated parity, frozen inference alignment, snapshot playback and HUD formatting. `run_simulation(..., capture_render_trace=True)` optionally captures one memory-only full MuJoCo `mjSTATE_INTEGRATION` snapshot per 1 kHz sample; the default is `False`, the stored NPZ contract is unchanged, and Sand support degrees of freedom are included. The interactive viewer opens only after timestamp, IMU6, FSR8 and physical event-clock parity passes. It restores selected immutable snapshots with `mj_setState`, calls `mj_forward`, and renders with `viewer.sync`; it never calls `mj_step`. Playback speed, pause, backward/forward seek, event jumps and overlay text therefore cannot enter controller, physics, sensor, feature or model tensors. Closing the viewer is a clean user exit because scientific parity was completed headlessly before it opened.
 
 ## 7. Research-to-Deployment boundary
 

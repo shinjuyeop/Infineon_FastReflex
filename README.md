@@ -28,6 +28,8 @@ REFLEX_REQUIRED + other/unknown -> GENERIC_DISTURBANCE
 
 Final sensor architecture는 E84 resource와 hardware-realism 검증 전까지 freeze하지 않는다.
 
+Current 256-run corpus의 scenario coverage audit verdict는 `SCENARIO_COVERAGE_DESIGN_READY`다. 기존 data/model/HOLDOUT을 변경하거나 재평가하지 않고 Ice benign, Terrain-first delayed Hazard, affected-side, speed와 gait-phase gap을 정량화했으며, 다음 generation을 위한 minimum informative scenario set을 [`reports/20260831_scenario_coverage_matrix_design.md`](reports/20260831_scenario_coverage_matrix_design.md)에 사전 설계했다.
+
 ## Canonical source flow
 
 ```text
@@ -127,10 +129,11 @@ Viewer는 검증된 memory-only snapshot을 재생하며 종료 시 마지막 fr
 
 ## Historical evidence
 
-과거 MoS/Stability, direct classification, event-centric, Terrain-gated fusion, continuous Slip와 Support 진단 과정의 결론은 삭제하지 않았다. [`reports/`](reports/)와 Git history가 authoritative evidence/archive다. Current lineage의 핵심 보고서는 다음 두 개다.
+과거 MoS/Stability, direct classification, event-centric, Terrain-gated fusion, continuous Slip와 Support 진단 과정의 결론은 삭제하지 않았다. [`reports/`](reports/)와 Git history가 authoritative evidence/archive다. Current lineage의 핵심 보고서는 다음 세 개다.
 
 - [`reports/20260829_unified_hazard_reflex_system.md`](reports/20260829_unified_hazard_reflex_system.md)
 - [`reports/20260828_terrain_rebuild_sensor_ablation.md`](reports/20260828_terrain_rebuild_sensor_ablation.md)
+- [`reports/20260831_scenario_coverage_matrix_design.md`](reports/20260831_scenario_coverage_matrix_design.md)
 
 Current architecture는 [`docs/architecture.md`](docs/architecture.md), dataset contract는 [`docs/dataset.md`](docs/dataset.md), 검증 규칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)에 있다.
 

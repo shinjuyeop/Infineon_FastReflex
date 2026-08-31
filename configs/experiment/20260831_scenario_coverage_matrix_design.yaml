@@ -1,0 +1,239 @@
+schema_version: 1
+
+experiment:
+  id: SCENARIO_COVERAGE_MATRIX_DESIGN
+  milestone: SCENARIO_COVERAGE_MATRIX_DESIGN
+  date: 2026-08-31
+  timezone: Asia/Seoul
+  source_commit_at_start: 0082f60e17d545896a1b55cac9c458557604fb86
+  origin_main_at_start: 0082f60e17d545896a1b55cac9c458557604fb86
+  branch_at_start: main
+  worktree_clean_at_start: true
+  purpose: audit_current_scenario_coverage_and_freeze_next_generation_design
+
+source:
+  dataset_config: configs/experiment/20260829_unified_hazard_reflex_system.yaml
+  scenario_calibration_config: configs/experiment/20260828_transition_scenario_calibration.yaml
+  dataset_id: unified_hazard_reflex_20260829
+  dataset_path: data/raw/unified_hazard_reflex_20260829
+  dataset_manifest: data/raw/unified_hazard_reflex_20260829/manifest.json
+  dataset_manifest_sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6
+  dataset_source_commit: d3501ed4627bbea66929f6da04dfc032e48c3495
+  evidence_priority:
+    - frozen_experiment_specification
+    - manifest_metadata
+    - existing_committed_report_facts
+    - train_validation_read_only_waveform_diagnostics
+
+protected_baseline:
+  hazard:
+    architecture: PHASE_B_UNIFIED_HAZARD_DETECTOR
+    runtime_sensor: pelvis_imu6
+    feature_dimension: 80
+    feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+    input_shape: [20, 80]
+    model_family: gru
+    hidden_size: 32
+    ensemble_size: 3
+    threshold: 0.99
+    persistence_ms: 5
+    output: REFLEX_REQUIRED
+    freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+  terrain:
+    runtime_sensor: touchdown_fsr4
+    input_shape: [50, 4]
+    model_family: mlp
+    ensemble_size: 3
+    classes: [CONCRETE, MARBLE, ICE, SAND]
+    deployment_scheme: left_only
+    state_role: advisory_held_state
+    normalizer_sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+    checkpoint_sha256:
+      seed_17.pt: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+      seed_29.pt: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+      seed_43.pt: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+
+execution_policy:
+  audit_and_design_only: true
+  no_simulation: true
+  no_dataset_generation: true
+  no_existing_npz_mutation: true
+  no_existing_manifest_mutation: true
+  no_model_retraining: true
+  no_threshold_retuning: true
+  no_feature_or_history_change: true
+  no_artifact_refreeze: true
+
+holdout_access_policy:
+  split: holdout
+  run_count: 52
+  waveform_access: prohibited
+  imu_waveform_load: prohibited
+  fsr_waveform_load: prohibited
+  hazard_replay: prohibited
+  terrain_replay: prohibited
+  physical_trace_recomputation: prohibited
+  allowed:
+    - frozen_experiment_specification
+    - manifest_metadata
+    - existing_committed_report_facts
+    - file_existence
+    - file_sha256
+    - run_count
+    - split_membership
+  expected_holdout_guard_open_count: 0
+
+audit_unit:
+  primary: independent_run
+  independence_key: run_id
+  physical_condition_key:
+    - source_terrain
+    - target_terrain
+    - speed_mps
+    - patch_start_x_m
+    - patch_width_m
+    - slip_pattern
+    - sink_pattern
+    - sink_severity
+    - support_pattern
+  coverage_layers:
+    - scenario_family
+    - within_family_parameter_variation
+  window_count_as_primary_coverage: prohibited
+
+audit_axes:
+  - hazard_class
+  - target_terrain
+  - source_terrain
+  - terrain_hazard_temporal_order
+  - hazard_occurrence_delay
+  - completed_loaded_contact_episode_delay
+  - affected_foot
+  - gait_contact_phase
+  - walking_speed
+  - patch_geometry
+  - continuous_hazard_severity
+  - source_target_combination
+
+coverage_category_rule:
+  unit: independent_runs
+  categories:
+    MISSING: {minimum_inclusive: 0, maximum_inclusive: 0}
+    SPARSE: {minimum_inclusive: 1, maximum_inclusive: 4}
+    LIMITED: {minimum_inclusive: 5, maximum_inclusive: 11}
+    COVERED: {minimum_inclusive: 12, maximum_inclusive: null}
+  interpretation: coverage_count_only_not_performance_or_physical_quality
+
+timing_definitions:
+  sample_rate_hz: 1000
+  terrain_hazard_order:
+    terrain_reference: frozen_terrain_first_valid_target_output_sample
+    hazard_reference: first_established_slip_or_support_sample
+    delta_definition_ms: hazard_sample_minus_terrain_valid_sample
+    near_simultaneous_inclusive_ms: [-50, 50]
+    exclusive_classification_priority:
+      - NO_HAZARD
+      - TERRAIN_UNAVAILABLE
+      - HAZARD_BEFORE_TARGET_TERRAIN_VALID
+      - NEAR_SIMULTANEOUS
+      - TARGET_TERRAIN_BEFORE_HAZARD
+  target_contact_to_hazard_delay:
+    definition_ms: hazard_sample_minus_first_target_contact_sample
+    bins_ms:
+      - {id: PRE_CONTACT, lower_inclusive: null, upper_exclusive: 0}
+      - {id: 0_TO_100, lower_inclusive: 0, upper_exclusive: 100}
+      - {id: 100_TO_300, lower_inclusive: 100, upper_exclusive: 300}
+      - {id: 300_TO_600, lower_inclusive: 300, upper_exclusive: 600}
+      - {id: 600_TO_1000, lower_inclusive: 600, upper_exclusive: 1000}
+      - {id: 1000_PLUS, lower_inclusive: 1000, upper_exclusive: null}
+
+step_contact_definition:
+  observable: privileged_loaded_contact_per_foot
+  authorized_splits: [train, validation]
+  episode_start: false_to_true_loaded_contact_edge
+  episode_end: true_to_false_loaded_contact_edge
+  counted_episode: starts_at_or_after_first_target_contact_and_ends_strictly_before_hazard
+  aggregation: both_feet_chronological_episode_count
+  categories:
+    IMMEDIATE: 0
+    ONE_CONTACT_EPISODE_DELAYED: 1
+    TWO_OR_MORE_CONTACT_EPISODES_DELAYED: {minimum_inclusive: 2}
+  holdout_value: NOT_COMPUTED_BY_POLICY
+  caution: contact_episode_is_not_claimed_as_a_full_gait_cycle
+
+gait_phase_definition:
+  observable: privileged_loaded_contact_per_foot
+  reference_sample: first_established_hazard_sample
+  authorized_splits: [train, validation]
+  edge_lookback_inclusive_ms: 10
+  exclusive_priority:
+    - TOUCHDOWN_LOADING
+    - CONTACT_RELEASE
+    - DOUBLE_SUPPORT
+    - LEFT_SINGLE_SUPPORT
+    - RIGHT_SINGLE_SUPPORT
+    - NO_SUPPORT
+  rules:
+    TOUCHDOWN_LOADING: any_loaded_contact_rising_edge_within_lookback
+    CONTACT_RELEASE: any_loaded_contact_falling_edge_within_lookback
+    DOUBLE_SUPPORT: both_feet_loaded_at_reference
+    LEFT_SINGLE_SUPPORT: left_loaded_only_at_reference
+    RIGHT_SINGLE_SUPPORT: right_loaded_only_at_reference
+    NO_SUPPORT: neither_foot_loaded_at_reference
+  holdout_value: NOT_COMPUTED_BY_POLICY
+  role: coverage_audit_only_never_model_input
+
+severity_policy:
+  classification: continuous_only
+  post_hoc_weak_medium_strong_labels: prohibited
+  slip_observables:
+    - peak_drift_m
+    - peak_tangential_velocity_mps
+    - fall_censor_present
+  support_observables:
+    - peak_support_spread_m
+    - maximum_support_deformation_m
+    - established_event_sample
+
+candidate_priority_definition:
+  P0: must_include_in_next_dataset_to_close_a_confirmed_high_value_gap
+  P1: include_if_calibrated_design_capacity_allows
+  P2: defer_to_follow_on_robustness_after_p0_and_p1
+  DROP: duplicate_low_value_or_requires_unjustified_result_driven_tuning
+  criteria:
+    - scientific_value
+    - physical_realism
+    - generalization_value
+    - causal_value
+    - sensor_relevance
+    - implementation_complexity
+
+future_generation_principles:
+  order:
+    - scenario_specification
+    - split_freeze
+    - simulation
+    - frozen_physical_oracle_outcome
+  outcome_may_change_split: false
+  expected_condition_is_label: false
+  frozen_ice_sand_material_profiles_preferred: true
+  result_driven_mechanics_tuning: prohibited
+  coverage_first_count_second: true
+  actual_split_file_created_in_this_milestone: false
+
+future_evaluation:
+  first_test: ZERO_RETRAIN_GENERALIZATION
+  models:
+    - current_frozen_hazard_gru
+    - current_frozen_terrain_mlp
+  failure_policy:
+    - physical_and_scenario_diagnosis
+    - signal_observability_check
+    - systematic_failure_confirmation
+    - retraining_decision_only_if_justified
+
+report:
+  path: reports/20260831_scenario_coverage_matrix_design.md
+  verdicts:
+    ready: SCENARIO_COVERAGE_DESIGN_READY
+    incomplete: SCENARIO_COVERAGE_DESIGN_INCOMPLETE

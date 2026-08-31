@@ -186,9 +186,16 @@ class SnapshotPlaybackControl:
 
     def _event_seek(self, sample: int | None, name: str) -> None:
         if sample is None:
+            self._state = PlaybackState.PAUSED
             self._changed(f"{name} is not present in this run")
             return
         self._seek(sample, f"Jumped to {name}")
+
+    def _seek_end(self) -> None:
+        self._current_sample = self._total_samples - 1
+        self._state = PlaybackState.ENDED_PAUSED
+        self._ended_reached = True
+        self._changed("Jumped to last sample; viewer remains open")
 
     def _next_terrain_update(self) -> None:
         target = next(
@@ -237,7 +244,7 @@ class SnapshotPlaybackControl:
             elif keycode == self.HOME_KEY:
                 self._seek(0, "Jumped to first sample")
             elif keycode == self.END_KEY:
-                self._seek(self._total_samples - 1, "Jumped to last sample")
+                self._seek_end()
             elif keycode == self.R_KEY:
                 self._event_seek(self._events.first_reflex, "first Reflex")
             elif keycode == self.H_KEY:
@@ -1197,20 +1204,60 @@ def _set_viewer_overlay(
         mode=mode,
         playback=view,
     )
+    model_lines = model_text.splitlines()
+    diagnostic_lines = diagnostic_text.splitlines()
+    model_split = next(
+        (
+            index
+            for index, line in enumerate(model_lines)
+            if line.startswith(("Terrain state:", "Terrain:"))
+        ),
+        len(model_lines),
+    )
+    diagnostic_split = next(
+        (
+            index
+            for index, line in enumerate(diagnostic_lines)
+            if line == "EVENT TIMING"
+        ),
+        len(diagnostic_lines),
+    )
+    panels = [
+        (
+            mujoco.mjtGridPos.mjGRID_TOPLEFT,
+            "\n".join(model_lines[:model_split]),
+        ),
+        (
+            mujoco.mjtGridPos.mjGRID_TOPRIGHT,
+            "\n".join(diagnostic_lines[:diagnostic_split]),
+        ),
+    ]
+    if model_split < len(model_lines):
+        panels.append(
+            (
+                mujoco.mjtGridPos.mjGRID_BOTTOMLEFT,
+                "\n".join(
+                    ("MODEL OUTPUT / TERRAIN ADVISORY (CONTINUED)",)
+                    + tuple(model_lines[model_split:])
+                ),
+            )
+        )
+    if diagnostic_split < len(diagnostic_lines):
+        panels.append(
+            (
+                mujoco.mjtGridPos.mjGRID_BOTTOMRIGHT,
+                "\n".join(diagnostic_lines[diagnostic_split:]),
+            )
+        )
     viewer.set_texts(
         [
             (
                 mujoco.mjtFontScale.mjFONTSCALE_100,
-                mujoco.mjtGridPos.mjGRID_TOPLEFT,
-                model_text,
+                position,
+                text,
                 "",
-            ),
-            (
-                mujoco.mjtFontScale.mjFONTSCALE_100,
-                mujoco.mjtGridPos.mjGRID_TOPRIGHT,
-                diagnostic_text,
-                "",
-            ),
+            )
+            for position, text in panels
         ]
     )
 

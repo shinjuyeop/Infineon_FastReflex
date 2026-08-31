@@ -301,14 +301,14 @@ python scripts/fastreflex.py visualize --run-id uhr_hard_n_c20
 
 ### Overlay interpretation
 
-왼쪽 `MODEL OUTPUT` panel은 model/runtime output만 표시한다.
+왼쪽 `MODEL OUTPUT` 영역은 model/runtime output만 표시한다. MuJoCo overlay의 실제 표시 한도에서 내용이 잘리지 않도록 Hazard/playback은 좌상단, Terrain advisory continuation은 좌하단에 표시한다.
 
 - 현재 Hazard probability, `p >= 0.99`, instantaneous `Current reflex`, visualization-only `Reflex occurred`, 첫 reflex time
 - held Terrain state, latest update time, touchdown foot
 - Concrete/Marble/Ice/Sand probability
 - current advisory cause, 첫 reflex 당시 cause, event 이후의 latest Terrain context
 
-오른쪽 `SIMULATOR GT / DIAGNOSTIC` panel은 `NEVER USED AS MODEL INPUT`이라고 명시하며 다음 simulator-only reference를 표시한다.
+오른쪽 `SIMULATOR GT / DIAGNOSTIC` 영역은 `NEVER USED AS MODEL INPUT`이라고 명시하며 physical diagnostic을 우상단, event timing과 timeline을 우하단에 표시한다.
 
 - physical label
 - 현재 Slip active와 first event, tangential drift, 50 mm / 3 ms 기준
@@ -339,15 +339,17 @@ MuJoCo passive viewer의 기본 mouse camera orbit/pan/zoom control을 그대로
 | `Space` | `PLAYING`/`PAUSED` 전환; `ENDED_PAUSED`에서는 first sample부터 restart |
 | `Left` / `Right` | -1 ms / +1 ms; `.`도 +1 ms |
 | `A` / `D` | -10 ms / +10 ms |
-| `Home` / `End` | first sample / last sample에서 pause |
+| `Home` / `End` | first sample에서 `PAUSED` / last sample에서 `ENDED_PAUSED` |
 | `R` | first `REFLEX_REQUIRED` onset |
 | `H` | primary physical Hazard: Slip run은 established Slip, Support run은 established Support |
-| `I` | I1 Support precursor; 없으면 state를 바꾸지 않고 HUD message 표시 |
+| `I` | I1 Support precursor; 없으면 sample을 유지하고 `PAUSED` HUD message 표시 |
 | `T` / `G` | next / previous Terrain update |
+
+Event destination이 없는 key는 current sample을 바꾸지 않고 `PAUSED`로 두며 HUD에 명시적 message를 표시한다.
 
 `--pause-at <SECONDS>`는 가장 가까운 1 kHz sample, `--pause-on-reflex`는 first frozen reflex onset에서 한 번 자동 정지한다. 둘 다 주어지면 timeline에서 먼저 도달하는 sample을 사용한다. `--single-step`은 first stored sample에서 정지한 채 시작한다. Step/seek는 physics를 진행하거나 다시 계산하지 않고 이미 캡처한 snapshot index만 바꾼다.
 
-Playback state는 `PLAYING`, `PAUSED`, `ENDED_PAUSED` 세 가지다. 마지막 sample에 자연스럽게 도달하면 HUD는 `PLAYBACK: ENDED / PAUSED`를 표시하고 viewer와 process는 종료되지 않는다. 이 상태에서도 backward seek, event jump와 `Space` restart가 가능하며, 사용자가 window를 직접 닫을 때만 visualization이 clean exit한다. Headless parity는 viewer를 열기 전에 이미 끝났으므로 중간에 window를 닫아도 scientific parity failure가 아니다.
+Playback state는 `PLAYING`, `PAUSED`, `ENDED_PAUSED` 세 가지다. 마지막 sample에 자연스럽게 도달하거나 `End`를 누르면 HUD는 `PLAYBACK: ENDED / PAUSED`를 표시하고 viewer와 process는 종료되지 않는다. 이 상태에서도 backward seek, event jump와 `Space` restart가 가능하며, 사용자가 window를 직접 닫을 때만 visualization이 clean exit한다. Headless parity는 viewer를 열기 전에 이미 끝났으므로 중간에 window를 닫아도 scientific parity failure가 아니다.
 
 ### Limitations
 

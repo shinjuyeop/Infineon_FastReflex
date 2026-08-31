@@ -796,7 +796,11 @@ class SimulationTest(unittest.TestCase):
             sink_support_pattern="medial_deformable",
             headless=True,
         )
-        headless = run_simulation(config, capture_render_trace=True)
+        headless = run_simulation(
+            config,
+            capture_state_trace=True,
+            capture_render_trace=True,
+        )
         self.assertEqual(headless.runtime.pelvis_imu.shape, (2200, 6))
         self.assertEqual(headless.runtime.foot_fsr.shape, (2200, 8))
         np.testing.assert_array_equal(
@@ -836,7 +840,46 @@ class SimulationTest(unittest.TestCase):
         np.testing.assert_allclose(displacement[: d0[0], 0], 0.0, atol=1.0e-12)
         self.assertGreater(float(np.max(displacement[d0[0] :, 0])), 0.0)
 
-        without_capture = run_simulation(config)
+        render_data = mujoco.MjData(render_model)
+        render_layout = deformable_support_layout(
+            render_model,
+            "medial_deformable",
+        )
+        peak_sample = int(np.argmax(np.max(displacement[:, 0], axis=1)))
+        for sample in (0, peak_sample, len(displacement) - 1):
+            snapshot = headless.render_trace.integration_state[sample]
+            mujoco.mj_setState(
+                render_model,
+                render_data,
+                snapshot,
+                mujoco.mjtState.mjSTATE_INTEGRATION,
+            )
+            mujoco.mj_forward(render_model, render_data)
+            first_qpos = render_data.qpos.copy()
+            first_xpos = render_data.xpos.copy()
+            restored_support = read_deformable_support_sample(
+                render_data,
+                render_layout,
+            )
+            np.testing.assert_allclose(
+                restored_support.displacement_m,
+                displacement[sample],
+                atol=1.0e-10,
+                rtol=0.0,
+            )
+
+            render_data.qpos[:] = 0.0
+            mujoco.mj_setState(
+                render_model,
+                render_data,
+                snapshot,
+                mujoco.mjtState.mjSTATE_INTEGRATION,
+            )
+            mujoco.mj_forward(render_model, render_data)
+            np.testing.assert_array_equal(render_data.qpos, first_qpos)
+            np.testing.assert_array_equal(render_data.xpos, first_xpos)
+
+        without_capture = run_simulation(config, capture_state_trace=True)
         self.assertFalse(without_capture.metadata["render_trace_captured"])
         self.assertIsNone(without_capture.render_trace)
         for field in RuntimeTrace.__dataclass_fields__:
@@ -848,6 +891,15 @@ class SimulationTest(unittest.TestCase):
             np.testing.assert_equal(
                 getattr(headless.diagnostics, field),
                 getattr(without_capture.diagnostics, field),
+            )
+        self.assertIsNotNone(headless.state_trace)
+        self.assertIsNotNone(without_capture.state_trace)
+        assert headless.state_trace is not None
+        assert without_capture.state_trace is not None
+        for field in type(headless.state_trace).__dataclass_fields__:
+            np.testing.assert_equal(
+                getattr(headless.state_trace, field),
+                getattr(without_capture.state_trace, field),
             )
 
         fake_viewer = FakeViewer()

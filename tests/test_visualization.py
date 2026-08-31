@@ -176,7 +176,8 @@ class VisualizationResolutionTest(unittest.TestCase):
 
         control.key_callback(SnapshotPlaybackControl.END_KEY)
         self.assertEqual(control.view().current_sample, 39)
-        self.assertEqual(control.view().state, PlaybackState.PAUSED)
+        self.assertEqual(control.view().state, PlaybackState.ENDED_PAUSED)
+        self.assertTrue(control.view().ended_reached)
         control.key_callback(SnapshotPlaybackControl.HOME_KEY)
         control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
         control.key_callback(SnapshotPlaybackControl.D_KEY)
@@ -192,6 +193,27 @@ class VisualizationResolutionTest(unittest.TestCase):
         control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
         self.assertEqual(control.view().current_sample, 0)
         self.assertEqual(control.view().state, PlaybackState.PLAYING)
+
+    def test_missing_event_jump_is_a_safe_pause(self) -> None:
+        control = SnapshotPlaybackControl(40)
+        control.advance_by(7)
+        before = control.view().current_sample
+
+        for keycode, name in (
+            (SnapshotPlaybackControl.R_KEY, "first Reflex"),
+            (SnapshotPlaybackControl.H_KEY, "physical Hazard"),
+            (SnapshotPlaybackControl.I_KEY, "I1 precursor"),
+            (SnapshotPlaybackControl.T_KEY, "next Terrain update"),
+            (SnapshotPlaybackControl.G_KEY, "previous Terrain update"),
+        ):
+            if control.view().state is not PlaybackState.PLAYING:
+                control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
+            self.assertEqual(control.view().state, PlaybackState.PLAYING)
+            control.key_callback(keycode)
+            view = control.view()
+            self.assertEqual(view.current_sample, before)
+            self.assertEqual(view.state, PlaybackState.PAUSED)
+            self.assertIn(name, view.notice)
 
     def test_auto_pause_uses_exact_earliest_sample(self) -> None:
         control = SnapshotPlaybackControl(50, auto_pause_sample=12)
@@ -215,6 +237,7 @@ class VisualizationIntegrationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.prepared = prepare_visualization(ROOT, "uhr_ice_h_c20")
+        cls.support_prepared = prepare_visualization(ROOT, "uhr_sand_h_c20")
 
     def test_exact_runtime_event_and_frozen_inference_parity(self) -> None:
         prepared = self.prepared
@@ -332,6 +355,31 @@ class VisualizationIntegrationTest(unittest.TestCase):
             tuple(sorted(set(self.prepared.traces.terrain.update_samples.tolist()))),
         )
 
+    def test_support_and_i1_destinations_are_exact(self) -> None:
+        prepared = self.support_prepared
+        events = playback_events(prepared)
+        self.assertEqual(
+            events.physical_hazard,
+            min(
+                value
+                for value in prepared.resolved.run.support_event_samples_per_foot
+                if value is not None
+            ),
+        )
+        self.assertEqual(events.i1_precursor, prepared.traces.i1_sample)
+        self.assertIsNotNone(events.i1_precursor)
+
+        playback = SnapshotPlaybackControl(
+            len(prepared.resolved.run.timestamp_us),
+            events=events,
+        )
+        playback.key_callback(SnapshotPlaybackControl.I_KEY)
+        self.assertEqual(playback.view().current_sample, events.i1_precursor)
+        self.assertEqual(playback.view().state, PlaybackState.PAUSED)
+        playback.key_callback(SnapshotPlaybackControl.H_KEY)
+        self.assertEqual(playback.view().current_sample, events.physical_hazard)
+        self.assertEqual(playback.view().state, PlaybackState.PAUSED)
+
     def test_snapshot_playback_never_steps_or_changes_frozen_traces(self) -> None:
         playback = SnapshotPlaybackControl(
             len(self.prepared.resolved.run.timestamp_us),
@@ -359,6 +407,13 @@ class VisualizationIntegrationTest(unittest.TestCase):
             )
         self.assertGreaterEqual(fake_viewer.sync_count, 1)
         self.assertTrue(fake_viewer.texts)
+        rendered_panels = fake_viewer.texts[-1]
+        self.assertEqual(len(rendered_panels), 4)
+        self.assertIn("MODEL OUTPUT", rendered_panels[0][2])
+        self.assertIn("SIMULATOR GT / DIAGNOSTIC", rendered_panels[1][2])
+        self.assertIn("TERRAIN ADVISORY (CONTINUED)", rendered_panels[2][2])
+        self.assertIn("EVENT TIMING", rendered_panels[3][2])
+        self.assertIn("NOW", rendered_panels[3][2])
         self.assertEqual(final.state, PlaybackState.PAUSED)
         np.testing.assert_array_equal(
             self.prepared.simulation.runtime.pelvis_imu, runtime_before

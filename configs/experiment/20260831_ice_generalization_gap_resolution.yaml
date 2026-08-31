@@ -1,0 +1,331 @@
+schema_version: 1
+
+experiment:
+  id: ICE_GENERALIZATION_GAP_RESOLUTION
+  milestone: ICE_GENERALIZATION_GAP_RESOLUTION
+  date: 2026-08-31
+  timezone: Asia/Seoul
+  source_commit_at_start: 618fb3d20b5656e19b9173a21aeca1b41742c9d7
+  origin_main_at_start: 618fb3d20b5656e19b9173a21aeca1b41742c9d7
+  branch_at_start: main
+  worktree_clean_at_start: true
+  purpose: model_blind_fresh_resolution_of_the_two_p0_Ice_gaps_only
+
+prior_coverage:
+  config:
+    path: configs/experiment/20260831_scenario_coverage_matrix_design.yaml
+    sha256: 81d4b8463717654611b0b790656ccf3b62035325eaba1cc185cf32d0a8c38c05
+  report:
+    path: reports/20260831_scenario_coverage_matrix_design.md
+    sha256: 4471dd557401b8f7f12d51d86d6e652aa8d427c94c51cd2c7952360cbc42e44c
+
+prior_calibration:
+  config:
+    path: configs/experiment/20260831_generalization_scenario_calibration.yaml
+    sha256: 42088569621bf91cce22a12501698f23ae27b529f17fd356bbf8777f2ccab9c6
+  report:
+    path: reports/20260831_generalization_scenario_calibration.md
+    sha256: f78780c580a806bab2ab233072427f9f2db899296b3dcfb298f9ef0828ddb508
+  pilot_grid_freeze:
+    path: artifacts/runs/20260831_generalization_scenario_calibration/pilot_grid_freeze.json
+    artifact_sha256: 8d71a9a9aa4d3019e11facb9af2a8843a6a55f050b983e736ec64bdf98e50369
+  physical_selection_freeze:
+    path: artifacts/runs/20260831_generalization_scenario_calibration/physical_selection_freeze.json
+    artifact_sha256: da275e1d606c4e4592eecd7c41a1ba5ff7e6773f1e3f28cfe050c3f8e39e8ff9
+    file_sha256: 4acbeb5e46bf2869271f9160a4c31bf41d83c1e919bc464b87e3e518be7843dc
+  staged_implementation_correction:
+    artifact_sha256: 7e47db02a0cc573b58babe9346aea716ef0bb90be0d108a3113aad1f3b918218
+    candidate_grid_changed: false
+    physical_criteria_changed: false
+    model_output_used_for_selection: false
+  preserved_blocked_findings:
+    delayed_ice_slip:
+      family_id: DELAYED_ICE_SLIP
+      contact_to_slip_ms_min: 1000
+      criterion_relaxed: false
+      pilots: 8
+      viable: 0
+      valid_observed_contact_to_slip_ms: [688, 690]
+      valid_observed_clean_touchdowns_before_slip: 1
+      status: BLOCKED
+    ice_benign:
+      family_id: ICE_BENIGN_CONTROL
+      pilots: 12
+      viable: 0
+      no_slip_but_no_clean_50ms_touchdown: 6
+      established_slip: 6
+      status: ICE_BENIGN_NOT_OBTAINED_WITH_CURRENT_CALIBRATED_DOMAIN
+  existing_ready_families_not_recalibrated:
+    - DELAYED_SAND_SUPPORT_ONSET
+    - RIGHT_SAND_SUPPORT
+    - SPEED_STRATIFIED_HAZARD
+  p1_blocked_not_primary_targets:
+    - RIGHT_DOMINANT_ICE_SLIP
+    - PHASE_SHIFTED_HAZARD
+
+protected_sources:
+  simulator_config:
+    path: configs/simulator/g1.yaml
+    sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  simulation_g1:
+    path: src/fastreflex/simulation/g1.py
+    sha256: d41308b6801aa648284ea05b22ce0c304fd97078cf47f6cd56b1f3b0d715bee2
+  simulation_terrain:
+    path: src/fastreflex/simulation/terrain.py
+    sha256: 70816edeed3377b940cfaf2a4de089158343b03068604003329b44e50b58ed43
+  simulation_hazards:
+    path: src/fastreflex/simulation/hazards.py
+    sha256: 97d26ff789eea5ba2c4e0a6bba57108fd5ffab59ec8bbd373fe028fba97391a7
+  cli:
+    path: scripts/fastreflex.py
+    sha256: 79eda8022f85a0f22777e79de60831c29560b18644ca076247aab06850487001
+  policy:
+    path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+    sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  physics:
+    timestep_s: 0.0005
+    sensor_rate_hz: 1000
+    duration_s: 8.0
+    Ice_friction: [0.05, 0.001, 0.00001]
+    Ice_contact_solver_profile_change: prohibited
+
+protected_models:
+  hazard:
+    freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+    feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+    input: pelvis_imu6
+    feature_dimension: 80
+    input_shape: [20, 80]
+    model_family: gru
+    hidden_size: 32
+    layers: 1
+    ensemble_size: 3
+    threshold: 0.99
+    persistence_ms: 5
+  terrain:
+    input: touchdown_fsr4
+    input_shape: [50, 4]
+    model_family: mlp
+    ensemble_size: 3
+    observation_ms: 50
+    classes: [CONCRETE, MARBLE, ICE, SAND]
+    deployment_scheme: left_only
+    state_role: advisory_only
+    normalizer_sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+    checkpoint_sha256:
+      seed_17.pt: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+      seed_29.pt: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+      seed_43.pt: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+
+execution_policy:
+  calibration_evidence: simulator_physical_only
+  model_blind_selection: true
+  model_outputs_forbidden_until_physical_selection_freeze: true
+  forbidden_selection_inputs:
+    - hazard_probability
+    - reflex_required
+    - hazard_confidence
+    - terrain_prediction
+    - terrain_probability
+    - frozen_model_success_or_failure
+  no_source_change_expected: true
+  no_Ice_material_change: true
+  no_controller_or_policy_change: true
+  no_retraining: true
+  no_architecture_search: true
+  no_threshold_search: true
+  no_normalizer_fit: true
+  no_checkpoint_write: true
+  no_current_dataset_rewrite: true
+  no_current_holdout_access: true
+  no_full_dataset_generation: true
+  current_holdout_waveform_reopened: false
+  current_holdout_new_inference: false
+
+physical_semantics:
+  terrain_identity_touchdown:
+    helper: fastreflex.dataset.terrain.terrain_identity_touchdown
+    definition: false_to_true_edge_of_exact_per_foot_Ice_contact
+  physical_contact_episode:
+    helper: fastreflex.simulation.hazards.PhysicalDiagnostics.contact_episode_id
+    unit: per_foot_maximal_contiguous_physical_contact_episode
+    start: first_sample_with_nonnegative_new_episode_id
+    end: first_exclusive_sample_after_that_episode_id
+    complete: end_is_strictly_before_fall_censor_and_episode_ends_by_contact_release
+    target_membership: exact_Ice_contact_exists_inside_episode
+    target_touchdowns: exact_Ice_identity_rising_edges_inside_episode
+  qualifying_benign_target_episode:
+    required:
+      - complete_physical_contact_episode
+      - exact_Ice_contact_exists
+      - at_least_one_exact_Ice_identity_touchdown
+      - established_Slip_false_for_that_foot_throughout_episode
+      - episode_ends_before_fall_censor
+      - finite_diagnostics
+    max_drift_diagnostic: maximum_finite_touchdown_anchor_drift_inside_episode
+    clean_50ms_target_window_required_for_delayed_family: false
+  later_distinct_slip_episode:
+    required:
+      - established_Slip_onset_exists
+      - Slip_onset_has_nonnegative_physical_contact_episode_id
+      - exact_Ice_contact_was_seen_in_that_same_physical_episode_at_or_before_Slip
+      - Slip_episode_start_is_at_or_after_qualifying_benign_episode_end
+      - Slip_episode_is_not_the_qualifying_benign_episode
+    affected_side: actual_frozen_oracle_only
+  one_contact_delayed_acceptance:
+    primary_unit: completed_benign_target_physical_contact_episode_count_before_distinct_Slip_episode
+    minimum_complete_benign_episodes: 1
+    minimum_delay_ms: null
+    time_is_diagnostic_only: true
+  clean_Ice_observation:
+    helper: fastreflex.dataset.terrain.build_touchdown_event_rows
+    exact_target_identity_required: true
+    persistent_window_ms: 50
+    mixed_contact_ratio_max_exclusive: 0.20
+    must_end_before_fall_censor: true
+  Ice_benign_acceptance:
+    required:
+      - valid_exact_Ice_contact
+      - clean_50ms_Ice_observation_count_at_least_1
+      - no_established_Slip
+      - no_I1
+      - no_established_Support
+      - no_pretarget_fall
+      - finite_runtime
+
+outcome_classification:
+  priority:
+    - NONFINITE
+    - NO_TARGET_CONTACT
+    - PRETARGET_FALL
+    - PHYSICAL_ORACLE_AMBIGUITY
+    - ONE_CONTACT_DELAYED_SLIP_VIABLE
+    - MULTI_CONTACT_DELAYED_SLIP_VIABLE
+    - SAME_CONTACT_SLIP
+    - IMMEDIATE_SLIP
+    - ICE_BENIGN_VIABLE
+    - NO_SLIP_NO_CLEAN_ICE_CONTACT
+    - OTHER_PHYSICAL_MISMATCH
+  definitions:
+    ONE_CONTACT_DELAYED_SLIP_VIABLE: exactly_1_complete_benign_target_episode_before_distinct_Slip
+    MULTI_CONTACT_DELAYED_SLIP_VIABLE: at_least_2_complete_benign_target_episodes_before_distinct_Slip
+    SAME_CONTACT_SLIP: clean_50ms_Ice_opportunity_precedes_Slip_but_both_are_in_same_physical_contact_episode_and_no_prior_complete_benign_target_episode
+    IMMEDIATE_SLIP: Slip_occurs_in_first_target_physical_contact_episode_without_prior_clean_50ms_opportunity
+    ICE_BENIGN_VIABLE: Ice_benign_acceptance_is_satisfied_and_no_Slip_exists
+    NO_SLIP_NO_CLEAN_ICE_CONTACT: no_Slip_and_no_clean_50ms_Ice_opportunity
+
+signature_exclusion:
+  fields:
+    - source_terrain
+    - target_terrain
+    - speed_mps
+    - patch_start_x_m
+    - patch_width_m
+    - slip_pattern
+    - sink_pattern
+    - sink_severity
+    - support_pattern
+  previous_calibration_signature_count: 78
+  required_previous_calibration_overlap: 0
+  current_unified_signature_count: 256
+  required_current_unified_overlap: 0
+  all_resolution_pilot_signatures_excluded_from_future_evaluation: true
+  required_future_evaluation_overlap: 0
+
+scenario_families:
+  ONE_CONTACT_DELAYED_ICE_SLIP:
+    priority: P0
+    hypothesis_type: fresh_episode_based_not_relaxed_time_threshold
+    target_terrain: ice
+    hazard_intent: Slip_after_at_least_one_complete_benign_target_contact_episode
+    mechanics: existing_full_width_frozen_Ice_transition
+    affected_side_intent: oracle_decides
+    gait_phase_intent: natural_diagnostic_only
+    pilot_matrix:
+      expansion_order: [source_terrain, speed_mps, patch_start_x_m, patch_width_m]
+      source_terrain: [concrete, marble]
+      speed_mps: [0.20, 0.25, 0.30]
+      patch_start_x_m: [0.29, 0.34]
+      patch_width_m: [0.71, 0.77]
+      target_terrain: ice
+      slip_pattern: transition
+      sink_pattern: uniform
+      sink_severity: moderate
+      support_pattern: balanced_soft
+    pilot_count: 24
+    readiness:
+      viable_runs_min: 4
+      required_sources: [concrete, marble]
+      viable_speed_strata_min: 2
+    select_max: 6
+  ICE_BENIGN_CONTROL:
+    priority: P0
+    hypothesis_type: fresh_independent_current_Ice_domain_audit
+    target_terrain: ice
+    hazard_intent: physically_clean_Ice_contact_without_Hazard
+    mechanics: existing_full_width_frozen_Ice_transition
+    affected_side_intent: NONE
+    gait_phase_intent: natural_diagnostic_only
+    pilot_matrix:
+      expansion_order: [source_terrain, speed_mps, patch_start_x_m, patch_width_m]
+      source_terrain: [concrete, marble]
+      speed_mps: [0.20, 0.25, 0.30]
+      patch_start_x_m: [0.305, 0.335]
+      patch_width_m: [0.24, 0.30]
+      target_terrain: ice
+      slip_pattern: transition
+      sink_pattern: uniform
+      sink_severity: moderate
+      support_pattern: balanced_soft
+    pilot_count: 24
+    readiness:
+      viable_runs_min: 2
+      required_sources: [concrete, marble]
+    select_max: 4
+
+selection:
+  evidence: physical_only
+  family_readiness_uses_only_candidates_predeclared_for_that_family: true
+  tie_break: deterministic_parameter_diversity_then_lexicographic_pilot_id
+  selection_may_change_after_model_smoke: false
+  parameter_grid_may_expand_after_results: false
+  round_2_status: NOT_AUTHORIZED
+
+optional_low_friction_benign_control:
+  evaluate_only_if_Ice_benign_unavailable: true
+  concept_id: LOW_FRICTION_HARD_BENIGN_CONTROL
+  role: future_Hazard_robustness_control_not_Terrain_Ice_evidence
+  new_material_profile_if_needed: REQUIRES_NEW_PHYSICS_CALIBRATION
+  implement_in_this_milestone: false
+  classify_as_Ice_ground_truth: false
+
+post_freeze_model_smoke:
+  enabled_after_model_blind_physical_selection_freeze_only: true
+  representative_rule: lexicographically_first_selected_pilot_per_ready_Ice_family
+  hazard: current_protected_unified_gru_read_only
+  terrain: current_protected_left_FSR4_MLP_50ms_read_only
+  performance_denominator_claim: prohibited
+  result_may_change_selection: false
+
+visualization_sanity:
+  timing: after_physical_selection_freeze
+  representative_rule: same_as_model_smoke
+  capture_render_trace: true
+  selection_input: prohibited
+
+outputs:
+  pilot_data_path: data/raw/ice_generalization_gap_resolution_20260831
+  artifact_path: artifacts/runs/20260831_ice_generalization_gap_resolution
+  report_path: reports/20260831_ice_generalization_gap_resolution.md
+  commit_generated_outputs: false
+
+next_dataset_generation:
+  auto_start: false
+  readiness_verdicts:
+    - FULL_GENERALIZATION_DATASET_READY
+    - PARTIAL_GENERALIZATION_DATASET_READY
+    - GENERALIZATION_DATASET_STILL_BLOCKED
+  decision_rule:
+    FULL_GENERALIZATION_DATASET_READY: both_fresh_Ice_families_READY_plus_three_existing_READY_families
+    PARTIAL_GENERALIZATION_DATASET_READY: Ice_domain_conclusively_characterized_with_one_or_both_fresh_Ice_families_unavailable_and_three_existing_READY_families_preserved
+    GENERALIZATION_DATASET_STILL_BLOCKED: unresolved_physical_oracle_or_signature_integrity_or_model_selection_contamination_prevents_a_defensible_family_freeze

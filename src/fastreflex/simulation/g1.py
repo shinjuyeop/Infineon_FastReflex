@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
-from dataclasses import dataclass
 import hashlib
 import importlib
-from pathlib import Path
 import time
-from typing import Any, ContextManager
+from contextlib import nullcontext
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, ContextManager
 
 import mujoco
 import numpy as np
@@ -19,22 +19,6 @@ from .hazards import (
     PhysicalDiagnostics,
     derive_physical_diagnostics,
     read_exact_foot_sample,
-)
-from .terrain import (
-    apply_slip_patch_profiles,
-    apply_sink_patch_profiles,
-    apply_terrain_profile,
-    deformable_support_layout,
-    get_terrain_profile,
-    low_friction_patch_geom_ids,
-    read_deformable_support_sample,
-    soft_sink_geom_ids,
-    terrain_contact_class_by_geom_id,
-    TRANSITION_PATCH_START_X_M,
-    TRANSITION_PATCH_WIDTH_M,
-    validate_slip_scenario,
-    validate_sink_scenario,
-    validate_transition_geometry,
 )
 from .sensors import (
     FOOT_IMU_CHANNELS,
@@ -49,7 +33,22 @@ from .stability import (
     derive_stability_diagnostics,
     read_exact_stability_sample,
 )
-
+from .terrain import (
+    TRANSITION_PATCH_START_X_M,
+    TRANSITION_PATCH_WIDTH_M,
+    apply_sink_patch_profiles,
+    apply_slip_patch_profiles,
+    apply_terrain_profile,
+    deformable_support_layout,
+    get_terrain_profile,
+    low_friction_patch_geom_ids,
+    read_deformable_support_sample,
+    soft_sink_geom_ids,
+    terrain_contact_class_by_geom_id,
+    validate_sink_scenario,
+    validate_slip_scenario,
+    validate_transition_geometry,
+)
 
 PHYSICS_TIMESTEP_S = 0.0005
 SENSOR_RATE_HZ = 1000
@@ -145,6 +144,7 @@ ACTION_SCALE = np.asarray(
 POLICY_PERIOD_S = 0.6
 CONTROL_PERIOD_S = 0.02
 VIEWER_SYNC_PERIOD_S = 1.0 / 60.0
+ViewerOverlay = Callable[[int], tuple[str, str]]
 
 
 @dataclass(frozen=True)
@@ -453,11 +453,38 @@ def _copy_integration_state(
     mujoco.mj_setState(viewer_model, viewer_data, state, state_spec)
 
 
-def _pace_viewer(simulation_time_s: float, wall_start_s: float) -> None:
-    target_wall_time = wall_start_s + simulation_time_s
+def _pace_viewer(
+    simulation_time_s: float, wall_start_s: float, playback_speed: float = 1.0
+) -> None:
+    target_wall_time = wall_start_s + simulation_time_s / playback_speed
     remaining_s = target_wall_time - time.monotonic()
     if remaining_s > 0.0:
         time.sleep(remaining_s)
+
+
+def _update_viewer_overlay(
+    viewer: Any, overlay: ViewerOverlay, sample: int
+) -> None:
+    """Update text on the isolated render viewer without touching physics."""
+    if not hasattr(viewer, "set_texts"):
+        raise RuntimeError("installed MuJoCo viewer does not support text overlays")
+    model_text, diagnostic_text = overlay(sample)
+    viewer.set_texts(
+        [
+            (
+                mujoco.mjtFontScale.mjFONTSCALE_100,
+                mujoco.mjtGridPos.mjGRID_TOPLEFT,
+                model_text,
+                "",
+            ),
+            (
+                mujoco.mjtFontScale.mjFONTSCALE_100,
+                mujoco.mjtGridPos.mjGRID_TOPRIGHT,
+                diagnostic_text,
+                "",
+            ),
+        ]
+    )
 
 
 def read_pelvis_imu(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
@@ -513,7 +540,9 @@ class UnitreeG1Controller:
         try:
             import onnxruntime as ort
         except ImportError as exc:  # pragma: no cover - dependency error path
-            raise RuntimeError("onnxruntime is required for G1 policy inference") from exc
+            raise RuntimeError(
+                "onnxruntime is required for G1 policy inference"
+            ) from exc
         self.session = ort.InferenceSession(
             str(policy_path), providers=("CPUExecutionProvider",)
         )
@@ -615,9 +644,15 @@ def run_simulation(
     observe_fsr: bool = True,
     observe_foot_imu: bool = True,
     capture_state_trace: bool = False,
+    viewer_overlay: ViewerOverlay | None = None,
+    playback_speed: float = 1.0,
 ) -> SimulationResult:
     """Run one smoke trace entirely in memory; no dataset or output is written."""
     config.validate()
+    if not np.isfinite(playback_speed) or playback_speed <= 0.0:
+        raise ValueError("viewer playback speed must be positive and finite")
+    if config.headless and viewer_overlay is not None:
+        raise ValueError("viewer overlay requires viewer mode")
     if config.policy_path is None:
         raise ValueError("policy path is required via --policy or FASTREFLEX_G1_POLICY")
     model, ground_geom_ids = load_g1_model(
@@ -726,6 +761,8 @@ def run_simulation(
         wall_start_s = time.monotonic()
         next_viewer_sync_s = 0.0
         if viewer is not None:
+            if viewer_overlay is not None:
+                _update_viewer_overlay(viewer, viewer_overlay, 0)
             viewer.sync(state_only=True)
             next_viewer_sync_s = VIEWER_SYNC_PERIOD_S
 
@@ -741,9 +778,21 @@ def run_simulation(
                 if float(data.time) + 1e-12 >= next_viewer_sync_s:
                     assert viewer_model is not None and viewer_data is not None
                     _copy_integration_state(model, data, viewer_model, viewer_data)
+                    if viewer_overlay is not None:
+                        viewer_sample = int(
+                            round(float(data.time) * config.sensor_rate_hz)
+                        ) - 1
+                        viewer_sample = min(
+                            max(viewer_sample, 0), config.expected_samples - 1
+                        )
+                        _update_viewer_overlay(
+                            viewer,
+                            viewer_overlay,
+                            viewer_sample,
+                        )
                     viewer.sync(state_only=True)
                     next_viewer_sync_s += VIEWER_SYNC_PERIOD_S
-                _pace_viewer(float(data.time), wall_start_s)
+                _pace_viewer(float(data.time), wall_start_s, playback_speed)
 
             if (physics_step + 1) % config.physics_steps_per_sample:
                 continue

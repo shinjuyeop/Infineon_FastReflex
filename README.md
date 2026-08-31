@@ -87,7 +87,7 @@ Deployment 작업은 별도 `Infineon_FastReflex_E84` repository에서 명시적
 
 ## CLI
 
-Canonical top-level commands는 `simulate`, `collect`, `train`, `evaluate`, `export`다.
+Canonical top-level commands는 `simulate`, `collect`, `train`, `evaluate`, `visualize`, `export`다.
 
 G1 smoke simulation:
 
@@ -112,6 +112,16 @@ python scripts/fastreflex.py evaluate \
 ```
 
 `collect`, `train`, `evaluate`는 explicit `--config`를 요구한다. Historical experiment config는 current source에서 다른 runner로 fallback하지 않고, report/config에 기록된 source commit을 사용하라는 메시지와 함께 fail-closed한다. Current frozen Hazard corpus는 이 consolidated CLI에서 재생성하지 않으며, current candidate를 같은 artifact identity에 암묵적으로 재학습하지 않는다. `export`는 reviewed Research-to-Deployment release가 생길 때까지 reserved다.
+
+## Visualization
+
+대표 TRAIN/VALIDATION case는 deterministic re-simulation parity를 통과한 뒤 MuJoCo viewer에서 frozen Hazard, advisory Terrain, simulator-only physical GT와 함께 재생할 수 있다.
+
+```bash
+python scripts/fastreflex.py visualize --run-id uhr_ice_h_c20
+```
+
+Representative run과 HUD 해석은 [`docs/simulation.md`](docs/simulation.md#visualizing-supported-hazardterrain-decisions)를 참고한다. HOLDOUT run은 visualization 대상에서 제외된다.
 
 ## Historical evidence
 

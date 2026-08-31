@@ -101,7 +101,7 @@ python scripts/fastreflex.py simulate \
 
 ## Viewer 실행
 
-Viewer는 공식 `mujoco.viewer.launch_passive`를 사용하고 pelvis tracking camera로 보행을 따라가며, simulation time이 wall clock과 대략 1x로 진행되도록 pacing한다. Window를 닫으면 현재까지의 trace summary를 출력하고 clean exit한다. Custom HUD나 live label overlay는 제공하지 않는다. 아래 예시도 앞에서 `FASTREFLEX_G1_POLICY`를 설정한 terminal에서 실행한다.
+Viewer는 공식 `mujoco.viewer.launch_passive`를 사용하고 pelvis tracking camera로 보행을 따라가며, simulation time이 wall clock과 대략 1x로 진행되도록 pacing한다. Window를 닫으면 현재까지의 trace summary를 출력하고 clean exit한다. 일반 `simulate --viewer`는 custom HUD를 표시하지 않으며, frozen decision HUD는 아래의 `visualize` workflow가 제공한다. 아래 예시도 앞에서 `FASTREFLEX_G1_POLICY`를 설정한 terminal에서 실행한다.
 
 NORMAL-like motion 관찰 예시:
 
@@ -196,6 +196,106 @@ python scripts/fastreflex.py simulate \
 ```
 
 환경 변수를 설정하지 않았다면 각 명령 끝에 `--policy artifacts/external/unitree_g1/g1_velocity_policy.onnx`를 추가한다. Viewer를 사용할 수 없는 환경에서는 display 확인 방법과 `--headless` 대안을 포함한 명확한 error를 출력한다.
+
+## Visualizing supported Hazard/Terrain decisions
+
+### Purpose
+
+`visualize`는 frozen unified dataset의 TRAIN 또는 VALIDATION run specification을 읽어 같은 MuJoCo 조건을 결정론적으로 다시 실행하고, 저장된 runtime trace와 parity가 통과한 경우에만 viewer를 연다. Viewer에는 frozen Hazard와 advisory Terrain inference, 그리고 별도로 표시된 simulator-only physical GT/diagnostic을 같은 simulation clock으로 겹쳐 보여 준다. 성능을 다시 평가하거나 dataset/model을 변경하는 workflow가 아니다.
+
+Stored NPZ는 완전한 robot `qpos/qvel` trajectory를 갖고 있지 않으므로 NPZ 자체를 animation으로 가장하지 않는다. Viewer를 열기 전에 다음 항목을 exact equality, 즉 absolute tolerance `0.0`으로 비교한다.
+
+- `timestamp_us`
+- Pelvis IMU6
+- FSR8
+- first target contact/touchdown
+- Slip event, Support event, I1 precursor event
+- censor sample
+- tangential drift, support spread, loaded-contact diagnostic trace
+
+Parity 하나라도 실패하면 viewer는 열리지 않는다. Viewer replay가 끝난 뒤에도 저장 trace와 다시 비교해 rendering/pacing이 physics에 영향을 주지 않았음을 확인한다.
+
+### Basic command
+
+Canonical policy가 `artifacts/external/unitree_g1/g1_velocity_policy.onnx`에 있으면 다음 명령만 실행하면 된다.
+
+```bash
+python scripts/fastreflex.py visualize --run-id <RUN_ID>
+```
+
+다른 위치에 같은 verified policy가 있다면 `FASTREFLEX_G1_POLICY` 또는 `--policy`를 사용한다. 재생 속도는 `--speed 0.5`, `--speed 1.0`, `--speed 2.0` 중 하나이며 기본값은 near-real-time `1.0`이다. `--show-debug`는 threshold 상태, tensor provenance와 parity 설명을 HUD에 추가한다.
+
+사용 가능한 TRAIN/VALIDATION ID와 canonical representative ID는 다음 명령으로 확인한다. 이 목록에는 HOLDOUT ID가 포함되지 않는다.
+
+```bash
+python scripts/fastreflex.py visualize --list-runs
+```
+
+### Representative validation cases
+
+선정 규칙은 model confidence나 화면 모양을 보지 않고, 각 design group에서 manifest상 valid한 VALIDATION run ID를 사전순으로 정렬한 첫 항목을 택하는 것이다. 현재 frozen manifest에서 선택된 실제 ID는 다음과 같다.
+
+ICE_SLIP_HAZARD — `uhr_ice_h_c20`:
+
+```bash
+python scripts/fastreflex.py visualize --run-id uhr_ice_h_c20
+```
+
+SAND_SUPPORT_HAZARD — `uhr_sand_h_c20`:
+
+```bash
+python scripts/fastreflex.py visualize --run-id uhr_sand_h_c20
+```
+
+SAND_BENIGN — `uhr_sand_b_c20`:
+
+```bash
+python scripts/fastreflex.py visualize --run-id uhr_sand_b_c20
+```
+
+HARD_GROUND_NORMAL — `uhr_hard_n_c20`:
+
+```bash
+python scripts/fastreflex.py visualize --run-id uhr_hard_n_c20
+```
+
+### Overlay interpretation
+
+왼쪽 `MODEL OUTPUT` panel은 model/runtime output만 표시한다.
+
+- 현재 Hazard probability, `p >= 0.99`, `REFLEX_REQUIRED`, 첫 reflex time
+- held Terrain state, latest update time, touchdown foot
+- Concrete/Marble/Ice/Sand probability
+- Hazard 결정 뒤에만 계산되는 advisory cause refinement
+
+오른쪽 `SIMULATOR GT / DIAGNOSTIC` panel은 `NEVER USED AS MODEL INPUT`이라고 명시하며 다음 simulator-only reference를 표시한다.
+
+- physical label
+- 현재 Slip active와 first event, tangential drift, 50 mm / 3 ms 기준
+- 현재 I1 precursor active와 first event
+- 현재 established Support active와 first event, support spread, 10 mm / 20 ms 기준
+- censor time
+
+Terrain은 Hazard tensor, threshold, persistence 또는 `REFLEX_REQUIRED` gate에 들어가지 않는다. GT와 diagnostic도 model input이 아니며 parity와 시각적 해석에만 사용한다.
+
+### Expected sequence
+
+- Ice Slip: normal walking → Ice contact → Slip progression 중 Hazard probability 상승 → `REFLEX_REQUIRED` → 이후 Terrain이 ICE로 갱신된다. Reflex가 Terrain을 기다리지 않는 것을 확인한다.
+- Sand Support: normal walking → Sand contact → heterogeneous support deformation → I1 precursor → `REFLEX_REQUIRED` → established Support 순서로 진행할 수 있다.
+- Sand benign: Terrain은 SAND로 갱신되지만 Hazard probability는 benign이고 `REFLEX_REQUIRED`는 false로 유지된다.
+- Hard normal: Terrain은 CONCRETE 또는 MARBLE이고 Hazard probability와 `REFLEX_REQUIRED`가 benign 상태를 유지한다.
+
+### Controls
+
+MuJoCo passive viewer의 기본 mouse camera orbit/pan/zoom control을 그대로 사용한다. Window를 닫으면 replay가 종료된다. Replay 완료 전에 닫으면 최종 viewer/physics parity를 확인할 수 없으므로 command는 fail closed한다. 재생 속도는 command 시작 시 `--speed`로 선택한다.
+
+### Limitations
+
+- Visualization은 stored NPZ trajectory 재생이 아니라 frozen scenario의 deterministic re-simulation이다.
+- Stored NPZ에는 전체 `qpos/qvel` replay가 없으며 parity를 통과하지 못한 근사 animation은 허용하지 않는다.
+- Physical GT와 diagnostics는 visualization/evaluation reference일 뿐 model tensor가 아니다.
+- 이 결과는 simulation evidence이며 real-robot validation이 아니다.
+- HOLDOUT run ID는 명시적으로 거부하며 waveform을 열지 않는다.
 
 ## Terrain 설명
 

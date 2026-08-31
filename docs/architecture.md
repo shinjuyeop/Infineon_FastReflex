@@ -30,6 +30,12 @@ simulation/{g1,sensors,terrain}.py
   -> training/terrain.py
   -> evaluation/terrain.py
   -> advisory cause
+
+stored TRAIN/VALIDATION run specification
+  -> visualization.py
+  -> deterministic simulation/g1.py parity gate
+  -> frozen evaluation/{hazard,terrain}.py replay
+  -> isolated MuJoCo viewer overlay
 ```
 
 ## 2. Hazard preprocessing and model contract
@@ -131,6 +137,8 @@ These references are privileged scoring/label fields. They are excluded from run
 - `simulation/stability.py`: simulator diagnostics still computed by `g1.py` to preserve physics/viewer result parity; it is not a supported runtime Hazard detector
 
 The viewer copies physics state into a render-only model. Viewer input cannot feed back into the canonical simulation.
+
+`visualization.py` owns read-only run resolution, HOLDOUT rejection, exact stored/re-simulated parity, frozen inference alignment and HUD formatting. It opens the viewer only after timestamp, IMU6, FSR8 and physical event-clock parity passes. The viewer performs the same full parity check again after playback; overlay text and wall-clock speed never enter controller, physics, sensor, feature or model tensors.
 
 ## 7. Research-to-Deployment boundary
 

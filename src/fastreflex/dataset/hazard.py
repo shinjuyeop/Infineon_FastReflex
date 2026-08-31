@@ -14,7 +14,6 @@ import yaml
 
 from fastreflex.dataset.loader import sha256_file
 
-
 EXPERIMENT_ID = "UNIFIED_HAZARD_REFLEX_SYSTEM_VALIDATION"
 PELVIS_IMU6 = "PELVIS_IMU6"
 PELVIS_IMU6_FSR8 = "PELVIS_IMU6_FSR8"
@@ -326,18 +325,31 @@ def i1_support_precursor_sample(
     run: HazardRun, *, threshold: float = 0.0, persistence_ms: int = 20
 ) -> int | None:
     """First causal loaded-foot positive spread-derivative confirmation."""
+    active = i1_support_precursor_trace(
+        run, threshold=threshold, persistence_ms=persistence_ms
+    )
+    indices = np.flatnonzero(active)
+    return None if not len(indices) else int(indices[0])
+
+
+def i1_support_precursor_trace(
+    run: HazardRun, *, threshold: float = 0.0, persistence_ms: int = 20
+) -> np.ndarray:
+    """Causal I1 active trace using the frozen loaded-support definition."""
+    if persistence_ms <= 0:
+        raise ValueError("I1 persistence must be positive")
     spread = np.asarray(run.support_spread_m, dtype=np.float64)
     derivative = np.zeros_like(spread)
     derivative[1:] = spread[1:] - spread[:-1]
     score = np.max(
         np.where(run.loaded_contact, np.maximum(derivative, 0.0), 0.0), axis=1
     )
+    active = np.zeros(len(score), dtype=bool)
     count = 0
     for sample in range(run.first_contact_sample, run.censor_sample):
         count = count + 1 if score[sample] > threshold else 0
-        if count >= persistence_ms:
-            return sample
-    return None
+        active[sample] = count >= persistence_ms
+    return active
 
 
 def physical_hazard_label(run: HazardRun, precursor: int | None) -> str:

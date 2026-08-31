@@ -12,7 +12,6 @@ from pathlib import Path
 
 import yaml
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPOSITORY_ROOT / "src"
 if str(SOURCE_ROOT) in sys.path:
@@ -98,6 +97,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate.add_argument("--config", type=Path, required=True)
 
+    visualize = subparsers.add_parser(
+        "visualize",
+        help="re-simulate a TRAIN/VALIDATION run with frozen decision overlays",
+    )
+    selection = visualize.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--run-id")
+    selection.add_argument("--list-runs", action="store_true")
+    visualize.add_argument(
+        "--speed",
+        type=float,
+        choices=(0.5, 1.0, 2.0),
+        default=1.0,
+        help="viewer playback speed (default: 1.0)",
+    )
+    visualize.add_argument("--show-debug", action="store_true")
+    visualize.add_argument(
+        "--policy",
+        type=Path,
+        help="verified policy override; canonical frozen path is used by default",
+    )
+
     subparsers.add_parser(
         "export", help="reserved for the later reviewed Research-to-Deployment release"
     )
@@ -122,7 +142,11 @@ def _require_supported(path: Path) -> str:
 
 def _policy_path(argument: Path | None) -> Path | None:
     environment = os.environ.get("FASTREFLEX_G1_POLICY")
-    return argument if argument is not None else (Path(environment) if environment else None)
+    return (
+        argument
+        if argument is not None
+        else (Path(environment) if environment else None)
+    )
 
 
 def _simulate(args: argparse.Namespace) -> int:
@@ -172,7 +196,11 @@ def _simulate(args: argparse.Namespace) -> int:
         ),
         headless=headless,
     )
-    print(json.dumps(summarize_result(run_simulation(config)), indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            summarize_result(run_simulation(config)), indent=2, sort_keys=True
+        )
+    )
     return 0
 
 
@@ -189,7 +217,11 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     from fastreflex.dataset.terrain import collect_terrain_dataset
 
     output_path, summary = collect_terrain_dataset(args.config, policy)
-    print(json.dumps({"output_path": str(output_path), **summary}, indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            {"output_path": str(output_path), **summary}, indent=2, sort_keys=True
+        )
+    )
     return 0
 
 
@@ -217,6 +249,56 @@ def _evaluate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _visualize(args: argparse.Namespace) -> int:
+    from fastreflex.visualization import (
+        prepare_visualization,
+        representative_validation_runs,
+        visualization_run_ids,
+        visualize_prepared_run,
+    )
+
+    if args.list_runs:
+        print(
+            json.dumps(
+                {
+                    "representative_validation": representative_validation_runs(
+                        REPOSITORY_ROOT
+                    ),
+                    "runs": visualization_run_ids(REPOSITORY_ROOT),
+                    "holdout_included": False,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+    policy = _policy_path(args.policy)
+    prepared = prepare_visualization(REPOSITORY_ROOT, args.run_id, policy)
+    print(
+        json.dumps(
+            {
+                "run_id": prepared.resolved.run.run_id,
+                "split": prepared.resolved.run.split,
+                "parity": prepared.parity.checks,
+                "sensor_absolute_tolerance": (
+                    prepared.parity.sensor_absolute_tolerance
+                ),
+                "status": "PARITY_PASSED_OPENING_VIEWER",
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        flush=True,
+    )
+    result = visualize_prepared_run(
+        prepared,
+        playback_speed=args.speed,
+        show_debug=args.show_debug,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -232,6 +314,8 @@ def main() -> int:
             return _train(args, parser)
         if args.command == "evaluate":
             return _evaluate(args)
+        if args.command == "visualize":
+            return _visualize(args)
         if args.command == "export":
             parser.error(
                 "export is reserved for the later reviewed E84 deployment milestone"

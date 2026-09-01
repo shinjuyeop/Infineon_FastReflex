@@ -4,7 +4,7 @@ Unitree G1 MuJoCo에서 검증된 physical Hazard Reflex와 Terrain advisory를 
 
 ## Current Status
 
-`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_GENERATION_READY; MODEL_V2_DATA_ONLY_TRAINING_COMPLETE; MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED; MODEL_V2_INTERNAL_FAILURE_AUDIT_ACTIONABLE; MODEL_V2_EXTRACTION_REBALANCE_DESIGN_READY; MODEL_V2_EXTRACTION_REBALANCED_TRAINING_COMPLETE; V2_EXTRACTION_REBALANCE_NOT_EFFECTIVE`
+`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_GENERATION_READY; MODEL_V2_DATA_ONLY_TRAINING_COMPLETE; MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED; MODEL_V2_INTERNAL_FAILURE_AUDIT_ACTIONABLE; MODEL_V2_EXTRACTION_REBALANCE_DESIGN_READY; MODEL_V2_EXTRACTION_REBALANCED_TRAINING_COMPLETE; V2_EXTRACTION_REBALANCE_NOT_EFFECTIVE; MODEL_V2_REBALANCE_REGRESSION_AUDIT_ACTIONABLE`
 
 ```text
 Hazard
@@ -51,6 +51,8 @@ Read-only internal failure audit verdict는 `MODEL_V2_INTERNAL_FAILURE_AUDIT_ACT
 Extraction-rebalance design verdict는 `MODEL_V2_EXTRACTION_REBALANCE_DESIGN_READY`다. Baseline V2 candidate와 442-run effective TRAIN을 보존한 채, 18개 delayed-Support TRAIN run 모두에 Concrete/Marble 대칭 규칙으로 I1·interval midpoint·Support의 5 ms causal neighborhood를 배정했다. Dry-run projected fit positive는 2,424→2,590(`+6.85%`)이며 Slip 1,680과 ordinary Support 640, fit negative 25,585는 그대로다. 모든 contradiction count는 0이다. 재학습과 V2_VALIDATION 재평가, external Generalization V2 inference는 아직 시작하지 않았고 Generalization HOLDOUT guard count는 0이다. Frozen design은 [`reports/20260901_model_v2_extraction_rebalance_design.md`](reports/20260901_model_v2_extraction_rebalance_design.md)에 있다.
 
 Frozen extraction 설계로 별도 3-seed GRU20 candidate를 학습했다. V1과 baseline data-only V2는 그대로 보존되며 delayed Support는 baseline 3/6→6/6, Marble은 0/3→3/3으로 개선됐다. 그러나 confirmed no-hazard specificity가 26/26→23/26, speed-Sand benign이 12/12→9/12로 회귀해 intervention verdict는 `V2_EXTRACTION_REBALANCE_NOT_EFFECTIVE`, internal verdict는 계속 `MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED`다. 새 candidate로 Generalization VALIDATION은 평가하지 않았고 Generalization HOLDOUT은 guard count 0으로 sealed다. 상세 결과는 [`reports/20260901_model_v2_extraction_rebalanced_training.md`](reports/20260901_model_v2_extraction_rebalanced_training.md)에 있다.
+
+후속 read-only regression audit verdict는 `MODEL_V2_REBALANCE_REGRESSION_AUDIT_ACTIONABLE`이다. 세 false reflex는 모두 TRAIN/HNM에 exact negative cell이 존재하는 transition-left speed-Sand loading state였고, 새 delayed-Support anchor 중 `SUPPORT_LOCAL`이 가장 가까웠다. Inverse-frequency loss와 monitor composition도 함께 바뀐 coupled variable이지만 주원인 증거는 약하다. 다음 단일 milestone은 `MODEL_V2_DELAYED_SUPPORT_ANCHOR_REFINEMENT_DESIGN`이며 아직 시작하지 않았다. 재학습과 external Generalization V2 inference는 없었고 Generalization HOLDOUT guard count는 0이다. 상세 결과는 [`reports/20260901_model_v2_rebalance_regression_audit.md`](reports/20260901_model_v2_rebalance_regression_audit.md)에 있다.
 
 ## Canonical source flow
 
@@ -167,6 +169,7 @@ Viewer는 검증된 memory-only snapshot을 재생하며 종료 시 마지막 fr
 - [`reports/20260901_model_v2_internal_failure_audit.md`](reports/20260901_model_v2_internal_failure_audit.md)
 - [`reports/20260901_model_v2_extraction_rebalance_design.md`](reports/20260901_model_v2_extraction_rebalance_design.md)
 - [`reports/20260901_model_v2_extraction_rebalanced_training.md`](reports/20260901_model_v2_extraction_rebalanced_training.md)
+- [`reports/20260901_model_v2_rebalance_regression_audit.md`](reports/20260901_model_v2_rebalance_regression_audit.md)
 
 Current architecture는 [`docs/architecture.md`](docs/architecture.md), dataset contract는 [`docs/dataset.md`](docs/dataset.md), 검증 규칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)에 있다.
 

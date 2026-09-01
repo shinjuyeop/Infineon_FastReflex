@@ -21,7 +21,10 @@ sys.path.insert(0, str(SOURCE_ROOT))
 DEFAULT_SIMULATOR_CONFIG = REPOSITORY_ROOT / "configs/simulator/g1.yaml"
 HAZARD_EXPERIMENT_ID = "UNIFIED_HAZARD_REFLEX_SYSTEM_VALIDATION"
 TERRAIN_EXPERIMENT_ID = "TERRAIN_REBUILD_AND_SENSOR_ABLATION"
-SUPPORTED_EXPERIMENT_IDS = frozenset((HAZARD_EXPERIMENT_ID, TERRAIN_EXPERIMENT_ID))
+MODEL_V2_GENERATION_ID = "MODEL_V2_DATASET_GENERATION"
+SUPPORTED_EXPERIMENT_IDS = frozenset(
+    (HAZARD_EXPERIMENT_ID, TERRAIN_EXPERIMENT_ID, MODEL_V2_GENERATION_ID)
+)
 HISTORICAL_MESSAGE = (
     "This experiment is historical and is not runnable from the current "
     "consolidated source tree. Use the source commit recorded in its "
@@ -231,6 +234,23 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             "The supported Unified Hazard corpus is frozen; this consolidated "
             "milestone does not regenerate it."
         )
+    if experiment_id == MODEL_V2_GENERATION_ID:
+        from fastreflex.dataset.generation import collect_model_v2_dataset
+
+        output_path, summary = collect_model_v2_dataset(
+            REPOSITORY_ROOT,
+            args.config.resolve(),
+            policy.resolve(),
+            progress=lambda message: print(message, file=sys.stderr, flush=True),
+        )
+        print(
+            json.dumps(
+                {"output_path": str(output_path), **summary},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
     from fastreflex.dataset.terrain import collect_terrain_dataset
 
     output_path, summary = collect_terrain_dataset(args.config, policy)

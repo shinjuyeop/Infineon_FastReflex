@@ -1,0 +1,54 @@
+schema_version: 1
+
+experiment:
+  id: MODEL_V2_DATASET_GENERATION
+  milestone: MODEL_V2_DATASET_GENERATION
+  date: 2026-09-01
+  timezone: Asia/Seoul
+  purpose: execute_and_freeze_the_predeclared_Model_V2_physical_corpus_without_training
+
+generation:
+  source_commit: 1d821c9e94ce594c9fe100006a581977dc0f40c2
+  origin_main_at_start: 1d821c9e94ce594c9fe100006a581977dc0f40c2
+  worktree_clean_at_start: true
+  generation_start: 2026-09-01T13:58:45+09:00
+  generation_tool: scripts/fastreflex.py collect
+  generator_module: src/fastreflex/dataset/generation.py
+  generator_schema_version: 1
+  design_config_path: configs/experiment/20260901_model_v2_dataset_design.yaml
+  design_config_sha256: 27076a9e85921d369587025dae828fca2603f9e6145cd5f679241e5486bf9232
+  dataset_id: model_v2_hazard_reflex_20260901
+  dataset_path: data/raw/model_v2_hazard_reflex_20260901
+  expected_runs: 412
+  expected_train_runs: 310
+  expected_validation_runs: 102
+  expected_matrix_sha256: 6d109808ac20c52bc913901dd61e2eaf1541c1b8d0163e81497b63964c239bd8
+  expected_physical_signature_sha256: 2eded4ad80c5060f57ed44d37a6fcad709fb7cca36b4b116b5b2687c2c29f297
+  expected_signature_exclusion_sha256: 552a4e0c12b11df8c7e5cb00d906733aa7c96f97b94f903f7aeb5495fe99f58b
+  expected_split_sha256:
+    V2_TRAIN: 8749884bec50325d1d9bb82ec5f76ce9fea0fd07594cf1f4bd921ef4a82c277e
+    V2_VALIDATION: 826fa70578e153f8b83c888aa16ea7ca87996ac209d55df2dcb286a174fead0c
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  simulator_provenance:
+    g1_sha256: d41308b6801aa648284ea05b22ce0c304fd97078cf47f6cd56b1f3b0d715bee2
+    hazards_sha256: 97d26ff789eea5ba2c4e0a6bba57108fd5ffab59ec8bbd373fe028fba97391a7
+    terrain_sha256: 70816edeed3377b940cfaf2a4de089158343b03068604003329b44e50b58ed43
+  model_blind: true
+  reserve_grid: none
+  sealed_holdout_guard: 0
+
+execution_policy:
+  no_training: true
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  adaptive_backfill: prohibited
+  replacement_runs: prohibited
+  outcome_changes_split: false
+  Generalization_VALIDATION_used: false
+  Generalization_HOLDOUT_open_count: 0

@@ -29,7 +29,27 @@ This corpus was generated model-blind and frozen before any current-candidate re
 
 Generated NPZ, manifest, freeze and evaluation artifacts remain Gitignored. The committed contract and result are `configs/experiment/20260831_generalization_dataset_zero_retrain.yaml` and `reports/20260831_generalization_dataset_zero_retrain.md`.
 
-## 3. Runtime and diagnostic fields
+## 3. Ice near-hazard semantics corpus
+
+`ice_near_hazard_semantics_20260901` is a 48-run development-only corpus used to resolve the physical meaning of loaded exact-Ice drift in `[30,50) mm`. It is neither Unified TRAIN nor Model V2 TRAIN and is excluded from final performance evidence. Its result supports a separately annotated `ICE_PRECURSOR_CANDIDATE` while preserving the established 50 mm/3 ms Slip oracle.
+
+## 4. Model V2 augmentation corpus
+
+`model_v2_hazard_reflex_20260901` is the frozen fresh augmentation corpus for the first data-only Model V2 experiment. The predeclared 412-run matrix executed once: 310 `V2_TRAIN` and 102 `V2_VALIDATION` designs produced 386 valid and 26 objectively invalid runs. Actual outcomes are retained independently of intent; no split move, replacement, reserve activation, normalizer fitting, window extraction, HNM, or training occurred.
+
+The raw corpus is Gitignored under `data/raw/model_v2_hazard_reflex_20260901`. Its manifest SHA-256 is `7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25`, NPZ aggregate SHA-256 is `5a8dfd54d1c08413dc6fb18d957269a5fbfea8cf526e4f29c78510886186e11c`, and dataset-freeze SHA-256 is `fd81b647051b63e7b76ab72c6dedd616cf06d752fcbc1db31ba02f8aebe68744`.
+
+The frozen future strategy is `RETAIN_AND_AUGMENT`:
+
+```text
+effective Model V2 TRAIN
+= unified_hazard_reflex_20260829 TRAIN
++ valid model_v2_hazard_reflex_20260901 V2_TRAIN
+```
+
+This yields 442 future training runs from actual valid outcomes. `V2_VALIDATION`, Unified VALIDATION/HOLDOUT, Generalization VALIDATION/HOLDOUT, calibration pilots, Ice-resolution pilots, and the Ice-semantics corpus are excluded from this effective TRAIN. Model V2 is not trained at the end of the generation milestone.
+
+## 5. Runtime and diagnostic fields
 
 The Hazard model may use only:
 
@@ -48,12 +68,13 @@ support_surface_spread_m
 support_surface_max_displacement_m
 loaded_contact
 first Slip/Support/I1 clocks
+Ice precursor candidate mask and same/next/later/benign/censored outcome code
 fall and Terrain prediction provenance
 ```
 
 `HazardRun.features["PELVIS_IMU6"]` is the authoritative raw runtime tensor. `PELVIS_IMU6_FSR8` is retained only as an aligned storage/helper representation and is not accepted by `extract_hazard_features`.
 
-## 4. Physical labels
+## 6. Physical labels
 
 Primary runtime label semantics are exact:
 
@@ -74,7 +95,7 @@ Physical labels used for dataset audit are:
 
 Fall/recovery, intended role and Terrain do not define the label. I1 and the established clocks are prohibited from runtime features.
 
-## 5. Integrity and HOLDOUT
+## 7. Integrity and HOLDOUT
 
 Dataset identity and generated artifact identity remain separate. A manifest records `dataset_id`, creation time, source commit, schema, policy/simulator provenance and per-run SHA-256. Each run is one NPZ with a manifest row containing its file hash, split and diagnostic summary.
 
@@ -88,13 +109,13 @@ Load behavior is fail-closed:
 
 Routine candidate verification reads frozen metadata and artifact hashes only. It does not open HOLDOUT waveforms.
 
-## 6. Hazard preprocessing boundary
+## 8. Hazard preprocessing boundary
 
 Raw Pelvis IMU6 is converted by `src/fastreflex/features.py`, not by an experiment module. The exact output is float32 `[N,80]` with ten bases and eight causal representations. Training and replay take `[20,80]` slices ending at the declared endpoint.
 
 No future sample, Terrain value, physical clock, fall/recovery field or time-to-event field may appear in the schema. The frozen schema hash is `fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb`.
 
-## 7. Terrain dataset
+## 9. Terrain dataset
 
 The current Terrain identity is `terrain_transition_20260828`: 144 run-disjoint simulations and exact per-foot terrain-contact provenance. Clean events are terrain-identity contact rising edges with complete causal observation, persistent same-class contact, pre-fall censoring and mixed-contact ratio `<20%`.
 
@@ -108,10 +129,10 @@ touchdown sample t
 
 Exact terrain identity is a label/scheduler reference, not a model feature. Normalization is fit on TRAIN events only. Current classes are `CONCRETE`, `MARBLE`, `ICE`, and `SAND`.
 
-## 8. Generated artifact boundary
+## 10. Generated artifact boundary
 
 Generated raw datasets and arbitrary training outputs live under Gitignored `data/raw/` and `artifacts/runs/`. They are not source files and are not rewritten by consolidation. Only an explicitly reviewed Research-to-Deployment release may later be placed under `artifacts/releases/` with complete provenance.
 
-## 9. Historical datasets
+## 11. Historical datasets
 
 Pilot NORMAL/SLIP/SINK, deformable-support, dense fall-risk, event-centric and observer datasets remain scientific provenance, not current schemas. Their configs and reports are preserved. Reproduction of a historical config uses the source commit recorded in that config/report; current source does not retain historical runners merely to keep every dated config executable.

@@ -1,0 +1,280 @@
+schema_version: 1
+
+experiment:
+  id: MODEL_V2_DELAYED_SUPPORT_ANCHOR_REFINEMENT_DESIGN
+  milestone: MODEL_V2_DELAYED_SUPPORT_ANCHOR_REFINEMENT_DESIGN
+  date: 2026-09-01
+  timezone: Asia/Seoul
+  source_commit: 19de8786b547f00aa5ddde3bb0b3ef5de5b74388
+  purpose: freeze_one_TRAIN_derived_delayed_support_anchor_refinement_before_retraining
+  design_only: true
+
+protected_candidates:
+  v1:
+    candidate_id: unified_hazard_reflex_gru20_20260829
+    candidate_freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+    normalizer_sha256: 610a91c24a594a3cd1701b07549f4f3c4b7f4cb04eb354f9d41378214a6800a9
+    checkpoint_sha256:
+      - e6bada49beb2b68c2c33bb9a59a1b3a8dd0f556f174cafce12f43efd2d22d588
+      - b04877dc08290a34077ae2deb753085d840640ee8da2bd920d010eb2ce8c2506
+      - b6c782bdfb3789ae7af785ec2b02260a8ae54179d7c531f87e27e0e35301a753
+    restorable: true
+  baseline_v2:
+    candidate_id: model_v2_data_only_gru20_20260901
+    candidate_freeze_sha256: edb16b7d96fb38e680e36dcca5ecd7b1c1682ba410b94d21f40c2a38d4ed8725
+    normalizer_sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+    checkpoint_sha256:
+      - dd6c8581161963265d4323b8316f01367e359357673f0596faaa2a27051771c8
+      - 8e6709da112845840aae0094dd997fad4ee7f9d8256a2ee0fc5e9a0df3b724a0
+      - 811f486c1bd47f91a854fdbd004b8408a5f00bfaa83a22ce91608de1d3b54c42
+    restorable: true
+  rebalanced_v2:
+    candidate_id: model_v2_extraction_rebalanced_gru20_20260901
+    candidate_freeze_sha256: ca1ba7abae1746528cdd098b903ce8f967937a625773bb8029fc486645fc4533
+    evaluation_freeze_sha256: 3d415c0d4c635497f6d882218a059c9228f02fdda9936124439d709480d94dbc
+    extraction_design_sha256: 58a3949c29c8aa313cedc345dc8fa5eb0222cb85d94d31dac488adff69aed29b
+    normalizer_sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+    checkpoint_sha256:
+      - f52a4c86eb29f4a13e263ad1d5da83e55a722bcdfb03784337973471efe89883
+      - c21e8fe4daa7a0877c1a403147f4e685ab250ae97e2b00a0188904651c5d648e
+      - 5d88c027c3a70afbfcaf6c6eb6f961346180649bb075f4cf1bef30958a85f223
+    restorable: true
+
+datasets:
+  unchanged: true
+  effective_train:
+    run_count: 442
+    run_ids_sha256: 0466ea84871d178856ffb10d8b1c0cec730286b35b589c73ff1b5fb1065aa5ab
+  v2_validation:
+    use_for_anchor_selection: false
+    valid_run_count: 96
+    split_sha256: 826fa70578e153f8b83c888aa16ea7ca87996ac209d55df2dcb286a174fead0c
+    valid_run_ids_sha256: cc316aad56a0e8bc50b3930b99396f2946fb7c5d3ad758ee8290e9e6c861e6e4
+  unified:
+    run_count: 256
+    manifest_sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6
+  model_v2:
+    run_count: 412
+    dataset_freeze_sha256: fd81b647051b63e7b76ab72c6dedd616cf06d752fcbc1db31ba02f8aebe68744
+    manifest_sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25
+    npz_aggregate_sha256: 5a8dfd54d1c08413dc6fb18d957269a5fbfea8cf526e4f29c78510886186e11c
+  generalization:
+    run_count: 72
+    manifest_sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53
+  ice_semantics:
+    run_count: 48
+    manifest_sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759
+
+primary_hypothesis: >-
+  Complete delayed-Support representation was useful, but dense Support-local
+  positive exposure includes Pelvis-IMU states that partially overlap physically
+  benign Sand. A smaller anchor policy may retain I1-to-Support temporal learning
+  while reducing that overlap.
+
+candidate_anchor_policies:
+  max_count: 5
+  frozen_before_train_analysis: true
+  candidate_list_sha256: cd6af9180613101f61fe271f2055d1c8a69daf7acf1d73ef429c8e0f47c555cb
+  policies:
+    - id: CURRENT_RULE
+      i1_offsets_ms: [0, 1, 2, 3, 4]
+      midpoint: {numerator: 1, denominator: 2, rounding: floor, offsets_ms: [-2, -1, 0, 1, 2]}
+      late: {anchor: support, offsets_ms: [0, 1, 2, 3, 4]}
+      cap_per_run: 15
+    - id: DROP_SUPPORT_LOCAL
+      i1_offsets_ms: [0, 1, 2, 3, 4]
+      midpoint: {numerator: 1, denominator: 2, rounding: floor, offsets_ms: [-2, -1, 0, 1, 2]}
+      late: null
+      cap_per_run: 10
+    - id: SINGLE_SUPPORT_ENDPOINT
+      i1_offsets_ms: [0, 1, 2, 3, 4]
+      midpoint: {numerator: 1, denominator: 2, rounding: floor, offsets_ms: [-2, -1, 0, 1, 2]}
+      late: {anchor: support, offsets_ms: [0]}
+      cap_per_run: 11
+    - id: SPARSE_SUPPORT_LOCAL
+      i1_offsets_ms: [0, 1, 2, 3, 4]
+      midpoint: {numerator: 1, denominator: 2, rounding: floor, offsets_ms: [-2, -1, 0, 1, 2]}
+      late: {anchor: support, offsets_ms: [0, 4]}
+      cap_per_run: 12
+    - id: LATE_PRE_SUPPORT_INTERIOR
+      i1_offsets_ms: [0, 1, 2, 3, 4]
+      midpoint: {numerator: 1, denominator: 2, rounding: floor, offsets_ms: [-2, -1, 0, 1, 2]}
+      late:
+        anchor: i1_plus_floor_fraction_of_i1_to_support
+        numerator: 3
+        denominator: 4
+        offsets_ms: [0]
+      cap_per_run: 11
+
+analysis:
+  train_only: true
+  validation_probabilities_forbidden: true
+  runtime_representation:
+    normalizer_sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+    current_dimension: 80
+    causal_window_shape: [20, 80]
+  distance_metrics:
+    - nearest_neighbor_euclidean_current_80d
+    - nearest_neighbor_euclidean_flattened_20x80
+    - nearest_neighbor_cosine_current_80d
+    - nearest_neighbor_cosine_flattened_20x80
+    - p10_p25_median_p75_p90
+  source_stratification: [concrete, marble]
+  speed_stratification_mps: [0.20, 0.25, 0.30]
+  contact_state_stratification: true
+  physical_diagnostics:
+    - support_spread
+    - support_spread_derivative
+    - support_displacement
+    - loaded_contact
+    - pelvis_accel_norm
+    - pelvis_gyro_norm
+    - gait_phase
+  learned_classifier: false
+  roc_selection: false
+
+fixed:
+  delayed_support_eligibility:
+    scenario_family: DELAYED_SAND_SUPPORT_ONSET
+    eligible_runs: 18
+    concrete_runs: 9
+    marble_runs: 9
+  i1_group: {offsets_ms: [0, 1, 2, 3, 4], pre_i1_positive_forbidden: true}
+  midpoint_group: {formula: floor((i1_sample + support_sample) / 2), offsets_ms: [-2, -1, 0, 1, 2]}
+  slip_extraction: {endpoint_count: 1680, identity_unchanged: true}
+  ordinary_support: {endpoint_count: 640, identity_unchanged: true}
+  negatives:
+    endpoint_count: 25585
+    identity_unchanged: true
+    categories:
+      hard_normal: 3206
+      ice_benign: 1629
+      benign_near_threshold_ice: 193
+      staged_sand_benign: 1672
+      speed_sand_benign: 2257
+      other_confirmed_benign: 16628
+  masks: {identity_unchanged: true}
+  normalizer: {fit: false, sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a}
+  architecture: {model_family: gru, history_ms: 20, hidden_size: 32, parameters: 11010}
+  hyperparameters:
+    seeds: [20260828, 20260829, 20260830]
+    optimizer: Adam
+    learning_rate: 0.001
+    batch_size: 128
+    max_epochs: 40
+    patience: 6
+    loss: inverse_frequency_weighted_cross_entropy
+  hnm: {rounds: 3, max_per_run: 12, minimum_spacing_ms: 30, unchanged: true, run_now: false}
+  runtime: {threshold: 0.99, persistence_ms: 5}
+
+future_loss_weight_policy:
+  decision: RECOMPUTE_CANONICALLY_FROM_REFINED_EXTRACTION
+  formula: total_samples_divided_by_twice_class_count
+  no_weight_tuning: true
+
+selected_anchor_policy:
+  outcome: LATE_INTERIOR_ANCHOR_READY
+  id: LATE_PRE_SUPPORT_INTERIOR
+  i1_offsets_ms: [0, 1, 2, 3, 4]
+  midpoint:
+    formula: i1_plus_floor_one_half_of_i1_to_support
+    numerator: 1
+    denominator: 2
+    offsets_ms: [-2, -1, 0, 1, 2]
+  late:
+    formula: i1_plus_floor_three_quarters_of_i1_to_support
+    numerator: 3
+    denominator: 4
+    offsets_ms: [0]
+  cap_per_run: 11
+  eligible_runs: 18
+  represented_runs: 18
+  concrete: {runs: 9, endpoints: 99}
+  marble: {runs: 9, endpoints: 99}
+  delayed_support_positive_count: 198
+  fit_positive_count: 2518
+  fit_negative_count: 25585
+  causal_window: "[t-19,t]"
+  same_rule_for_both_sources: true
+  all_pre_i1_positive_endpoints_forbidden: true
+
+projected_selected_class_weights:
+  formula: total_samples_divided_by_twice_class_count
+  rounds:
+    - {round: 0, positives: 2518, negatives: 25585, positive_weight: 5.580420969023034, negative_weight: 0.5492085206175493, ratio: 10.160841938046069}
+    - {round: 1, positives: 2518, negatives: 29632, positive_weight: 6.384034948371724, negative_weight: 0.5424878509719222, ratio: 11.768069896743448}
+    - {round: 2, positives: 2518, negatives: 33716, positive_weight: 7.194996028594122, negative_weight: 0.5373413216277139, ratio: 13.389992057188245}
+    - {round: 3, positives: 2518, negatives: 37828, positive_weight: 8.011517077045275, negative_weight: 0.5332822248070213, ratio: 15.02303415409055}
+  round0_ratio_delta_percent_vs_baseline_v2: -3.7331215250198557
+  round0_ratio_delta_percent_vs_rebalanced_v2: 2.859412231930092
+
+monitor_design:
+  deterministic: true
+  train_only: true
+  candidate_invariant: true
+  positive_basis: baseline_v2_canonical_train_monitor_positive_identities
+  delayed_support_rule: remove_only_endpoints_colliding_with_the_union_of_all_predeclared_candidate_fit_identities
+  other_positive_identities: preserve_exactly
+  negative_identities: preserve_baseline_v2_monitor_exactly
+  endpoint_disjoint_from_candidate_fit: true
+  run_disjointness_if_all_18_delayed_support_runs_are_fit: not_possible_for_delayed_support_only
+  rationale: freeze_one_endpoint_disjoint_monitor_before_training_without_using_V2_VALIDATION
+  proposed_frozen:
+    slip: 431
+    ordinary_support: 167
+    delayed_support_concrete: 8
+    delayed_support_marble: 11
+    total_positive: 617
+    benign_negative: 6624
+    total_negative: 6624
+    removed_candidate_union_collisions: 20
+    exact_endpoint_disjoint_from_fit_candidates: true
+
+dry_run_freeze:
+  artifact: artifacts/runs/20260901_model_v2_delayed_support_anchor_refinement_design/analysis.json
+  preanalysis_config_sha256: 97964d2e9137f0010a2601e0488ad2d94ce5d399142e9cd4b25b9a320aa537bd
+  candidate_list_sha256: cd6af9180613101f61fe271f2055d1c8a69daf7acf1d73ef429c8e0f47c555cb
+  selected_policy_sha256: 730e920eea16ac80d86e180ecd7b1281a88c2ac1b129c394a39dd0baa0c54de4
+  extraction_policy_sha256: 52004bc2ddc307316a7a888855a1bd8014e50b96aa45a178a10965e890f4b199
+  positive_endpoint_sha256: 248719864bc1974ac54a21de63f04a6d5e6f55ef3e3c37092cf0ec757872d09e
+  negative_endpoint_sha256: 392c1fda06953135bfed9a97c7cabb3915d4c50fdf9ff11b2ac8e6550448936c
+  mask_sha256: 32bae2d81b05709771545b375dd6cffb95d2dfc17c2808a7adf3a7f70174c35a
+  monitor_positive_sha256: e4cd285091e55c92c773512b44958273d7773a708bad876806cec6a8401f9c88
+  monitor_endpoint_sha256: 39d30234f674446f305b1b51d446977ba301e6db1e0591ac14dbe7172cbb1bf5
+  anchor_refinement_design_sha256: a0525ffce941e05b5e2a51ec6e9d9489ac3abf10f05e775aedf28087ffa7cfdc
+  deterministic_repeat_match: true
+  candidate_count: 5
+  selected_contradiction_violations:
+    future_slip_precursor_ordinary_negative: 0
+    censored_precursor_negative: 0
+    pre_i1_positive: 0
+    positive_negative_collision: 0
+    post_censor_or_fall: 0
+    future_feature_leakage: 0
+
+sealed:
+  new_V2_VALIDATION_candidate_inference: false
+  V2_VALIDATION_anchor_search: false
+  Generalization_VALIDATION_V2_inference: false
+  Generalization_HOLDOUT_run_count: 36
+  Generalization_HOLDOUT_waveform_opened: false
+  Generalization_HOLDOUT_inference: false
+  Generalization_HOLDOUT_guard_count: 0
+  Unified_HOLDOUT_waveform_reopened: false
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  seed_searches: 0
+  new_simulation_runs: 0
+
+no_training: true
+no_generation: true
+no_model_inference: true
+verdict: MODEL_V2_DELAYED_SUPPORT_ANCHOR_REFINEMENT_DESIGN_READY
+recommended_next_milestone: MODEL_V2_ANCHOR_REFINED_TRAINING

@@ -4,7 +4,7 @@ Unitree G1 MuJoCo에서 검증된 physical Hazard Reflex와 Terrain advisory를 
 
 ## Current Status
 
-`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED`
+`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_DESIGN_READY`
 
 ```text
 Hazard
@@ -39,6 +39,8 @@ P0 Ice gap resolution verdict는 `ICE_GENERALIZATION_GAP_RESOLVED`다. 기존 `D
 후속 diagnostic-only audit verdict는 `GENERALIZATION_FAILURE_MODE_AUDIT_ACTIONABLE`이다. Delayed Ice와 Ice-benign false alert는 실제 42–45 mm near-slip episode와 current target boundary의 tension으로, delayed/Sand-benign alert는 deformable physics 이전의 benign transition transient로, right-only Support 0/4는 comparable Pelvis-IMU magnitude를 가진 side distribution/model failure로 국소화했다. Hazard TRAIN은 0.25 m/s와 left-only Support에 편중되어 있어 data/side/speed/hard-negative coverage correction이 정당화되지만 LSTM, longer history, threshold/persistence 변경은 정당화되지 않았다. Generalization HOLDOUT open count는 계속 0이다. 상세 결과는 [`reports/20260901_generalization_failure_mode_audit.md`](reports/20260901_generalization_failure_mode_audit.md)에 있다.
 
 Ice near-hazard target-semantics verdict는 `ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED`, recommendation은 `ICE_PHYSICAL_PRECURSOR_SUPPORTED`다. Frozen 50 mm/3 ms established-Slip oracle와 Model V1은 그대로 유지하고, loaded exact-Ice 30–50 mm 상태를 future Model V2용 별도 development precursor/acceptable-early region으로 권고한다. Fresh 48-run corpus의 discovery/one-shot confirmation이 progression을 재현했으며 velocity threshold는 overlap 때문에 추가하지 않았다. `ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED`는 변경하지 않았고 Generalization HOLDOUT 36은 open count 0으로 sealed다. 상세 결과는 [`reports/20260901_ice_near_hazard_target_semantics.md`](reports/20260901_ice_near_hazard_target_semantics.md)에 있다.
+
+첫 Model V2 dataset design verdict는 `MODEL_V2_DATASET_DESIGN_READY`다. Model V1을 restorable 상태로 보존하고 `RETAIN_AND_AUGMENT` 기준 fresh 412-run matrix(`V2_TRAIN` 310, `V2_VALIDATION` 102)를 simulation 전에 freeze했다. Primary Hazard와 Ice precursor annotation을 분리하고 delayed/multi-contact Ice, Ice benign/near-hazard, staged Sand benign, balanced right Support와 0.20/0.25/0.30 m/s coverage를 포함한다. Raw V2 dataset과 Model V2 checkpoint는 아직 없으며 Generalization HOLDOUT 36은 open count 0으로 sealed다. 상세 설계는 [`reports/20260901_model_v2_dataset_design.md`](reports/20260901_model_v2_dataset_design.md)에 있다.
 
 ## Canonical source flow
 
@@ -149,6 +151,7 @@ Viewer는 검증된 memory-only snapshot을 재생하며 종료 시 마지막 fr
 - [`reports/20260831_generalization_dataset_zero_retrain.md`](reports/20260831_generalization_dataset_zero_retrain.md)
 - [`reports/20260901_generalization_failure_mode_audit.md`](reports/20260901_generalization_failure_mode_audit.md)
 - [`reports/20260901_ice_near_hazard_target_semantics.md`](reports/20260901_ice_near_hazard_target_semantics.md)
+- [`reports/20260901_model_v2_dataset_design.md`](reports/20260901_model_v2_dataset_design.md)
 
 Current architecture는 [`docs/architecture.md`](docs/architecture.md), dataset contract는 [`docs/dataset.md`](docs/dataset.md), 검증 규칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)에 있다.
 

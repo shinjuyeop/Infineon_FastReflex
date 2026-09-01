@@ -1,0 +1,196 @@
+schema_version: 1
+
+experiment:
+  id: GENERALIZATION_FAILURE_MODE_AUDIT
+  milestone: GENERALIZATION_FAILURE_MODE_AUDIT
+  date: 2026-09-01
+  timezone: Asia/Seoul
+  source_commit_at_start: 5964622f14b9e0aae43b2c9e66721b2cf8df6a85
+  origin_main_at_start: 5964622f14b9e0aae43b2c9e66721b2cf8df6a85
+  branch_at_start: main
+  worktree_clean_at_start: true
+  purpose: diagnostic_only_localization_of_zero_retrain_generalization_failures
+
+frozen_dataset:
+  dataset_id: generalization_hazard_reflex_20260831
+  path: data/raw/generalization_hazard_reflex_20260831
+  manifest:
+    path: data/raw/generalization_hazard_reflex_20260831/manifest.json
+    file_sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53
+    canonical_sha256: a9fa921c0e1ee125cfa314d156a19adae6dd58d3fcc876c5f8e4db310abd0f0d
+  dataset_freeze:
+    path: artifacts/runs/20260831_generalization_dataset_zero_retrain/dataset_freeze.json
+    canonical_sha256: 43d5072dc7b2fed001e76b8d47bfde12934b0696a1a42a096f67e89f92175ae6
+  authorized_waveform_split: GENERALIZATION_VALIDATION
+  authorized_waveform_count: 36
+  sealed_waveform_splits:
+    GENERALIZATION_HOLDOUT:
+      count: 36
+      access: metadata_hash_count_and_membership_only
+      open_count_required: 0
+    unified_historical_holdout:
+      dataset_id: unified_hazard_reflex_20260829
+      access: prohibited
+      open_count_required: 0
+  unified_train_reference:
+    dataset_id: unified_hazard_reflex_20260829
+    path: data/raw/unified_hazard_reflex_20260829
+    manifest_sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6
+    authorized_split: train
+    run_count: 152
+
+frozen_hazard_model:
+  freeze:
+    path: artifacts/runs/20260829_unified_hazard_reflex_system/selection_before_holdout.json
+    canonical_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+  runtime_input: pelvis_imu6
+  feature_dimension: 80
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  input_shape: [20, 80]
+  family: gru
+  hidden_size: 32
+  layers: 1
+  bidirectional: false
+  ensemble_size: 3
+  parameters: 11010
+  threshold: 0.99
+  persistence_ms: 5
+  normalizer:
+    path: artifacts/runs/20260829_unified_hazard_reflex_system/normalization/gru_history20.json
+    sha256: 610a91c24a594a3cd1701b07549f4f3c4b7f4cb04eb354f9d41378214a6800a9
+  checkpoints:
+    - path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260828.pt
+      sha256: e6bada49beb2b68c2c33bb9a59a1b3a8dd0f556f174cafce12f43efd2d22d588
+    - path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260829.pt
+      sha256: b04877dc08290a34077ae2deb753085d840640ee8da2bd920d010eb2ce8c2506
+    - path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260830.pt
+      sha256: b6c782bdfb3789ae7af785ec2b02260a8ae54179d7c531f87e27e0e35301a753
+
+frozen_terrain_advisory:
+  role: annotation_only_never_a_hazard_gate
+  runtime_input: touchdown_foot_fsr4
+  input_shape: [50, 4]
+  family: mlp
+  ensemble_size: 3
+  normalizer:
+    path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/normalization.json
+    sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+  checkpoints:
+    - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_17.pt
+      sha256: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+    - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_29.pt
+      sha256: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+    - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_43.pt
+      sha256: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+
+failure_reproduction:
+  canonical_evaluator: src/fastreflex/evaluation/hazard.py
+  reference_artifact:
+    path: artifacts/runs/20260831_generalization_dataset_zero_retrain/validation_evaluation.json
+    file_sha256: 1d7c8e696ed7b8ac9830e662da660d3df3d2c73c746c2f7fe595037aea7ee4a6
+    canonical_sha256: 3496ff419bc11b67f3e5513589245ac0085db4460172ca0e57e439f2ecbd1f12
+  exact_expected_metrics:
+    overall_hazard_recall: {detected: 13, total: 26, value: 0.5}
+    slip_hazard_recall: {detected: 7, total: 12, value: 0.5833333333333334}
+    support_hazard_recall: {detected: 6, total: 14, value: 0.42857142857142855}
+    primary_no_hazard_specificity: {correct: 5, total: 10, value: 0.5}
+    ice_benign_specificity: {correct: 3, total: 4, value: 0.75}
+    premature_hazard_rate: {premature: 7, total: 26, value: 0.2692307692307692}
+    slip_p95_latency_ms: 5.3
+    support_p95_established_latency_ms: -17.25
+  mismatch_action: stop_scientific_interpretation
+
+audit_questions:
+  - id: delayed_ice_premature
+    question: Are premature Ice alerts aligned to an early physical precursor or a benign low-friction transition?
+  - id: delayed_sand_early
+    question: Are delayed-Sand Reflexes about 550 ms before I1 aligned to a new physical precursor or a benign staged transition?
+  - id: right_support_miss
+    question: Does the right-only Support 0/4 result indicate Pelvis-IMU observability limits or side distribution shift/model failure?
+  - id: speed_degradation
+    question: Is 0.20/0.30 m/s degradation primarily a speed-domain dependency or another correlated factor?
+
+evidence_tiers:
+  tier_1_runtime:
+    sources: [GENERALIZATION_VALIDATION, unified_train]
+    includes: [pelvis_imu6, frozen_features80, frozen_normalized_features80, deployed_ensemble_probability, individual_seed_probability]
+  tier_2_privileged_physics:
+    sources: [GENERALIZATION_VALIDATION]
+    includes: [contact, touchdown, drift, velocity, support_spread, support_displacement, i1, slip, support, fall_censor, fsr_diagnostics]
+    role: posthoc_failure_attribution_only
+  tier_3_context:
+    sources: [generalization_calibration_pilots, prior_committed_reports]
+    role: qualitative_context_never_denominator
+  tier_4_sealed:
+    sources: [GENERALIZATION_HOLDOUT, unified_historical_holdout]
+    allowed: [existence, sha256, count, membership]
+    waveform_or_derived_metadata_access: prohibited
+
+planned_analyses:
+  - exact_canonical_validation_reproduction
+  - common_event_aligned_run_timeline
+  - deployed_ensemble_and_three_seed_probability_trace_audit
+  - threshold_excursion_and_persistence_audit
+  - raw_imu_and_frozen_feature_distribution_shift_against_unified_train
+  - delayed_ice_episode_and_matched_subgroup_audit
+  - ice_benign_and_near_hazard_false_alert_audit
+  - delayed_sand_staged_transition_and_physical_precursor_audit
+  - left_right_support_symmetry_and_observability_audit
+  - speed_source_subtype_side_and_gait_phase_stratification
+  - neutral_matched_pair_search
+  - unified_train_factor_coverage_audit
+  - failure_attribution_and_model_v2_decision_matrix
+
+diagnostic_methods:
+  probability_levels: [0.90, 0.95, 0.99]
+  feature_reference_sampling_stride_ms: 5
+  feature_distribution_quantiles: [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]
+  event_local_window_ms: {before: 1000, after: 500}
+  gait_phase_priority:
+    - TOUCHDOWN_LOADING
+    - CONTACT_RELEASE
+    - DOUBLE_SUPPORT
+    - LEFT_SINGLE_SUPPORT
+    - RIGHT_SINGLE_SUPPORT
+    - NO_SUPPORT
+  gait_phase_touchdown_loading_ms: 10
+  support_vertical_velocity_proxy: first_difference_of_stored_max_displacement_at_1khz
+  trainable_probe_allowed: false
+
+failure_taxonomy:
+  - EARLY_PHYSICAL_PRECURSOR_PRESENT
+  - BENIGN_TRANSITION_FALSE_ALERT
+  - NEAR_HAZARD_FALSE_ALERT
+  - SIDE_OBSERVABILITY_LIMIT
+  - SIDE_DISTRIBUTION_SHIFT
+  - SPEED_DOMAIN_SHIFT
+  - MODEL_GENERALIZATION_FAILURE
+  - TARGET_SEMANTICS_TENSION
+  - INCONCLUSIVE
+
+execution_policy:
+  diagnostic_only: true
+  retraining_allowed: false
+  normalizer_fit_allowed: false
+  hard_negative_mining_allowed: false
+  optimizer_steps_allowed: false
+  checkpoint_writes_allowed: false
+  model_or_architecture_change_allowed: false
+  feature_or_history_change_allowed: false
+  threshold_search_allowed: false
+  persistence_search_allowed: false
+  label_or_physical_semantics_change_allowed: false
+  dataset_or_scenario_change_allowed: false
+  replacement_generation_allowed: false
+  generalization_holdout_open_allowed: false
+  unified_holdout_reopen_allowed: false
+  terrain_used_as_hazard_gate: false
+  future_generalization_holdout_policy: one_shot_only_after_complete_model_v2_freeze
+
+outputs:
+  artifact_directory: artifacts/runs/20260901_generalization_failure_mode_audit
+  probability_traces: artifacts/runs/20260901_generalization_failure_mode_audit/validation_probability_traces.npz
+  run_table: artifacts/runs/20260901_generalization_failure_mode_audit/validation_run_audit.csv
+  diagnostics: artifacts/runs/20260901_generalization_failure_mode_audit/audit_diagnostics.json
+  figures_directory: artifacts/runs/20260901_generalization_failure_mode_audit/figures
+  report: reports/20260901_generalization_failure_mode_audit.md

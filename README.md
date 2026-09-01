@@ -4,7 +4,7 @@ Unitree G1 MuJoCo에서 검증된 physical Hazard Reflex와 Terrain advisory를 
 
 ## Current Status
 
-`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED`
+`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; GENERALIZATION_FAILURE_MODE_AUDIT_ACTIONABLE`
 
 ```text
 Hazard
@@ -35,6 +35,8 @@ Current 256-run corpus의 scenario coverage audit verdict는 `SCENARIO_COVERAGE_
 P0 Ice gap resolution verdict는 `ICE_GENERALIZATION_GAP_RESOLVED`다. 기존 `DELAYED_ICE_SLIP >=1000 ms`는 완화하지 않고 BLOCKED로 보존했으며, fresh episode-based `ONE_CONTACT_DELAYED_ICE_SLIP` 18/24와 fresh `ICE_BENIGN_CONTROL` 4/24를 model-blind하게 확보했다. 두 Ice family와 기존 READY 3개로 final five-family set을 freeze했으므로 scenario-calibration readiness는 `FULL_GENERALIZATION_DATASET_READY`다. 48개 fresh pilots도 future evaluation에서 제외하며 current HOLDOUT은 재오픈하지 않았다. 상세 결과는 [`reports/20260831_ice_generalization_gap_resolution.md`](reports/20260831_ice_generalization_gap_resolution.md)에 있다.
 
 이 frozen five-family 설계로 fresh 72-run `generalization_hazard_reflex_20260831` corpus를 생성했다. Physical verdict는 `GENERALIZATION_DATASET_READY`지만, zero-retrain VALIDATION은 Hazard 13/26, Slip 7/12, Support 6/14, primary no-hazard 5/10, Ice-benign specificity 3/4, premature 7/26으로 predeclared gate를 실패했다. 따라서 model verdict는 `ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED`이며 generalization HOLDOUT은 open count 0으로 sealed 상태다. Current Unified HOLDOUT도 재오픈하거나 새 inference하지 않았다. 상세 결과는 [`reports/20260831_generalization_dataset_zero_retrain.md`](reports/20260831_generalization_dataset_zero_retrain.md)에 있다.
+
+후속 diagnostic-only audit verdict는 `GENERALIZATION_FAILURE_MODE_AUDIT_ACTIONABLE`이다. Delayed Ice와 Ice-benign false alert는 실제 42–45 mm near-slip episode와 current target boundary의 tension으로, delayed/Sand-benign alert는 deformable physics 이전의 benign transition transient로, right-only Support 0/4는 comparable Pelvis-IMU magnitude를 가진 side distribution/model failure로 국소화했다. Hazard TRAIN은 0.25 m/s와 left-only Support에 편중되어 있어 data/side/speed/hard-negative coverage correction이 정당화되지만 LSTM, longer history, threshold/persistence 변경은 정당화되지 않았다. Generalization HOLDOUT open count는 계속 0이다. 상세 결과는 [`reports/20260901_generalization_failure_mode_audit.md`](reports/20260901_generalization_failure_mode_audit.md)에 있다.
 
 ## Canonical source flow
 
@@ -143,6 +145,7 @@ Viewer는 검증된 memory-only snapshot을 재생하며 종료 시 마지막 fr
 - [`reports/20260831_generalization_scenario_calibration.md`](reports/20260831_generalization_scenario_calibration.md)
 - [`reports/20260831_ice_generalization_gap_resolution.md`](reports/20260831_ice_generalization_gap_resolution.md)
 - [`reports/20260831_generalization_dataset_zero_retrain.md`](reports/20260831_generalization_dataset_zero_retrain.md)
+- [`reports/20260901_generalization_failure_mode_audit.md`](reports/20260901_generalization_failure_mode_audit.md)
 
 Current architecture는 [`docs/architecture.md`](docs/architecture.md), dataset contract는 [`docs/dataset.md`](docs/dataset.md), 검증 규칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)에 있다.
 

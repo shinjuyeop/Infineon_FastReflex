@@ -71,6 +71,8 @@ The result is float32 `[samples,80]`. Delta prefixes are zero. Rolling windows a
 
 The model is the shared `GRUBaseline` with input 80, hidden size 32, one unidirectional layer and two outputs. A causal input window is exactly `[20,80]`. The three-seed ensemble averages `HAZARD_REFLEX_REQUIRED` softmax probability. The current operating point is inclusive threshold 0.99 and five consecutive 1 ms samples. Parameter count is 11,010.
 
+The supported runtime candidate remains the frozen Model V1 artifact. The first data-only Model V2 experiment instantiated this same class/schema/decision contract with a new TRAIN-only normalizer and weights, but failed its frozen internal overall/Slip gates. It is preserved as research evidence and does not replace V1 or authorize Generalization VALIDATION/HOLDOUT use.
+
 ## 3. Terrain contract
 
 Terrain uses one clean touchdown event at a time.
@@ -121,7 +123,7 @@ These references are privileged scoring/label fields. They are excluded from run
 
 `dataset/hazard.py` owns `HazardRun`, the source-balanced frozen split, physical signature, manifest/run SHA validation and one-shot `HoldoutGuard`. Runtime arrays and privileged diagnostics remain separately named even when stored in the same NPZ.
 
-`training/hazard.py` owns positive windows, true negative regions, TRAIN-only normalizer fitting and HNM. The fixed HNM contract is three rounds after Round 0, 1 ms replay, K=12 per run, 30 ms minimum spacing, and no negative after I1 becomes active. Supplied runs must declare `split: train`; otherwise training construction fails.
+`training/hazard.py` owns positive windows, true negative regions, TRAIN-only normalizer fitting and HNM. The fixed HNM contract is three rounds after Round 0, 1 ms replay, K=12 per run, 30 ms minimum spacing, and no negative after I1 becomes active. V2 additionally masks future-Slip and censored Ice precursor endpoints while allowing explicitly observed benign releases outside every established-positive region. Supplied runs must declare `split: train`; otherwise training construction fails.
 
 `evaluation/hazard.py` owns continuous replay, probability aggregation, threshold/persistence, physical run metrics and read-only verification of the selected freeze. Scientific HOLDOUT is not reopened during routine verification. The freeze verifier checks candidate identity, schema, normalizer, all Hazard checkpoints and all protected Terrain hashes.
 

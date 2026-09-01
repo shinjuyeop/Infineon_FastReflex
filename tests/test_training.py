@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 import numpy as np
@@ -16,13 +17,20 @@ from fastreflex.dataset.hazard import (
     HazardRun,
 )
 from fastreflex.dataset.loader import WindowSet
+from fastreflex.dataset.generation import (
+    HazardRunAnnotations,
+    load_model_v2_runs,
+)
 from fastreflex.models.baselines import build_model, parameter_count
 from fastreflex.training.hazard import (
     HNM_MINIMUM_SPACING_MS,
     HNM_REPLAY_STRIDE_MS,
     HNM_ROUNDS,
     HNM_TOP_K_PER_RUN,
+    audit_hazard_extraction,
     fit_hazard_normalizer,
+    initial_negative_endpoints,
+    training_negative_candidates,
 )
 from fastreflex.training.trainer import (
     load_checkpoint,
@@ -81,6 +89,36 @@ def _windows(seed: int) -> WindowSet:
     )
 
 
+def _annotations() -> HazardRunAnnotations:
+    samples = 60
+    target = np.zeros((samples, 2), dtype=bool)
+    target[20:50, 0] = True
+    candidate = np.zeros((samples, 2), dtype=bool)
+    codes = np.zeros((samples, 2), dtype=np.int8)
+    censored = np.zeros((samples, 2), dtype=bool)
+    i1 = np.zeros(samples, dtype=bool)
+    candidate[25, 0] = True
+    codes[25, 0] = 1
+    candidate[30, 0] = True
+    codes[30, 0] = 5
+    censored[30, 0] = True
+    candidate[40, 0] = True
+    codes[40, 0] = 4
+    i1[35] = True
+    return HazardRunAnnotations(
+        dataset_id="model_v2_hazard_reflex_20260901",
+        scenario_family="ICE_BENIGN_CONTROL",
+        nominal_speed_mps=0.2,
+        actual_side="NONE",
+        target_contact=target,
+        established_slip_active=np.zeros((samples, 2), dtype=bool),
+        i1_active=i1,
+        ice_precursor_candidate=candidate,
+        ice_precursor_future_outcome_code=codes,
+        ice_precursor_censored=censored,
+    )
+
+
 class TrainingTest(unittest.TestCase):
     def test_supported_gru_architecture_is_80_32_one_layer_two_outputs(self) -> None:
         model = build_model("gru", 20, 80, class_count=2)
@@ -106,6 +144,51 @@ class TrainingTest(unittest.TestCase):
         self.assertEqual(HNM_REPLAY_STRIDE_MS, 1)
         self.assertEqual(HNM_TOP_K_PER_RUN, 12)
         self.assertEqual(HNM_MINIMUM_SPACING_MS, 30)
+
+    def test_v2_negative_precedence_masks_future_censored_and_i1(self) -> None:
+        run = _run("train")
+        annotation = _annotations()
+        eligible = set(training_negative_candidates(run, None, annotation))
+        self.assertNotIn(25, eligible)
+        self.assertNotIn(30, eligible)
+        self.assertNotIn(35, eligible)
+        self.assertIn(40, eligible)
+        selected = set(initial_negative_endpoints(run, None, annotation=annotation))
+        self.assertIn(40, selected)
+        self.assertFalse(selected & {25, 30, 35})
+        audit = audit_hazard_extraction(
+            {"train": run}, ("train",), {"train": None}, {"train": annotation}
+        )
+        self.assertTrue(audit["passed"])
+        self.assertEqual(
+            set(audit["ordinary_negative_violations"].values()), {0}
+        )
+
+    def test_v2_validation_loader_fails_closed_until_candidate_freeze(self) -> None:
+        manifest = {"runs": []}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaises(RuntimeError):
+                load_model_v2_runs(root, manifest, "V2_VALIDATION")
+            freeze = root / "candidate_freeze.json"
+            freeze.write_text(
+                json.dumps(
+                    {
+                        "candidate_frozen_before_validation": True,
+                        "v2_validation_evaluated": False,
+                        "generalization_holdout_guard_count": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            runs, annotations = load_model_v2_runs(
+                root,
+                manifest,
+                "V2_VALIDATION",
+                candidate_freeze_path=freeze,
+            )
+        self.assertEqual(runs, {})
+        self.assertEqual(annotations, {})
 
     def test_generic_training_is_deterministic(self) -> None:
         train = _windows(1)

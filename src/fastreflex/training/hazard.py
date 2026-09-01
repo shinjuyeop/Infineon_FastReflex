@@ -3,21 +3,36 @@
 from __future__ import annotations
 
 import json
+import math
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 from fastreflex.dataset.hazard import (
     HazardRun,
     canonical_sha256,
+    load_hazard_runs,
     physical_hazard_label,
     slip_event_sample,
     support_event_sample,
 )
+from fastreflex.dataset.generation import (
+    HazardRunAnnotations,
+    load_model_v2_manifest,
+    load_model_v2_runs,
+)
 from fastreflex.dataset.loader import Normalizer, WindowSet, sha256_file
-from fastreflex.evaluation.hazard import HISTORY_MS, replay_hazard_run
+from fastreflex.evaluation.hazard import (
+    HISTORY_MS,
+    evaluate_model_v2_validation,
+    load_hazard_normalizer,
+    replay_hazard_run,
+    replay_hazard_runs,
+)
 from fastreflex.features import extract_hazard_features, hazard_feature_schema
 from fastreflex.models.baselines import parameter_count
 from fastreflex.training.trainer import (
@@ -40,6 +55,16 @@ class HazardCandidate:
     normalizer: Normalizer
     checkpoint_paths: tuple[Path, ...]
     record: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class ModelV2TrainingData:
+    runs: Mapping[str, HazardRun]
+    precursor_samples: Mapping[str, int | None]
+    annotations: Mapping[str, HazardRunAnnotations]
+    input_audit: Mapping[str, object]
+    composition: Mapping[str, object]
+    v2_manifest: Mapping[str, object]
 
 
 def _evenly_spaced(values: np.ndarray, count: int) -> np.ndarray:
@@ -99,6 +124,48 @@ def unified_negative_candidates(
     )
 
 
+def training_negative_candidates(
+    run: HazardRun,
+    precursor: int | None,
+    annotation: HazardRunAnnotations | None = None,
+    history_ms: int = HISTORY_MS,
+) -> np.ndarray:
+    """Apply V1 boundaries plus frozen V2 precursor/censor exclusions."""
+    eligible = unified_negative_candidates(run, precursor, history_ms)
+    if annotation is None:
+        return eligible
+    stop = run.censor_sample
+    if run.fall_sample_diagnostic is not None:
+        stop = min(stop, int(run.fall_sample_diagnostic))
+    special = np.flatnonzero(annotation.benign_release_precursor)
+    special = special[(special >= history_ms - 1) & (special < stop)]
+    positive_region = np.zeros(len(run.timestamp_us), dtype=bool)
+    slip = slip_event_sample(run)
+    support = support_event_sample(run)
+    if slip is not None:
+        positive_region[max(0, slip - 30) : min(len(positive_region), slip + 41)] = True
+    if support is not None:
+        first = support if precursor is None else int(precursor)
+        positive_region[max(0, first) : min(len(positive_region), support + 51)] = True
+    special_forbidden = (
+        np.any(annotation.established_slip_active, axis=1)
+        | annotation.i1_active
+        | positive_region
+        | annotation.future_slip_precursor
+        | annotation.censored_precursor
+    )
+    special = special[~special_forbidden[special]]
+    eligible = np.unique(np.concatenate((eligible, special)))
+    if not len(eligible):
+        return eligible
+    forbidden = (
+        annotation.future_slip_precursor
+        | annotation.censored_precursor
+        | annotation.i1_active
+    )
+    return eligible[~forbidden[eligible]]
+
+
 def gait_sampling_categories(run: HazardRun) -> dict[str, np.ndarray]:
     """Use contact phase only to diversify TRAIN negative sampling."""
     loaded = np.asarray(run.loaded_contact, dtype=bool)
@@ -121,8 +188,13 @@ def initial_negative_endpoints(
     history_ms: int = HISTORY_MS,
     *,
     per_category: int = 12,
+    annotation: HazardRunAnnotations | None = None,
+    target_contact_cap: int = 12,
+    benign_precursor_cap: int = 12,
 ) -> np.ndarray:
-    eligible = unified_negative_candidates(run, precursor, history_ms)
+    eligible = training_negative_candidates(
+        run, precursor, annotation, history_ms
+    )
     if not len(eligible):
         return eligible
     allowed = set(int(value) for value in eligible)
@@ -135,6 +207,37 @@ def initial_negative_endpoints(
         )
         for values in gait_sampling_categories(run).values()
     ]
+    if annotation is not None:
+        selected.extend(
+            (
+                _evenly_spaced(
+                    np.asarray(
+                        [
+                            value
+                            for value in np.flatnonzero(
+                                np.any(annotation.target_contact, axis=1)
+                            )
+                            if int(value) in allowed
+                        ],
+                        dtype=np.int64,
+                    ),
+                    target_contact_cap,
+                ),
+                _evenly_spaced(
+                    np.asarray(
+                        [
+                            value
+                            for value in np.flatnonzero(
+                                annotation.benign_release_precursor
+                            )
+                            if int(value) in allowed
+                        ],
+                        dtype=np.int64,
+                    ),
+                    benign_precursor_cap,
+                ),
+            )
+        )
     return np.unique(np.concatenate(selected)) if selected else np.empty(0, np.int64)
 
 
@@ -211,6 +314,9 @@ def build_hazard_windows(
     per_category: int = 12,
     positive_cap: int = 20,
     extra_negative_endpoints: Mapping[str, Sequence[int]] | None = None,
+    annotations: Mapping[str, HazardRunAnnotations] | None = None,
+    target_contact_cap: int = 12,
+    benign_precursor_cap: int = 12,
 ) -> WindowSet:
     """Materialize causal [20,80] binary windows with provenance."""
     inputs: list[np.ndarray] = []
@@ -218,6 +324,7 @@ def build_hazard_windows(
     source_ids: list[str] = []
     endpoint_rows: list[int] = []
     extras = extra_negative_endpoints or {}
+    metadata = annotations or {}
     for run_id in sorted(str(value) for value in run_ids):
         run = runs[run_id]
         if run.split != "train":
@@ -226,9 +333,19 @@ def build_hazard_windows(
         precursor = precursor_samples.get(run_id)
         positive = unified_positive_endpoints(run, precursor, cap=positive_cap)
         negative = initial_negative_endpoints(
-            run, precursor, per_category=per_category
+            run,
+            precursor,
+            per_category=per_category,
+            annotation=metadata.get(run_id),
+            target_contact_cap=target_contact_cap,
+            benign_precursor_cap=benign_precursor_cap,
         )
-        allowed = set(int(value) for value in unified_negative_candidates(run, precursor))
+        allowed = set(
+            int(value)
+            for value in training_negative_candidates(
+                run, precursor, metadata.get(run_id)
+            )
+        )
         if run_id in extras:
             extra = np.asarray(
                 [int(value) for value in extras[run_id] if int(value) in allowed],
@@ -260,6 +377,189 @@ def build_hazard_windows(
         endpoint_samples=np.asarray(endpoint_rows, dtype=np.int64),
         available_by_class=(int(counts[0]), int(counts[1]), 0),
     )
+
+
+def unified_training_annotations(
+    manifest: Mapping[str, object], runs: Mapping[str, HazardRun]
+) -> dict[str, HazardRunAnnotations]:
+    """Attach run-level audit strata without adding new Unified anchors."""
+    rows = {str(row["run_id"]): row for row in manifest["runs"]}
+    result: dict[str, HazardRunAnnotations] = {}
+    for run_id, run in runs.items():
+        row = rows[run_id]
+        samples = len(run.timestamp_us)
+        empty_trace = np.zeros(samples, dtype=bool)
+        empty_feet = np.zeros((samples, 2), dtype=bool)
+        empty_codes = np.zeros((samples, 2), dtype=np.int8)
+        slip = run.slip_event_samples_per_foot
+        support = run.support_event_samples_per_foot
+        active_sides = [
+            side
+            for side in range(2)
+            if slip[side] is not None or support[side] is not None
+        ]
+        actual_side = (
+            "NONE"
+            if not active_sides
+            else ("LEFT_ONLY" if active_sides == [0] else "RIGHT_ONLY")
+            if active_sides in ([0], [1])
+            else "BILATERAL"
+        )
+        result[run_id] = HazardRunAnnotations(
+            dataset_id="unified_hazard_reflex_20260829",
+            scenario_family=str(row["group"]),
+            nominal_speed_mps=float(row["speed_mps"]),
+            actual_side=actual_side,
+            target_contact=empty_feet,
+            established_slip_active=empty_feet,
+            i1_active=empty_trace,
+            ice_precursor_candidate=empty_feet,
+            ice_precursor_future_outcome_code=empty_codes,
+            ice_precursor_censored=empty_feet,
+        )
+    return result
+
+
+def _negative_role(
+    run: HazardRun, annotation: HazardRunAnnotations | None, endpoint: int
+) -> str:
+    if annotation is not None and annotation.benign_release_precursor[endpoint]:
+        return "benign_near_threshold_ice"
+    family = "" if annotation is None else annotation.scenario_family
+    if family in ("HARD_GROUND_NORMAL_SPEED_MATRIX", "HARD_GROUND_NORMAL"):
+        return "hard_normal"
+    if family == "ICE_BENIGN_CONTROL":
+        return "ice_benign"
+    if family == "STAGED_SAND_BENIGN_CONTROL":
+        return "staged_sand_benign"
+    if family == "SPEED_STRATIFIED_SAND_BENIGN":
+        return "speed_sand_benign"
+    return "other_confirmed_benign"
+
+
+def audit_hazard_extraction(
+    runs: Mapping[str, HazardRun],
+    run_ids: Sequence[str],
+    precursor_samples: Mapping[str, int | None],
+    annotations: Mapping[str, HazardRunAnnotations],
+    *,
+    per_category: int = 12,
+    positive_cap: int = 20,
+    target_contact_cap: int = 12,
+    benign_precursor_cap: int = 12,
+) -> dict[str, object]:
+    """Dry-run endpoint extraction and prove forbidden-negative separation."""
+    positive_roles: Counter[str] = Counter()
+    negative_roles: Counter[str] = Counter()
+    positive_runs: dict[str, set[str]] = {}
+    negative_runs: dict[str, set[str]] = {}
+    source_positive: Counter[str] = Counter()
+    source_negative: Counter[str] = Counter()
+    speed_positive: Counter[str] = Counter()
+    speed_negative: Counter[str] = Counter()
+    family_positive: Counter[str] = Counter()
+    family_negative: Counter[str] = Counter()
+    side_positive: Counter[str] = Counter()
+    violations = Counter()
+    masked = Counter()
+    for run_id in sorted(str(value) for value in run_ids):
+        run = runs[run_id]
+        annotation = annotations[run_id]
+        precursor = precursor_samples.get(run_id)
+        positive = unified_positive_endpoints(
+            run, precursor, cap=positive_cap
+        )
+        negative = initial_negative_endpoints(
+            run,
+            precursor,
+            per_category=per_category,
+            annotation=annotation,
+            target_contact_cap=target_contact_cap,
+            benign_precursor_cap=benign_precursor_cap,
+        )
+        slip = slip_event_sample(run)
+        for endpoint in positive:
+            role = (
+                "slip_positive"
+                if slip is not None and slip - 30 <= int(endpoint) <= slip + 40
+                else "support_positive"
+            )
+            positive_roles[role] += 1
+            positive_runs.setdefault(role, set()).add(run_id)
+            source_positive[run.source_terrain] += 1
+            speed_positive[f"{annotation.nominal_speed_mps:.2f}"] += 1
+            family_positive[annotation.scenario_family] += 1
+            side_positive[annotation.actual_side] += 1
+        for endpoint in negative:
+            endpoint = int(endpoint)
+            role = _negative_role(run, annotation, endpoint)
+            negative_roles[role] += 1
+            negative_runs.setdefault(role, set()).add(run_id)
+            source_negative[run.source_terrain] += 1
+            speed_negative[f"{annotation.nominal_speed_mps:.2f}"] += 1
+            family_negative[annotation.scenario_family] += 1
+            if annotation.future_slip_precursor[endpoint]:
+                violations["future_slip_precursor"] += 1
+            if annotation.censored_precursor[endpoint]:
+                violations["censored_precursor"] += 1
+            if annotation.i1_active[endpoint]:
+                violations["i1_positive"] += 1
+            if endpoint >= run.censor_sample or (
+                run.fall_sample_diagnostic is not None
+                and endpoint >= run.fall_sample_diagnostic
+            ):
+                violations["post_censor_or_fall"] += 1
+        masked["future_slip_precursor_samples"] += int(
+            np.sum(annotation.future_slip_precursor[: run.censor_sample])
+        )
+        masked["censored_precursor_samples"] += int(
+            np.sum(annotation.censored_precursor[: run.censor_sample])
+        )
+        masked["i1_positive_samples"] += int(
+            np.sum(annotation.i1_active[: run.censor_sample])
+        )
+        if np.any(annotation.future_slip_precursor[: run.censor_sample]):
+            masked["future_slip_precursor_runs"] += 1
+        if np.any(annotation.censored_precursor[: run.censor_sample]):
+            masked["censored_precursor_runs"] += 1
+        if np.any(annotation.i1_active[: run.censor_sample]):
+            masked["i1_positive_runs"] += 1
+    violation_names = (
+        "future_slip_precursor",
+        "censored_precursor",
+        "i1_positive",
+        "post_censor_or_fall",
+    )
+    result = {
+        "run_count": len(run_ids),
+        "positive_windows": {
+            "total": sum(positive_roles.values()),
+            **dict(sorted(positive_roles.items())),
+            "run_balanced": {
+                key: len(value) for key, value in sorted(positive_runs.items())
+            },
+            "by_source": dict(sorted(source_positive.items())),
+            "by_speed": dict(sorted(speed_positive.items())),
+            "by_family": dict(sorted(family_positive.items())),
+            "by_side": dict(sorted(side_positive.items())),
+        },
+        "negative_windows": {
+            "total": sum(negative_roles.values()),
+            **dict(sorted(negative_roles.items())),
+            "run_balanced": {
+                key: len(value) for key, value in sorted(negative_runs.items())
+            },
+            "by_source": dict(sorted(source_negative.items())),
+            "by_speed": dict(sorted(speed_negative.items())),
+            "by_family": dict(sorted(family_negative.items())),
+        },
+        "masked": dict(sorted(masked.items())),
+        "ordinary_negative_violations": {
+            name: int(violations[name]) for name in violation_names
+        },
+    }
+    result["passed"] = not any(result["ordinary_negative_violations"].values())
+    return result
 
 
 def _train_monitor_partition(
@@ -325,12 +625,21 @@ def _mine_training_round(
     normalizer: Normalizer,
     checkpoint_paths: Sequence[Path],
     prior: Mapping[str, Sequence[int]],
+    annotations: Mapping[str, HazardRunAnnotations],
 ) -> tuple[dict[str, tuple[int, ...]], dict[str, object]]:
     models = [load_checkpoint(path)[0] for path in checkpoint_paths]
     result: dict[str, tuple[int, ...]] = {}
     selected_scores: list[float] = []
+    family_counts: Counter[str] = Counter()
+    contributing_runs = 0
+    duplicate_count = 0
+    spacing_violations = 0
+    forbidden_violations = Counter()
     for run_id, run in sorted(runs.items()):
-        candidates = unified_negative_candidates(run, precursor_samples.get(run_id), 1)
+        annotation = annotations[run_id]
+        candidates = training_negative_candidates(
+            run, precursor_samples.get(run_id), annotation, 1
+        )
         replay = replay_hazard_run(run, normalizer, models)
         common, _, replay_indices = np.intersect1d(
             candidates, replay.endpoints, return_indices=True
@@ -340,17 +649,48 @@ def _mine_training_round(
             common, scores, excluded=prior.get(run_id, ())
         )
         result[run_id] = tuple(int(value) for value in selected)
+        if len(selected):
+            contributing_runs += 1
+            family_counts[annotation.scenario_family] += len(selected)
+        duplicate_count += len(set(selected) & set(prior.get(run_id, ())))
+        spacing_violations += int(np.sum(np.diff(selected) < HNM_MINIMUM_SPACING_MS))
+        for endpoint in selected:
+            endpoint = int(endpoint)
+            if annotation.future_slip_precursor[endpoint]:
+                forbidden_violations["future_slip_precursor"] += 1
+            if annotation.censored_precursor[endpoint]:
+                forbidden_violations["censored_precursor"] += 1
+            if annotation.i1_active[endpoint]:
+                forbidden_violations["i1_positive"] += 1
+            if endpoint >= run.censor_sample or (
+                run.fall_sample_diagnostic is not None
+                and endpoint >= run.fall_sample_diagnostic
+            ):
+                forbidden_violations["post_censor_or_fall"] += 1
         lookup = {int(endpoint): float(score) for endpoint, score in zip(common, scores)}
         selected_scores.extend(lookup[int(endpoint)] for endpoint in selected)
     return result, {
         "runs_scored": len(runs),
         "mined_windows": sum(len(value) for value in result.values()),
+        "runs_contributing": contributing_runs,
+        "selected_by_family": dict(sorted(family_counts.items())),
         "selected_probability": _distribution(selected_scores),
         "train_only": True,
         "replay_stride_ms": HNM_REPLAY_STRIDE_MS,
         "top_k_per_run": HNM_TOP_K_PER_RUN,
         "minimum_spacing_ms": HNM_MINIMUM_SPACING_MS,
         "precursor_region_never_negative": True,
+        "duplicate_mined_windows": duplicate_count,
+        "spacing_violations": spacing_violations,
+        "forbidden_mask_violations": {
+            name: int(forbidden_violations[name])
+            for name in (
+                "future_slip_precursor",
+                "censored_precursor",
+                "i1_positive",
+                "post_censor_or_fall",
+            )
+        },
     }
 
 
@@ -367,15 +707,39 @@ def train_hazard_candidate(
     precursor_samples: Mapping[str, int | None],
     artifact_path: Path,
     training_config: Mapping[str, object],
+    annotations: Mapping[str, HazardRunAnnotations],
+    checkpoint_prefix: str = "unified",
     progress: Callable[[str], None] = print,
 ) -> HazardCandidate:
     """Train Round 0 plus exactly three TRAIN-only hard-negative rounds."""
     if any(run.split != "train" for run in runs.values()):
         raise ValueError("Hazard candidate training may receive TRAIN runs only")
+    if set(runs) != set(annotations):
+        raise ValueError("every Hazard TRAIN run requires frozen annotations")
     root = repository_root.resolve()
     fit_ids, monitor_ids = _train_monitor_partition(
         runs, sorted(runs), precursor_samples
     )
+    extraction_audit = audit_hazard_extraction(
+        runs,
+        sorted(runs),
+        precursor_samples,
+        annotations,
+        per_category=int(
+            training_config.get("initial_negative_per_gait_category", 12)
+        ),
+        positive_cap=int(training_config.get("positive_cap_per_run", 20)),
+        target_contact_cap=int(
+            training_config.get("target_contact_cap_per_run", 12)
+        ),
+        benign_precursor_cap=int(
+            training_config.get("benign_precursor_cap_per_run", 12)
+        ),
+    )
+    if not extraction_audit["passed"]:
+        raise RuntimeError("Hazard extraction violated a frozen negative mask")
+    extraction_path = artifact_path / "extraction_audit.json"
+    _write_json(extraction_path, extraction_audit)
     normalizer = fit_hazard_normalizer(runs, sorted(runs))
     schema = hazard_feature_schema()
     normalizer_path = artifact_path / "normalization" / "gru_history20.json"
@@ -399,6 +763,17 @@ def train_hazard_candidate(
             precursor_samples,
             normalizer,
             extra_negative_endpoints=accumulated,
+            annotations=annotations,
+            per_category=int(
+                training_config.get("initial_negative_per_gait_category", 12)
+            ),
+            positive_cap=int(training_config.get("positive_cap_per_run", 20)),
+            target_contact_cap=int(
+                training_config.get("target_contact_cap_per_run", 12)
+            ),
+            benign_precursor_cap=int(
+                training_config.get("benign_precursor_cap_per_run", 12)
+            ),
         )
         monitor_windows = build_hazard_windows(
             runs,
@@ -406,14 +781,29 @@ def train_hazard_candidate(
             precursor_samples,
             normalizer,
             extra_negative_endpoints=accumulated,
+            annotations=annotations,
+            per_category=int(
+                training_config.get("initial_negative_per_gait_category", 12)
+            ),
+            positive_cap=int(training_config.get("positive_cap_per_run", 20)),
+            target_contact_cap=int(
+                training_config.get("target_contact_cap_per_run", 12)
+            ),
+            benign_precursor_cap=int(
+                training_config.get("benign_precursor_cap_per_run", 12)
+            ),
         )
         paths: list[Path] = []
         epochs: list[int] = []
+        epochs_completed: list[int] = []
+        optimizer_steps: list[int] = []
+        final_train_losses: list[float] = []
+        best_validation_losses: list[float] = []
         for seed in training_config["seeds"]:
             path = (
                 artifact_path
                 / "checkpoints"
-                / f"unified_gru_history20_round{round_id}_seed{seed}.pt"
+                / f"{checkpoint_prefix}_gru_history20_round{round_id}_seed{seed}.pt"
             )
             model, result = train_model(
                 "gru",
@@ -440,6 +830,19 @@ def train_hazard_candidate(
             )
             paths.append(path)
             epochs.append(result.best_epoch)
+            epochs_completed.append(result.epochs_completed)
+            optimizer_steps.append(
+                result.epochs_completed
+                * math.ceil(len(fit_windows) / int(training_config["batch_size"]))
+            )
+            final_train_losses.append(float(result.history[-1]["train_loss"]))
+            best_validation_losses.append(
+                float(
+                    result.history[result.best_epoch - 1][
+                        "validation_cross_entropy"
+                    ]
+                )
+            )
         final_paths = tuple(paths)
         record: dict[str, object] = {
             "round": round_id,
@@ -448,6 +851,13 @@ def train_hazard_candidate(
             "fit_class_counts": list(fit_windows.selected_by_class),
             "monitor_class_counts": list(monitor_windows.selected_by_class),
             "best_epochs": epochs,
+            "epochs_completed": epochs_completed,
+            "optimizer_steps": optimizer_steps,
+            "final_train_loss": final_train_losses,
+            "best_validation_cross_entropy": best_validation_losses,
+            "checkpoint_sha256": {
+                str(path.relative_to(root)): sha256_file(path) for path in paths
+            },
         }
         progress(f"Hazard history=20 round={round_id} trained")
         if round_id < HNM_ROUNDS:
@@ -457,6 +867,7 @@ def train_hazard_candidate(
                 normalizer,
                 final_paths,
                 accumulated,
+                annotations,
             )
             accumulated = _merge_endpoint_maps(accumulated, mined)
             record["hard_negative_mining"] = mining_record
@@ -472,12 +883,534 @@ def train_hazard_candidate(
             "feature_schema_sha256": canonical_sha256(schema),
             "normalizer_path": str(normalizer_path.relative_to(root)),
             "normalizer_sha256": sha256_file(normalizer_path),
+            "normalizer_sample_count": normalizer.sample_count,
+            "normalizer_fit_run_ids_sha256": canonical_sha256(
+                list(normalizer.fit_run_ids)
+            ),
+            "extraction_audit_path": str(extraction_path.relative_to(root)),
+            "extraction_audit_sha256": sha256_file(extraction_path),
             "checkpoint_sha256": {
                 str(path.relative_to(root)): sha256_file(path) for path in final_paths
             },
             "parameters": parameter_count(load_checkpoint(final_paths[0])[0]),
             "rounds": round_records,
             "hnm_rounds": HNM_ROUNDS,
+            "optimizer_steps": sum(
+                sum(int(value) for value in row["optimizer_steps"])
+                for row in round_records
+            ),
+            "checkpoint_writes": (HNM_ROUNDS + 1)
+            * len(training_config["seeds"]),
             "validation_access_before_hnm3": False,
         },
     )
+
+
+def _verified_manifest_files(
+    dataset_path: Path,
+    expected_manifest_sha: str,
+) -> dict[str, object]:
+    manifest_path = dataset_path / "manifest.json"
+    if sha256_file(manifest_path) != expected_manifest_sha:
+        raise RuntimeError(f"frozen manifest changed: {dataset_path.name}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    verified = 0
+    hashes: dict[str, str] = {}
+    for row in manifest["runs"]:
+        path = dataset_path / str(row["file"])
+        actual = sha256_file(path)
+        if actual != str(row["file_sha256"]):
+            raise RuntimeError(f"frozen NPZ changed: {path}")
+        hashes[str(row["file"])] = actual
+        verified += 1
+    return {
+        "manifest": manifest,
+        "manifest_sha256": expected_manifest_sha,
+        "npz_verified": verified,
+        "npz_aggregate_sha256": canonical_sha256(hashes),
+    }
+
+
+def _verify_protected_records(root: Path, records: Sequence[Mapping[str, object]]) -> None:
+    for record in records:
+        path = root / str(record["path"])
+        if sha256_file(path) != str(record["sha256"]):
+            raise RuntimeError(f"protected artifact changed: {record['path']}")
+
+
+def _effective_training_composition(
+    runs: Mapping[str, HazardRun],
+    precursor_samples: Mapping[str, int | None],
+    annotations: Mapping[str, HazardRunAnnotations],
+) -> dict[str, object]:
+    counts: Counter[str] = Counter()
+    source: Counter[str] = Counter()
+    hazard_speed: Counter[str] = Counter()
+    side: Counter[str] = Counter()
+    for run_id, run in runs.items():
+        annotation = annotations[run_id]
+        slip = slip_event_sample(run) is not None
+        support = support_event_sample(run) is not None
+        hazard = slip or support
+        ambiguous = (
+            not hazard
+            and (
+                precursor_samples.get(run_id) is not None
+                or bool(np.any(annotation.censored_precursor[: run.censor_sample]))
+            )
+        )
+        counts["hazard"] += int(hazard)
+        counts["confirmed_no_hazard"] += int(not hazard and not ambiguous)
+        counts["ambiguous"] += int(ambiguous)
+        counts["slip"] += int(slip)
+        counts["support"] += int(support)
+        counts["dual_slip_support"] += int(slip and support)
+        source[run.source_terrain] += 1
+        side[annotation.actual_side] += 1
+        if hazard:
+            hazard_speed[f"{annotation.nominal_speed_mps:.2f}"] += 1
+    return {
+        "total": len(runs),
+        **{key: int(value) for key, value in sorted(counts.items())},
+        "source": dict(sorted(source.items())),
+        "hazard_speed": dict(sorted(hazard_speed.items())),
+        "actual_side": dict(sorted(side.items())),
+    }
+
+
+def prepare_model_v2_training_data(
+    root: Path, document: Mapping[str, object]
+) -> ModelV2TrainingData:
+    """Verify every frozen input and open only authorized TRAIN waveforms."""
+    protected = document["protected_v1"]
+    _verify_protected_records(root, protected["checkpoints"])
+    _verify_protected_records(root, protected["terrain_checkpoints"])
+    _verify_protected_records(root, (protected["terrain_normalizer"],))
+    v1_normalizer = root / "artifacts/runs/20260829_unified_hazard_reflex_system/normalization/gru_history20.json"
+    if sha256_file(v1_normalizer) != str(protected["normalizer_sha256"]):
+        raise RuntimeError("protected Hazard V1 normalizer changed")
+
+    dataset_config = document["v2_dataset"]
+    v2_path = root / str(dataset_config["path"])
+    v2_integrity = _verified_manifest_files(
+        v2_path, str(dataset_config["manifest_sha256"])
+    )
+    freeze_path = v2_path / "dataset_freeze.json"
+    if sha256_file(freeze_path) != str(dataset_config["dataset_freeze_sha256"]):
+        raise RuntimeError("Model V2 dataset freeze changed")
+    freeze = json.loads(freeze_path.read_text(encoding="utf-8"))
+    manifest = v2_integrity["manifest"]
+    expected = dataset_config["expected"]
+    train_rows = [
+        row for row in manifest["runs"] if row["split"] == "V2_TRAIN"
+    ]
+    validation_rows = [
+        row for row in manifest["runs"] if row["split"] == "V2_VALIDATION"
+    ]
+    if (
+        int(manifest["run_count"]) != int(expected["designed"])
+        or int(manifest["valid_count"]) != int(expected["valid"])
+        or int(manifest["invalid_count"]) != int(expected["invalid"])
+        or sum(bool(row["valid"]) for row in train_rows)
+        != int(expected["valid_train"])
+        or sum(bool(row["valid"]) for row in validation_rows)
+        != int(expected["valid_validation"])
+        or v2_integrity["npz_aggregate_sha256"]
+        != str(dataset_config["npz_aggregate_sha256"])
+        or manifest["physical_signature_sha256"]
+        != str(dataset_config["physical_signature_sha256"])
+        or manifest["split_sha256"]["V2_TRAIN"]
+        != str(dataset_config["train_split_sha256"])
+        or manifest["split_sha256"]["V2_VALIDATION"]
+        != str(dataset_config["validation_split_sha256"])
+        or any(
+            int(value) != 0
+            for value in freeze["historical_exclusion_integrity"][
+                "overlap_by_reference"
+            ].values()
+        )
+    ):
+        raise RuntimeError("Model V2 dataset freeze contract changed")
+
+    unified_config = document["effective_train"]["unified"]
+    unified_path = root / str(unified_config["path"])
+    unified_integrity = _verified_manifest_files(
+        unified_path, str(unified_config["manifest_sha256"])
+    )
+    unified_manifest = unified_integrity["manifest"]
+    unified_runs = load_hazard_runs(unified_path, unified_manifest, ("train",))
+    v2_manifest = load_model_v2_manifest(v2_path)
+    v2_runs, v2_annotations = load_model_v2_runs(
+        v2_path, v2_manifest, "V2_TRAIN"
+    )
+    unified_annotations = unified_training_annotations(
+        unified_manifest, unified_runs
+    )
+    runs = {**unified_runs, **v2_runs}
+    annotations = {**unified_annotations, **v2_annotations}
+    unified_rows = {
+        str(row["run_id"]): row
+        for row in unified_manifest["runs"]
+        if row["split"] == "train"
+    }
+    v2_train_rows = {
+        str(row["run_id"]): row
+        for row in v2_manifest["runs"]
+        if row["split"] == "V2_TRAIN" and bool(row["valid"])
+    }
+    precursor_samples = {
+        **{
+            run_id: (
+                None
+                if row["support_precursor_sample"] is None
+                else int(row["support_precursor_sample"])
+            )
+            for run_id, row in unified_rows.items()
+        },
+        **{
+            run_id: (
+                None
+                if row["i1_summary"]["first_sample"] is None
+                else int(row["i1_summary"]["first_sample"])
+            )
+            for run_id, row in v2_train_rows.items()
+        },
+    }
+    unified_ids = list(unified_rows)
+    v2_ids = list(v2_train_rows)
+    effective_identity = [
+        {"dataset_id": "unified_hazard_reflex_20260829", "run_id": run_id}
+        for run_id in unified_ids
+    ] + [
+        {"dataset_id": "model_v2_hazard_reflex_20260901", "run_id": run_id}
+        for run_id in v2_ids
+    ]
+    if (
+        len(runs) != int(document["effective_train"]["total_run_count"])
+        or canonical_sha256(unified_ids)
+        != str(unified_config["run_ids_sha256"])
+        or canonical_sha256(v2_ids)
+        != str(
+            document["effective_train"]["augmentation"][
+                "valid_run_ids_sha256"
+            ]
+        )
+        or canonical_sha256(effective_identity)
+        != str(document["effective_train"]["effective_run_ids_sha256"])
+        or set(unified_runs) & set(v2_runs)
+    ):
+        raise RuntimeError("effective TRAIN identity changed")
+    composition = _effective_training_composition(
+        runs, precursor_samples, annotations
+    )
+    return ModelV2TrainingData(
+        runs=runs,
+        precursor_samples=precursor_samples,
+        annotations=annotations,
+        input_audit={
+            "model_v1_restorable": True,
+            "v2_dataset_modified_after_freeze": False,
+            "v2_npz_verified": v2_integrity["npz_verified"],
+            "unified_npz_verified": unified_integrity["npz_verified"],
+            "historical_signature_overlap": 0,
+            "train_validation_overlap": 0,
+            "cross_split_near_duplicates": 0,
+            "v2_validation_optimizer_leakage": 0,
+            "generalization_validation_training_leakage": 0,
+            "holdout_training_leakage": 0,
+            "generalization_holdout_guard_count": 0,
+        },
+        composition=composition,
+        v2_manifest=v2_manifest,
+    )
+
+
+def _training_recipe(document: Mapping[str, object]) -> dict[str, object]:
+    window = document["window_extraction"]
+    return {
+        **document["training"],
+        "positive_cap_per_run": int(window["positive_cap_per_run"]),
+        "initial_negative_per_gait_category": int(
+            window["initial_negative"]["per_gait_category"]
+        ),
+        "target_contact_cap_per_run": int(
+            window["initial_negative"]["explicit_target_contact_cap_per_run"]
+        ),
+        "benign_precursor_cap_per_run": int(
+            window["initial_negative"]["benign_precursor_cap_per_run"]
+        ),
+    }
+
+
+def _comparison_metrics(
+    v1: Mapping[str, object], v2: Mapping[str, object]
+) -> dict[str, object]:
+    def metric(value: Mapping[str, object], path: Sequence[str]) -> float:
+        current: object = value
+        for key in path:
+            current = current[key]  # type: ignore[index]
+        return float(current)
+
+    paths = {
+        "overall_hazard_recall": ("primary", "overall_hazard_recall"),
+        "slip_recall": ("primary", "slip_hazard_recall"),
+        "support_recall": ("primary", "support_hazard_recall"),
+        "confirmed_no_hazard_specificity": (
+            "primary",
+            "primary_no_hazard_specificity",
+        ),
+        "premature_rate": ("primary", "system_premature_run_rate"),
+        "right_only_support_recall": (
+            "side",
+            "support",
+            "RIGHT_ONLY",
+            "recall",
+        ),
+        "staged_sand_specificity": (
+            "families",
+            "STAGED_SAND_BENIGN_CONTROL",
+            "specificity",
+        ),
+        "ice_benign_specificity": (
+            "families",
+            "ICE_BENIGN_CONTROL",
+            "specificity",
+        ),
+    }
+    return {
+        name: {
+            "v1": metric(v1, path),
+            "v2": metric(v2, path),
+            "delta": metric(v2, path) - metric(v1, path),
+        }
+        for name, path in paths.items()
+    }
+
+
+def run_model_v2_data_only_training(
+    root: Path,
+    config_path: Path,
+    *,
+    dry_run: bool = False,
+    progress: Callable[[str], None] = print,
+) -> dict[str, object]:
+    """Run the frozen data-only protocol and stop before external evidence."""
+    document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    if document["experiment"]["id"] != "MODEL_V2_DATA_ONLY_TRAINING":
+        raise ValueError("unsupported Model V2 training config")
+    config_sha = sha256_file(config_path)
+    data = prepare_model_v2_training_data(root, document)
+    recipe = _training_recipe(document)
+    extraction = audit_hazard_extraction(
+        data.runs,
+        sorted(data.runs),
+        data.precursor_samples,
+        data.annotations,
+        per_category=int(recipe["initial_negative_per_gait_category"]),
+        positive_cap=int(recipe["positive_cap_per_run"]),
+        target_contact_cap=int(recipe["target_contact_cap_per_run"]),
+        benign_precursor_cap=int(recipe["benign_precursor_cap_per_run"]),
+    )
+    if not extraction["passed"]:
+        raise RuntimeError("pretraining extraction audit failed")
+    policy = {
+        "window_extraction": document["window_extraction"],
+        "sampling": document["sampling"],
+        "hnm": document["hnm"],
+    }
+    artifact_path = root / str(document["artifacts"]["path"])
+    pretraining_path = artifact_path / "pretraining_audit.json"
+    pretraining = {
+        "training_config_sha256": config_sha,
+        "input_audit": data.input_audit,
+        "effective_train_composition": data.composition,
+        "extraction_policy_sha256": canonical_sha256(policy),
+        "extraction_audit": extraction,
+        "optimizer_steps": 0,
+        "normalizer_fits": 0,
+        "v2_validation_waveform_opened": False,
+        "generalization_validation_v2_inference": False,
+        "generalization_holdout_guard_count": 0,
+    }
+    if dry_run:
+        _write_json(pretraining_path, pretraining)
+        return {
+            "status": "MODEL_V2_PRETRAINING_AUDIT_READY",
+            "training_config_sha256": config_sha,
+            "pretraining_audit_sha256": sha256_file(pretraining_path),
+            "composition": data.composition,
+            "extraction": extraction,
+        }
+    if not pretraining_path.is_file():
+        raise RuntimeError("run the frozen dry-run extraction audit before training")
+    frozen_pretraining = json.loads(pretraining_path.read_text(encoding="utf-8"))
+    if frozen_pretraining != pretraining:
+        raise RuntimeError("pretraining audit differs from current frozen extraction")
+    forbidden_existing = [
+        artifact_path / "normalization/gru_history20.json",
+        artifact_path / "candidate_freeze.json",
+        artifact_path / "v2_validation_evaluation.json",
+    ]
+    if any(path.exists() for path in forbidden_existing) or any(
+        (artifact_path / "checkpoints").glob("*.pt")
+    ):
+        raise RuntimeError("Model V2 training artifacts already exist")
+
+    candidate = train_hazard_candidate(
+        root,
+        data.runs,
+        data.precursor_samples,
+        artifact_path,
+        recipe,
+        data.annotations,
+        checkpoint_prefix="model_v2_data_only",
+        progress=progress,
+    )
+    training_record = {
+        "training_config_sha256": config_sha,
+        "effective_train_ids_sha256": document["effective_train"][
+            "effective_run_ids_sha256"
+        ],
+        "candidate": candidate.record,
+        "normalizer_fits": 1,
+        "threshold_searches": 0,
+        "persistence_searches": 0,
+        "architecture_searches": 0,
+        "seed_searches": 0,
+    }
+    training_record_path = artifact_path / "training_record.json"
+    _write_json(training_record_path, training_record)
+    hnm_provenance = {
+        "rounds": [
+            row["hard_negative_mining"]
+            for row in candidate.record["rounds"]
+            if "hard_negative_mining" in row
+        ],
+        "source": "effective_train_only",
+        "forbidden_splits": [
+            "V2_VALIDATION",
+            "Generalization_VALIDATION",
+            "Generalization_HOLDOUT",
+            "Unified_HOLDOUT",
+        ],
+    }
+    hnm_path = artifact_path / "hnm_provenance.json"
+    _write_json(hnm_path, hnm_provenance)
+    architecture_sha = canonical_sha256(document["architecture"])
+    candidate_freeze = {
+        "candidate_id": document["artifacts"]["candidate_id"],
+        "source_commit": document["experiment"]["source_commit"],
+        "training_config_sha256": config_sha,
+        "v2_dataset_freeze_sha256": document["v2_dataset"][
+            "dataset_freeze_sha256"
+        ],
+        "effective_train_ids_sha256": document["effective_train"][
+            "effective_run_ids_sha256"
+        ],
+        "extraction_policy_sha256": canonical_sha256(policy),
+        "normalizer_sha256": candidate.record["normalizer_sha256"],
+        "checkpoint_sha256": candidate.record["checkpoint_sha256"],
+        "ensemble_membership": list(document["training"]["seeds"]),
+        "architecture": document["architecture"],
+        "architecture_sha256": architecture_sha,
+        "feature_schema_sha256": document["features"]["schema_sha256"],
+        "threshold": document["runtime_decision"]["threshold"],
+        "persistence_ms": document["runtime_decision"]["persistence_ms"],
+        "hnm_provenance_sha256": sha256_file(hnm_path),
+        "candidate_frozen_before_validation": True,
+        "v2_validation_evaluated": False,
+        "generalization_validation_v2_inference": False,
+        "generalization_holdout_guard_count": 0,
+    }
+    candidate_freeze_path = artifact_path / "candidate_freeze.json"
+    _write_json(candidate_freeze_path, candidate_freeze)
+    candidate_freeze_sha = sha256_file(candidate_freeze_path)
+
+    v2_path = root / str(document["v2_dataset"]["path"])
+    validation_runs, validation_annotations = load_model_v2_runs(
+        v2_path,
+        data.v2_manifest,
+        "V2_VALIDATION",
+        candidate_freeze_path=candidate_freeze_path,
+    )
+    validation_rows = {
+        str(row["run_id"]): row
+        for row in data.v2_manifest["runs"]
+        if row["split"] == "V2_VALIDATION" and bool(row["valid"])
+    }
+    validation_precursor = {
+        run_id: (
+            None
+            if row["i1_summary"]["first_sample"] is None
+            else int(row["i1_summary"]["first_sample"])
+        )
+        for run_id, row in validation_rows.items()
+    }
+    v2_replays = replay_hazard_runs(
+        validation_runs, candidate.normalizer, candidate.checkpoint_paths
+    )
+    v2_result = evaluate_model_v2_validation(
+        validation_runs,
+        v2_replays,
+        validation_precursor,
+        validation_annotations,
+        validation_rows,
+        document["validation"]["gates"],
+    )
+    v2_result_path = artifact_path / "v2_validation_evaluation.json"
+    _write_json(v2_result_path, v2_result)
+
+    v1_normalizer = load_hazard_normalizer(
+        root
+        / "artifacts/runs/20260829_unified_hazard_reflex_system/normalization/gru_history20.json"
+    )
+    v1_paths = tuple(root / str(row["path"]) for row in document["protected_v1"]["checkpoints"])
+    v1_replays = replay_hazard_runs(validation_runs, v1_normalizer, v1_paths)
+    v1_result = evaluate_model_v2_validation(
+        validation_runs,
+        v1_replays,
+        validation_precursor,
+        validation_annotations,
+        validation_rows,
+        document["validation"]["gates"],
+    )
+    v1_result_path = artifact_path / "v1_on_v2_validation.json"
+    _write_json(v1_result_path, v1_result)
+    comparison = _comparison_metrics(v1_result, v2_result)
+    verdict = (
+        "MODEL_V2_INTERNAL_VALIDATION_SUPPORTED"
+        if v2_result["all_gates_passed"]
+        else "MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED"
+    )
+    result = {
+        "training_verdict": "MODEL_V2_DATA_ONLY_TRAINING_COMPLETE",
+        "internal_validation_verdict": verdict,
+        "candidate_freeze_sha256": candidate_freeze_sha,
+        "training_config_sha256": config_sha,
+        "training_record_sha256": sha256_file(training_record_path),
+        "v2_validation_result_sha256": sha256_file(v2_result_path),
+        "v1_on_v2_validation_sha256": sha256_file(v1_result_path),
+        "v1_vs_v2": comparison,
+        "optimizer_steps": candidate.record["optimizer_steps"],
+        "checkpoint_writes": candidate.record["checkpoint_writes"],
+        "normalizer_fits": 1,
+        "hnm_rounds": HNM_ROUNDS,
+        "generalization_validation_v2_inference": False,
+        "generalization_holdout_guard_count": 0,
+    }
+    result_path = artifact_path / "training_result.json"
+    _write_json(result_path, result)
+    if v2_result["all_gates_passed"]:
+        model_freeze = {
+            **candidate_freeze,
+            "candidate_freeze_sha256": candidate_freeze_sha,
+            "v2_validation_result_sha256": sha256_file(v2_result_path),
+            "precursor_secondary_definition": "frozen_30_to_50mm_episode_view",
+            "internal_validation_verdict": verdict,
+            "generalization_candidate": True,
+        }
+        model_freeze_path = artifact_path / "model_v2_freeze.json"
+        _write_json(model_freeze_path, model_freeze)
+        result["model_v2_freeze_sha256"] = sha256_file(model_freeze_path)
+        _write_json(result_path, result)
+    return result

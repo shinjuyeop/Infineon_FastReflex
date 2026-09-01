@@ -10,13 +10,24 @@ import time
 import zipfile
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import yaml
 
-from fastreflex.dataset.hazard import PHYSICAL_SIGNATURE_FIELDS, canonical_sha256
+from fastreflex.dataset.hazard import (
+    EVENT_TYPE_BOTH,
+    EVENT_TYPE_NONE,
+    EVENT_TYPE_SLIP,
+    EVENT_TYPE_SUPPORT,
+    PELVIS_IMU6,
+    PELVIS_IMU6_FSR8,
+    PHYSICAL_SIGNATURE_FIELDS,
+    HazardRun,
+    canonical_sha256,
+)
 from fastreflex.dataset.loader import sha256_file
 from fastreflex.simulation.g1 import SimulationConfig, SimulationResult, run_simulation
 from fastreflex.simulation.terrain import TERRAIN_CLASS_ORDER
@@ -34,6 +45,42 @@ PRECURSOR_OUTCOME_CODES = {
     "BENIGN_RELEASE": 4,
     "CENSORED": 5,
 }
+
+
+@dataclass(frozen=True)
+class HazardRunAnnotations:
+    """Privileged TRAIN/evaluation metadata kept outside the runtime tensor."""
+
+    dataset_id: str
+    scenario_family: str
+    nominal_speed_mps: float
+    actual_side: str
+    target_contact: np.ndarray
+    established_slip_active: np.ndarray
+    i1_active: np.ndarray
+    ice_precursor_candidate: np.ndarray
+    ice_precursor_future_outcome_code: np.ndarray
+    ice_precursor_censored: np.ndarray
+
+    @property
+    def future_slip_precursor(self) -> np.ndarray:
+        return np.any(
+            self.ice_precursor_candidate
+            & np.isin(self.ice_precursor_future_outcome_code, (1, 2, 3)),
+            axis=1,
+        )
+
+    @property
+    def benign_release_precursor(self) -> np.ndarray:
+        return np.any(
+            self.ice_precursor_candidate
+            & (self.ice_precursor_future_outcome_code == 4),
+            axis=1,
+        )
+
+    @property
+    def censored_precursor(self) -> np.ndarray:
+        return np.any(self.ice_precursor_censored, axis=1)
 
 
 def _load_yaml(path: Path) -> Mapping[str, Any]:
@@ -961,6 +1008,177 @@ def _write_deterministic_npz(path: Path, arrays: Mapping[str, np.ndarray]) -> No
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o600 << 16
             archive.writestr(info, buffer.getvalue())
+
+
+def load_model_v2_manifest(dataset_path: Path) -> Mapping[str, Any]:
+    """Load the frozen V2 manifest without opening any run waveform."""
+    path = dataset_path / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    declared = (dataset_path / "manifest.sha256").read_text(encoding="utf-8")
+    expected = declared.split()[0]
+    if sha256_file(path) != expected:
+        raise ValueError("Model V2 manifest integrity failed")
+    if manifest.get("dataset_id") != MODEL_V2_DATASET_ID:
+        raise ValueError("unexpected Model V2 dataset identity")
+    return manifest
+
+
+def _first_onset_per_foot(values: np.ndarray, stop: int) -> tuple[int | None, int | None]:
+    result: list[int | None] = []
+    for side in range(2):
+        indices = np.flatnonzero(values[:stop, side])
+        result.append(None if not len(indices) else int(indices[0]))
+    return result[0], result[1]
+
+
+def _model_v2_event_type(
+    slip: Sequence[int | None], support: Sequence[int | None]
+) -> str:
+    has_slip = any(value is not None for value in slip)
+    has_support = any(value is not None for value in support)
+    if has_slip and has_support:
+        return EVENT_TYPE_BOTH
+    if has_slip:
+        return EVENT_TYPE_SLIP
+    if has_support:
+        return EVENT_TYPE_SUPPORT
+    return EVENT_TYPE_NONE
+
+
+def _candidate_freeze_allows_validation(path: Path | None) -> bool:
+    if path is None or not path.is_file():
+        return False
+    value = json.loads(path.read_text(encoding="utf-8"))
+    return bool(
+        value.get("candidate_frozen_before_validation")
+        and value.get("v2_validation_evaluated") is False
+        and value.get("generalization_holdout_guard_count") == 0
+    )
+
+
+def load_model_v2_runs(
+    dataset_path: Path,
+    manifest: Mapping[str, Any],
+    split: str,
+    *,
+    candidate_freeze_path: Path | None = None,
+) -> tuple[dict[str, HazardRun], dict[str, HazardRunAnnotations]]:
+    """Load valid V2 TRAIN, or validation only after a candidate freeze exists."""
+    if split not in SPLITS:
+        raise ValueError(f"unsupported Model V2 split: {split}")
+    if split == "V2_VALIDATION" and not _candidate_freeze_allows_validation(
+        candidate_freeze_path
+    ):
+        raise RuntimeError("V2_VALIDATION waveform is sealed until candidate freeze")
+    runs: dict[str, HazardRun] = {}
+    annotations: dict[str, HazardRunAnnotations] = {}
+    for row in manifest["runs"]:
+        if row["split"] != split or not bool(row["valid"]):
+            continue
+        path = dataset_path / str(row["file"])
+        if sha256_file(path) != str(row["file_sha256"]):
+            raise ValueError(f"Model V2 dataset integrity failed: {path.name}")
+        with np.load(path, allow_pickle=False) as payload:
+            timestamp = np.asarray(payload["timestamp_us"], dtype=np.int64)
+            imu = np.asarray(payload["pelvis_imu6"], dtype=np.float32)
+            fsr = np.asarray(payload["foot_fsr8"], dtype=np.float32)
+            loaded = np.asarray(payload["loaded_contact"], dtype=bool)
+            drift = np.asarray(payload["tangential_anchor_drift_m"], dtype=np.float32)
+            velocity = np.asarray(payload["tangential_velocity_mps"], dtype=np.float32)
+            spread = np.asarray(payload["support_surface_spread_m"], dtype=np.float32)
+            displacement = np.asarray(
+                payload["support_surface_max_displacement_m"], dtype=np.float32
+            )
+            target_contact = np.asarray(payload["target_terrain_contact"], dtype=bool)
+            slip_onset = np.asarray(payload["established_slip_onset"], dtype=bool)
+            slip_active = np.asarray(payload["established_slip"], dtype=bool)
+            support_onset = np.asarray(payload["deformable_sink_onset"], dtype=bool)
+            i1_active = np.asarray(payload["i1_active"], dtype=bool)
+            precursor = np.asarray(payload["ice_precursor_candidate"], dtype=bool)
+            outcome_code = np.asarray(
+                payload["ice_precursor_future_outcome_code"], dtype=np.int8
+            )
+            precursor_censored = np.asarray(
+                payload["ice_precursor_censored"], dtype=bool
+            )
+            censor = int(payload["censor_sample"])
+            fall_value = int(payload["first_fall_sample"])
+        sample_count = len(timestamp)
+        expected_2d = (sample_count, 2)
+        if (
+            imu.shape != (sample_count, 6)
+            or fsr.shape != (sample_count, 8)
+            or loaded.shape != expected_2d
+            or drift.shape != expected_2d
+            or velocity.shape != expected_2d
+            or spread.shape != expected_2d
+            or displacement.shape != expected_2d
+            or target_contact.shape != expected_2d
+            or slip_onset.shape != expected_2d
+            or slip_active.shape != expected_2d
+            or support_onset.shape != expected_2d
+            or precursor.shape != expected_2d
+            or outcome_code.shape != expected_2d
+            or precursor_censored.shape != expected_2d
+            or i1_active.shape != (sample_count,)
+            or not np.all(np.isfinite(imu))
+            or not np.all(np.isfinite(fsr))
+            or not np.array_equal(
+                timestamp, (np.arange(sample_count, dtype=np.int64) + 1) * 1000
+            )
+            or not 0 < censor <= sample_count
+        ):
+            raise ValueError(f"Model V2 run {row['run_id']} contains invalid tensors")
+        slip = _first_onset_per_foot(slip_onset, censor)
+        support = _first_onset_per_foot(support_onset, censor)
+        event_values = [
+            value for value in (*slip, *support) if value is not None
+        ]
+        contact = row["target_contact_summary"]["first_sample"]
+        touchdown = row["target_contact_summary"]["first_touchdown_sample"]
+        fusion = np.concatenate((imu, fsr), axis=1).astype(np.float32, copy=False)
+        run_id = str(row["run_id"])
+        runs[run_id] = HazardRun(
+            run_id=run_id,
+            split="train" if split == "V2_TRAIN" else "validation",
+            source_terrain=str(row["source_terrain"]),
+            target_terrain=str(row["target_terrain"]),
+            design_role=str(row["designed_role"]),
+            first_contact_sample=0 if contact is None else int(contact),
+            first_touchdown_sample=0 if touchdown is None else int(touchdown),
+            censor_sample=censor,
+            outcome_diagnostic=str(row["actual_hazard_label"]),
+            fall_sample_diagnostic=None if fall_value < 0 else fall_value,
+            features={PELVIS_IMU6: imu, PELVIS_IMU6_FSR8: fusion},
+            timestamp_us=timestamp,
+            slip_event_samples_per_foot=slip,
+            support_event_samples_per_foot=support,
+            event_sample=min(event_values, default=None),
+            event_type=_model_v2_event_type(slip, support),
+            hard_stable_control=(
+                row["scenario_family"] == "HARD_GROUND_NORMAL_SPEED_MATRIX"
+            ),
+            drift_m=drift,
+            tangential_velocity_mps=velocity,
+            support_spread_m=spread,
+            support_max_displacement_m=displacement,
+            loaded_contact=loaded,
+            sink_pattern=str(row["sink_pattern"]),
+            support_pattern=str(row["support_pattern"]),
+        )
+        annotations[run_id] = HazardRunAnnotations(
+            dataset_id=MODEL_V2_DATASET_ID,
+            scenario_family=str(row["scenario_family"]),
+            nominal_speed_mps=float(row["nominal_speed_mps"]),
+            actual_side=str(row["actual_side"]),
+            target_contact=target_contact,
+            established_slip_active=slip_active,
+            i1_active=i1_active,
+            ice_precursor_candidate=precursor,
+            ice_precursor_future_outcome_code=outcome_code,
+            ice_precursor_censored=precursor_censored,
+        )
+    return runs, annotations
 
 
 def _count_rows(

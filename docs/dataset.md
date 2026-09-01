@@ -35,7 +35,7 @@ Generated NPZ, manifest, freeze and evaluation artifacts remain Gitignored. The 
 
 ## 4. Model V2 augmentation corpus
 
-`model_v2_hazard_reflex_20260901` is the frozen fresh augmentation corpus for the first data-only Model V2 experiment. The predeclared 412-run matrix executed once: 310 `V2_TRAIN` and 102 `V2_VALIDATION` designs produced 386 valid and 26 objectively invalid runs. Actual outcomes are retained independently of intent; no split move, replacement, reserve activation, normalizer fitting, window extraction, HNM, or training occurred.
+`model_v2_hazard_reflex_20260901` is the frozen fresh augmentation corpus for the first data-only Model V2 experiment. The predeclared 412-run matrix executed once: 310 `V2_TRAIN` and 102 `V2_VALIDATION` designs produced 386 valid and 26 objectively invalid runs. Actual outcomes are retained independently of intent; no split move, replacement, or reserve activation occurred. Dataset generation and its freeze preceded all window extraction, normalization, HNM, and training.
 
 The raw corpus is Gitignored under `data/raw/model_v2_hazard_reflex_20260901`. Its manifest SHA-256 is `7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25`, NPZ aggregate SHA-256 is `5a8dfd54d1c08413dc6fb18d957269a5fbfea8cf526e4f29c78510886186e11c`, and dataset-freeze SHA-256 is `fd81b647051b63e7b76ab72c6dedd616cf06d752fcbc1db31ba02f8aebe68744`.
 
@@ -47,7 +47,9 @@ effective Model V2 TRAIN
 + valid model_v2_hazard_reflex_20260901 V2_TRAIN
 ```
 
-This yields 442 future training runs from actual valid outcomes. `V2_VALIDATION`, Unified VALIDATION/HOLDOUT, Generalization VALIDATION/HOLDOUT, calibration pilots, Ice-resolution pilots, and the Ice-semantics corpus are excluded from this effective TRAIN. Model V2 is not trained at the end of the generation milestone.
+This yielded 442 training runs from actual valid outcomes. `V2_VALIDATION`, Unified VALIDATION/HOLDOUT, Generalization VALIDATION/HOLDOUT, calibration pilots, Ice-resolution pilots, and the Ice-semantics corpus were excluded from normalization, optimization, and HNM.
+
+The first data-only V2 training milestone fit one new 80D normalizer and the unchanged three-seed GRU20 architecture, then froze the candidate before evaluating the 96 valid `V2_VALIDATION` runs. It did not pass the frozen overall/Slip internal gates and was not promoted to an external generalization candidate. The raw dataset and its freeze hashes remain unchanged; the trained research artifacts remain separately Gitignored under `artifacts/runs/20260901_model_v2_data_only_training`.
 
 ## 5. Runtime and diagnostic fields
 

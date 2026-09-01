@@ -4,7 +4,7 @@ Unitree G1 MuJoCo에서 검증된 physical Hazard Reflex와 Terrain advisory를 
 
 ## Current Status
 
-`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_GENERATION_READY; MODEL_V2_DATA_ONLY_TRAINING_READY`
+`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_GENERATION_READY; MODEL_V2_DATA_ONLY_TRAINING_COMPLETE; MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED`
 
 ```text
 Hazard
@@ -42,7 +42,9 @@ Ice near-hazard target-semantics verdict는 `ICE_NEAR_HAZARD_TARGET_SEMANTICS_RE
 
 첫 Model V2 dataset design verdict는 `MODEL_V2_DATASET_DESIGN_READY`다. Model V1을 restorable 상태로 보존하고 `RETAIN_AND_AUGMENT` 기준 fresh 412-run matrix(`V2_TRAIN` 310, `V2_VALIDATION` 102)를 simulation 전에 freeze했다. Primary Hazard와 Ice precursor annotation을 분리하고 delayed/multi-contact Ice, Ice benign/near-hazard, staged Sand benign, balanced right Support와 0.20/0.25/0.30 m/s coverage를 포함한다. 이 design milestone 자체에서는 raw V2 dataset이나 checkpoint를 만들지 않았으며 상세 설계는 [`reports/20260901_model_v2_dataset_design.md`](reports/20260901_model_v2_dataset_design.md)에 있다.
 
-Frozen design을 그대로 실행해 `model_v2_hazard_reflex_20260901` augmentation corpus를 생성·freeze했다. 412개 primary run은 한 번씩 실행되었고 실제 결과는 valid 386, objectively invalid 26이다. `V2_TRAIN`의 actual established-Hazard/no-established-Hazard는 182/108이며 후자에는 I1-only 또는 censored-precursor 18개가 포함되어 confirmed no-hazard는 90이다. Slip/Support는 103/81, Hazard speed 0.20/0.25/0.30 m/s = 53/76/53이며 right-only Support 32와 staged-Sand usable hard negative 26을 포함한다. 따라서 dataset verdict는 `MODEL_V2_DATASET_GENERATION_READY`, 다음 단계 readiness는 `MODEL_V2_DATA_ONLY_TRAINING_READY`다. Model V2 training, normalizer fit, HNM, checkpoint 생성은 아직 0이며 Generalization HOLDOUT은 open count 0으로 sealed다. 상세 결과는 [`reports/20260901_model_v2_dataset_generation.md`](reports/20260901_model_v2_dataset_generation.md)에 있다.
+Frozen design을 그대로 실행해 `model_v2_hazard_reflex_20260901` augmentation corpus를 생성·freeze했다. 412개 primary run은 한 번씩 실행되었고 실제 결과는 valid 386, objectively invalid 26이다. `V2_TRAIN`의 actual established-Hazard/no-established-Hazard는 182/108이며 후자에는 I1-only 또는 censored-precursor 18개가 포함되어 confirmed no-hazard는 90이다. Slip/Support는 103/81, Hazard speed 0.20/0.25/0.30 m/s = 53/76/53이며 right-only Support 32와 staged-Sand usable hard negative 26을 포함한다. Dataset verdict는 `MODEL_V2_DATASET_GENERATION_READY`다. 상세 결과는 [`reports/20260901_model_v2_dataset_generation.md`](reports/20260901_model_v2_dataset_generation.md)에 있다.
+
+첫 data-only V2는 Unified TRAIN + valid V2_TRAIN 442개만 사용해 새 normalizer와 같은 11,010-parameter GRU20 3-seed ensemble을 학습했다. V2_VALIDATION은 candidate freeze 뒤 한 번 평가했으며 Hazard 55/64, Slip 29/35, Support 27/30, confirmed no-hazard 26/26, premature 6/64였다. Staged/Speed Sand benign과 right-only Support는 각각 8/8, 12/12, 12/12로 개선됐지만 overall/Slip gate를 실패했으므로 verdict는 `MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED`다. Candidate는 external generalization candidate로 승격하지 않았고, Generalization VALIDATION V2 inference는 0이며 Generalization HOLDOUT은 open count 0으로 sealed다. 다음 단계는 자동 재학습이 아닌 `MODEL_V2_INTERNAL_FAILURE_AUDIT`다. 상세 결과는 [`reports/20260901_model_v2_data_only_training.md`](reports/20260901_model_v2_data_only_training.md)에 있다.
 
 ## Canonical source flow
 
@@ -155,6 +157,7 @@ Viewer는 검증된 memory-only snapshot을 재생하며 종료 시 마지막 fr
 - [`reports/20260901_ice_near_hazard_target_semantics.md`](reports/20260901_ice_near_hazard_target_semantics.md)
 - [`reports/20260901_model_v2_dataset_design.md`](reports/20260901_model_v2_dataset_design.md)
 - [`reports/20260901_model_v2_dataset_generation.md`](reports/20260901_model_v2_dataset_generation.md)
+- [`reports/20260901_model_v2_data_only_training.md`](reports/20260901_model_v2_data_only_training.md)
 
 Current architecture는 [`docs/architecture.md`](docs/architecture.md), dataset contract는 [`docs/dataset.md`](docs/dataset.md), 검증 규칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)에 있다.
 

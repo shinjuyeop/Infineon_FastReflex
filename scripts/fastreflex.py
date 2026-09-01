@@ -22,8 +22,14 @@ DEFAULT_SIMULATOR_CONFIG = REPOSITORY_ROOT / "configs/simulator/g1.yaml"
 HAZARD_EXPERIMENT_ID = "UNIFIED_HAZARD_REFLEX_SYSTEM_VALIDATION"
 TERRAIN_EXPERIMENT_ID = "TERRAIN_REBUILD_AND_SENSOR_ABLATION"
 MODEL_V2_GENERATION_ID = "MODEL_V2_DATASET_GENERATION"
+MODEL_V2_TRAINING_ID = "MODEL_V2_DATA_ONLY_TRAINING"
 SUPPORTED_EXPERIMENT_IDS = frozenset(
-    (HAZARD_EXPERIMENT_ID, TERRAIN_EXPERIMENT_ID, MODEL_V2_GENERATION_ID)
+    (
+        HAZARD_EXPERIMENT_ID,
+        TERRAIN_EXPERIMENT_ID,
+        MODEL_V2_GENERATION_ID,
+        MODEL_V2_TRAINING_ID,
+    )
 )
 HISTORICAL_MESSAGE = (
     "This experiment is historical and is not runnable from the current "
@@ -93,6 +99,11 @@ def build_parser() -> argparse.ArgumentParser:
         "train", help="train from an explicit supported experiment config"
     )
     train.add_argument("--config", type=Path, required=True)
+    train.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="freeze and report extraction without fitting or optimizer steps",
+    )
 
     evaluate = subparsers.add_parser(
         "evaluate", help="verify a frozen supported candidate without HOLDOUT access"
@@ -264,6 +275,17 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
 def _train(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     experiment_id = _require_supported(args.config)
+    if experiment_id == MODEL_V2_TRAINING_ID:
+        from fastreflex.training.hazard import run_model_v2_data_only_training
+
+        result = run_model_v2_data_only_training(
+            REPOSITORY_ROOT,
+            args.config.resolve(),
+            dry_run=bool(args.dry_run),
+            progress=lambda message: print(message, file=sys.stderr, flush=True),
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
     name = "Unified Hazard" if experiment_id == HAZARD_EXPERIMENT_ID else "Terrain"
     parser.error(
         f"{name} is a frozen supported candidate. Training requires a separately "
@@ -278,6 +300,12 @@ def _evaluate(args: argparse.Namespace) -> int:
         from fastreflex.evaluation.hazard import verify_supported_candidate
 
         result = verify_supported_candidate(REPOSITORY_ROOT, load_yaml(args.config))
+    elif experiment_id == MODEL_V2_TRAINING_ID:
+        from fastreflex.evaluation.hazard import verify_model_v2_training_result
+
+        result = verify_model_v2_training_result(
+            REPOSITORY_ROOT, args.config.resolve()
+        )
     else:
         from fastreflex.evaluation.terrain import verify_supported_terrain_candidate
 

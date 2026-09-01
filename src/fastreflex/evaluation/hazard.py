@@ -734,6 +734,86 @@ def verify_model_v2_training_result(
     }
 
 
+def verify_model_v2_extraction_rebalanced_training_result(
+    root: Path, config_path: Path
+) -> dict[str, object]:
+    """Verify the preserved rebalanced result without replaying validation."""
+    document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    if document["experiment"]["id"] != "MODEL_V2_EXTRACTION_REBALANCED_TRAINING":
+        raise ValueError("unsupported extraction-rebalanced training config")
+    artifact_path = root / str(document["artifacts"]["path"])
+    result_path = artifact_path / "training_result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    if result["execution_config_sha256"] != sha256_file(config_path):
+        raise RuntimeError("extraction-rebalanced execution config changed")
+    candidate_path = artifact_path / "candidate_freeze.json"
+    candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+    if sha256_file(candidate_path) != result["candidate_freeze_sha256"]:
+        raise RuntimeError("extraction-rebalanced candidate freeze changed")
+    evaluation_path = artifact_path / "candidate_evaluation_freeze.json"
+    evaluation = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    if sha256_file(evaluation_path) != result["candidate_evaluation_freeze_sha256"]:
+        raise RuntimeError("candidate evaluation freeze changed")
+    evidence = {
+        "training_record.json": result["training_record_sha256"],
+        "exposure_provenance.json": result["exposure_provenance_sha256"],
+        "hnm_provenance.json": result["hnm_provenance_sha256"],
+        "v2_validation_evaluation.json": result["v2_validation_result_sha256"],
+        "baseline_v2_on_v2_validation.json": result[
+            "baseline_v2_on_v2_validation_sha256"
+        ],
+        "v1_on_v2_validation.json": result["v1_on_v2_validation_sha256"],
+        "delayed_support_comparison.json": evaluation[
+            "delayed_support_comparison_sha256"
+        ],
+        "preservation_diagnostics.json": evaluation[
+            "preservation_diagnostics_sha256"
+        ],
+        "three_model_comparison.json": evaluation[
+            "three_model_comparison_sha256"
+        ],
+    }
+    for filename, expected in evidence.items():
+        if sha256_file(artifact_path / filename) != str(expected):
+            raise RuntimeError(f"rebalanced evidence changed: {filename}")
+    normalizer_path = root / str(candidate["normalizer_path"])
+    if sha256_file(normalizer_path) != candidate["normalizer_sha256"]:
+        raise RuntimeError("reused Model V2 normalizer changed")
+    for relative, expected in candidate["checkpoint_sha256"].items():
+        if sha256_file(root / str(relative)) != str(expected):
+            raise RuntimeError(f"rebalanced checkpoint changed: {relative}")
+    if (
+        candidate["normalizer_fits"] != 0
+        or candidate["generalization_holdout_guard_count"] != 0
+        or evaluation["generalization_validation_v2_inference"]
+        or evaluation["generalization_holdout_guard_count"] != 0
+        or result["generalization_validation_v2_inference"]
+        or result["unified_holdout_waveform_reopened"]
+        or result["generalization_holdout_waveform_opened"]
+        or result["generalization_holdout_inference"]
+        or result["generalization_holdout_guard_count"] != 0
+    ):
+        raise RuntimeError("rebalanced candidate evidence boundary changed")
+    return {
+        "passed": True,
+        "training_verdict": result["training_verdict"],
+        "intervention_verdict": result["intervention_verdict"],
+        "internal_validation_verdict": result["internal_validation_verdict"],
+        "recommended_next_milestone": result["recommended_next_milestone"],
+        "candidate_freeze_sha256": result["candidate_freeze_sha256"],
+        "candidate_evaluation_freeze_sha256": result[
+            "candidate_evaluation_freeze_sha256"
+        ],
+        "normalizer_fits": result["normalizer_fits"],
+        "generalization_validation_v2_inference": result[
+            "generalization_validation_v2_inference"
+        ],
+        "generalization_holdout_guard_count": result[
+            "generalization_holdout_guard_count"
+        ],
+    }
+
+
 def verify_supported_candidate(
     repository_root: Path, document: Mapping[str, object]
 ) -> dict[str, object]:

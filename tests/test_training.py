@@ -9,14 +9,20 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import yaml
 
 from fastreflex.dataset.hazard import (
     EVENT_TYPE_NONE,
     PELVIS_IMU6,
     PELVIS_IMU6_FSR8,
     HazardRun,
+    canonical_sha256,
 )
 from fastreflex.dataset.loader import WindowSet
+from fastreflex.dataset.loader import sha256_file
+from fastreflex.evaluation.hazard import (
+    verify_model_v2_extraction_rebalanced_training_result,
+)
 from fastreflex.dataset.generation import (
     HazardRunAnnotations,
     load_model_v2_runs,
@@ -27,9 +33,12 @@ from fastreflex.training.hazard import (
     HNM_REPLAY_STRIDE_MS,
     HNM_ROUNDS,
     HNM_TOP_K_PER_RUN,
+    audit_model_v2_rebalanced_extraction,
     audit_hazard_extraction,
     fit_hazard_normalizer,
     initial_negative_endpoints,
+    model_v2_rebalance_policy,
+    prepare_model_v2_training_data,
     training_negative_candidates,
 )
 from fastreflex.training.trainer import (
@@ -120,6 +129,137 @@ def _annotations() -> HazardRunAnnotations:
 
 
 class TrainingTest(unittest.TestCase):
+    def test_model_v2_rebalanced_extraction_matches_frozen_design(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        config_path = (
+            root
+            / "configs/experiment/20260901_model_v2_extraction_rebalanced_training.yaml"
+        )
+        dataset_path = root / "data/raw/model_v2_hazard_reflex_20260901"
+        if not dataset_path.is_dir():
+            self.skipTest("frozen Model V2 dataset is not available")
+        document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data = prepare_model_v2_training_data(root, document)
+        audit = audit_model_v2_rebalanced_extraction(
+            data.runs,
+            data.precursor_samples,
+            data.annotations,
+        )
+
+        self.assertTrue(audit["passed"])
+        self.assertEqual(audit["effective_train_run_count"], 442)
+        self.assertEqual(
+            canonical_sha256(model_v2_rebalance_policy()),
+            "3c7ce82ed905d932ec8f17d69d7e5edb5d79ee7602ba95ffe2a53d2407142cd2",
+        )
+        self.assertEqual(
+            audit["positive_window_ids_sha256"],
+            "498f5d1f4419e3bfa72fc2f9649326db26f00e7a9523d9b3ecc8032436a3e0bb",
+        )
+        self.assertEqual(
+            audit["negative_window_ids_sha256"],
+            "392c1fda06953135bfed9a97c7cabb3915d4c50fdf9ff11b2ac8e6550448936c",
+        )
+        self.assertEqual(
+            audit["masked_window_sha256"],
+            "32bae2d81b05709771545b375dd6cffb95d2dfc17c2808a7adf3a7f70174c35a",
+        )
+        self.assertEqual(audit["all_positive_count"], 3_188)
+        self.assertEqual(audit["all_negative_count"], 32_209)
+        self.assertEqual(
+            audit["fit_positive_counts"],
+            {
+                "slip": 1_680,
+                "ordinary_support": 640,
+                "delayed_support": 270,
+                "support": 910,
+                "total": 2_590,
+            },
+        )
+        self.assertEqual(audit["fit_negative_count"], 25_585)
+        self.assertEqual(audit["monitor_positive_count"], 598)
+        self.assertEqual(audit["monitor_negative_count"], 6_624)
+        self.assertEqual(
+            audit["delayed_support"],
+            {
+                "eligible_runs": 18,
+                "fit_represented_runs": 18,
+                "by_source": {
+                    "concrete": {
+                        "eligible_runs": 9,
+                        "fit_positive_windows": 135,
+                    },
+                    "marble": {
+                        "eligible_runs": 9,
+                        "fit_positive_windows": 135,
+                    },
+                },
+            },
+        )
+        self.assertEqual(
+            audit["masked_sample_counts"],
+            {
+                "future_slip_precursor": 41_479,
+                "censored_precursor": 1_734,
+                "i1_positive": 68_388,
+            },
+        )
+        self.assertEqual(set(audit["contradiction_audit"].values()), {0})
+
+    def test_rebalanced_candidate_reuses_normalizer_and_isolates_artifacts(
+        self,
+    ) -> None:
+        root = Path(__file__).resolve().parents[1]
+        config_path = (
+            root
+            / "configs/experiment/20260901_model_v2_extraction_rebalanced_training.yaml"
+        )
+        artifact_path = (
+            root
+            / "artifacts/runs/20260901_model_v2_extraction_rebalanced_training"
+        )
+        if not (artifact_path / "training_result.json").is_file():
+            self.skipTest("frozen extraction-rebalanced candidate is not available")
+        document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        candidate = json.loads(
+            (artifact_path / "candidate_freeze.json").read_text(encoding="utf-8")
+        )
+        result = json.loads(
+            (artifact_path / "training_result.json").read_text(encoding="utf-8")
+        )
+        verified = verify_model_v2_extraction_rebalanced_training_result(
+            root, config_path
+        )
+
+        self.assertTrue(verified["passed"])
+        self.assertEqual(candidate["normalizer_fits"], 0)
+        self.assertEqual(
+            candidate["normalizer_sha256"],
+            "e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a",
+        )
+        self.assertEqual(
+            sha256_file(root / candidate["normalizer_path"]),
+            candidate["normalizer_sha256"],
+        )
+        protected_paths = {
+            str(row["path"])
+            for row in (
+                *document["protected_v1"]["checkpoints"],
+                *document["baseline_v2"]["checkpoints"],
+            )
+        }
+        self.assertFalse(protected_paths & set(candidate["checkpoint_sha256"]))
+        for record in (
+            *document["protected_v1"]["checkpoints"],
+            *document["baseline_v2"]["checkpoints"],
+        ):
+            self.assertEqual(sha256_file(root / record["path"]), record["sha256"])
+        self.assertFalse(result["generalization_validation_v2_inference"])
+        self.assertFalse(result["unified_holdout_waveform_reopened"])
+        self.assertFalse(result["generalization_holdout_waveform_opened"])
+        self.assertFalse(result["generalization_holdout_inference"])
+        self.assertEqual(result["generalization_holdout_guard_count"], 0)
+
     def test_supported_gru_architecture_is_80_32_one_layer_two_outputs(self) -> None:
         model = build_model("gru", 20, 80, class_count=2)
         self.assertEqual(model.gru.input_size, 80)

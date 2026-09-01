@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections import Counter
@@ -30,6 +31,7 @@ from fastreflex.evaluation.hazard import (
     HISTORY_MS,
     evaluate_model_v2_validation,
     load_hazard_normalizer,
+    reflex_onset_samples,
     replay_hazard_run,
     replay_hazard_runs,
 )
@@ -47,6 +49,51 @@ HNM_ROUNDS = 3
 HNM_TOP_K_PER_RUN = 12
 HNM_MINIMUM_SPACING_MS = 30
 HNM_REPLAY_STRIDE_MS = 1
+MODEL_V2_DELAYED_SUPPORT_FAMILY = "DELAYED_SAND_SUPPORT_ONSET"
+
+
+def model_v2_rebalance_policy() -> dict[str, object]:
+    """Return the exact predeclared extraction-rebalance design payload."""
+    return {
+        "schema_version": 1,
+        "positive_precedence": [
+            "legacy_slip_positive",
+            "delayed_support_i1_neighborhood",
+            "delayed_support_interior_neighborhood",
+            "delayed_support_established_neighborhood",
+            "legacy_ordinary_support_positive",
+        ],
+        "legacy_slip": {
+            "selection": "preserve_exact_baseline_fit_and_monitor_endpoint_identities",
+            "nominal_offsets_ms": {"start": -30, "stop": 40, "stride": 5},
+            "legacy_union_cap_per_run": 20,
+            "rare_side_protection": "none",
+        },
+        "ordinary_support": {
+            "selection": "preserve_exact_baseline_fit_and_monitor_endpoint_identities",
+            "i1_to_support_even_points": 5,
+            "support_offsets_ms": [-20, 0, 20, 40],
+            "legacy_union_cap_per_run": 20,
+        },
+        "delayed_support": {
+            "eligibility": "valid V2_TRAIN DELAYED_SAND_SUPPORT_ONSET with usable I1 and Support",
+            "source_rule": "identical_for_concrete_and_marble",
+            "i1_offsets_ms": [0, 1, 2, 3, 4],
+            "interior_anchor": "floor((I1 + Support) / 2)",
+            "interior_offsets_ms": [-2, -1, 0, 1, 2],
+            "support_offsets_ms": [0, 1, 2, 3, 4],
+            "deduplicate": True,
+            "cap_per_run": 15,
+            "fit_exposure": "all_valid_endpoints_from_every_eligible_run",
+            "monitor_exposure": "none; other 598 baseline monitor positives remain",
+            "pre_i1_positive": False,
+        },
+        "negative_endpoints": "preserve_exact_baseline_fit_and_monitor_endpoint_identities",
+        "ice_masks": "preserve_exact_baseline_future_slip_and_censored_masks",
+        "censor_masks": "preserve_exact_baseline_post_censor_and_post_fall_exclusion",
+        "hnm": "unchanged_and_not_executed",
+        "runtime_tensor": "strictly_causal_history_20ms_80D",
+    }
 
 
 @dataclass(frozen=True)
@@ -99,6 +146,107 @@ def unified_positive_endpoints(
     if run.fall_sample_diagnostic is not None:
         valid &= values < int(run.fall_sample_diagnostic)
     return _evenly_spaced(values[valid], cap)
+
+
+def _positive_role(run: HazardRun, endpoint: int) -> str:
+    slip = slip_event_sample(run)
+    return (
+        "slip"
+        if slip is not None and slip - 30 <= int(endpoint) <= slip + 40
+        else "support"
+    )
+
+
+def delayed_support_positive_endpoints(
+    run: HazardRun,
+    precursor: int | None,
+    annotation: HazardRunAnnotations,
+    history_ms: int = HISTORY_MS,
+) -> np.ndarray:
+    """Resolve the frozen three-neighborhood delayed-Support positive rule."""
+    if annotation.scenario_family != MODEL_V2_DELAYED_SUPPORT_FAMILY:
+        return np.empty(0, dtype=np.int64)
+    support = support_event_sample(run)
+    if precursor is None or support is None or int(precursor) > support:
+        raise ValueError("eligible delayed Support requires ordered I1 and Support")
+    i1 = int(precursor)
+    midpoint = (i1 + support) // 2
+    selected = np.asarray(
+        sorted(
+            {
+                *(i1 + offset for offset in (0, 1, 2, 3, 4)),
+                *(midpoint + offset for offset in (-2, -1, 0, 1, 2)),
+                *(support + offset for offset in (0, 1, 2, 3, 4)),
+            }
+        ),
+        dtype=np.int64,
+    )
+    stop = run.censor_sample
+    if run.fall_sample_diagnostic is not None:
+        stop = min(stop, int(run.fall_sample_diagnostic))
+    selected = selected[(selected >= history_ms - 1) & (selected < stop)][:15]
+    if np.any(selected < i1):
+        raise RuntimeError("delayed-Support positive precedes I1")
+    if not all(i1 + offset in selected for offset in range(5)):
+        raise RuntimeError("delayed-Support I1 neighborhood is shorter than 5 ms")
+    return selected
+
+
+def model_v2_rebalanced_positive_endpoints(
+    run: HazardRun,
+    precursor: int | None,
+    annotation: HazardRunAnnotations,
+    history_ms: int = HISTORY_MS,
+) -> np.ndarray:
+    """Preserve legacy positives except for the frozen delayed-Support role."""
+    baseline = unified_positive_endpoints(run, precursor, history_ms, cap=20)
+    if annotation.scenario_family != MODEL_V2_DELAYED_SUPPORT_FAMILY:
+        return baseline
+    slip = [int(value) for value in baseline if _positive_role(run, int(value)) == "slip"]
+    delayed = delayed_support_positive_endpoints(
+        run, precursor, annotation, history_ms
+    )
+    return np.asarray(sorted({*slip, *(int(value) for value in delayed)}), dtype=np.int64)
+
+
+def model_v2_rebalanced_positive_plan(
+    runs: Mapping[str, HazardRun],
+    precursor_samples: Mapping[str, int | None],
+    annotations: Mapping[str, HazardRunAnnotations],
+) -> tuple[dict[str, tuple[int, ...]], dict[str, tuple[int, ...]]]:
+    """Assign exact proposed positives to fit/monitor without moving negatives."""
+    fit_ids, monitor_ids = _train_monitor_partition(
+        runs, sorted(runs), precursor_samples
+    )
+    fit_set = set(fit_ids)
+    fit: dict[str, tuple[int, ...]] = {}
+    monitor: dict[str, tuple[int, ...]] = {}
+    for run_id in sorted(runs):
+        run = runs[run_id]
+        annotation = annotations[run_id]
+        precursor = precursor_samples.get(run_id)
+        baseline = unified_positive_endpoints(run, precursor, cap=20)
+        if annotation.scenario_family == MODEL_V2_DELAYED_SUPPORT_FAMILY:
+            support = delayed_support_positive_endpoints(
+                run, precursor, annotation
+            )
+            fit[run_id] = tuple(int(value) for value in support)
+            legacy_slip = tuple(
+                int(value)
+                for value in baseline
+                if _positive_role(run, int(value)) == "slip"
+            )
+            if run_id in fit_set:
+                fit[run_id] = tuple(sorted({*fit[run_id], *legacy_slip}))
+            elif legacy_slip:
+                monitor[run_id] = legacy_slip
+            continue
+        endpoints = tuple(int(value) for value in baseline)
+        if run_id in fit_set:
+            fit[run_id] = endpoints
+        else:
+            monitor[run_id] = endpoints
+    return fit, monitor
 
 
 def unified_negative_candidates(
@@ -317,6 +465,8 @@ def build_hazard_windows(
     annotations: Mapping[str, HazardRunAnnotations] | None = None,
     target_contact_cap: int = 12,
     benign_precursor_cap: int = 12,
+    positive_endpoints: Mapping[str, Sequence[int]] | None = None,
+    negative_run_ids: Sequence[str] | None = None,
 ) -> WindowSet:
     """Materialize causal [20,80] binary windows with provenance."""
     inputs: list[np.ndarray] = []
@@ -325,20 +475,32 @@ def build_hazard_windows(
     endpoint_rows: list[int] = []
     extras = extra_negative_endpoints or {}
     metadata = annotations or {}
+    negative_ids = {
+        str(value)
+        for value in (run_ids if negative_run_ids is None else negative_run_ids)
+    }
     for run_id in sorted(str(value) for value in run_ids):
         run = runs[run_id]
         if run.split != "train":
             raise ValueError("Hazard training windows may use TRAIN runs only")
         features = extract_hazard_features(run.features["PELVIS_IMU6"])
         precursor = precursor_samples.get(run_id)
-        positive = unified_positive_endpoints(run, precursor, cap=positive_cap)
-        negative = initial_negative_endpoints(
-            run,
-            precursor,
-            per_category=per_category,
-            annotation=metadata.get(run_id),
-            target_contact_cap=target_contact_cap,
-            benign_precursor_cap=benign_precursor_cap,
+        positive = (
+            unified_positive_endpoints(run, precursor, cap=positive_cap)
+            if positive_endpoints is None
+            else np.asarray(positive_endpoints.get(run_id, ()), dtype=np.int64)
+        )
+        negative = (
+            initial_negative_endpoints(
+                run,
+                precursor,
+                per_category=per_category,
+                annotation=metadata.get(run_id),
+                target_contact_cap=target_contact_cap,
+                benign_precursor_cap=benign_precursor_cap,
+            )
+            if run_id in negative_ids
+            else np.empty(0, dtype=np.int64)
         )
         allowed = set(
             int(value)
@@ -346,7 +508,7 @@ def build_hazard_windows(
                 run, precursor, metadata.get(run_id)
             )
         )
-        if run_id in extras:
+        if run_id in extras and run_id in negative_ids:
             extra = np.asarray(
                 [int(value) for value in extras[run_id] if int(value) in allowed],
                 dtype=np.int64,
@@ -594,6 +756,253 @@ def _train_monitor_partition(
     )
 
 
+def _endpoint_identity_hash(rows: Sequence[Mapping[str, object]]) -> str:
+    return canonical_sha256(
+        [
+            f"{row['partition']}:{row['run_id']}:{row['endpoint_sample']}:{row['role']}"
+            for row in rows
+        ]
+    )
+
+
+def audit_model_v2_rebalanced_extraction(
+    runs: Mapping[str, HazardRun],
+    precursor_samples: Mapping[str, int | None],
+    annotations: Mapping[str, HazardRunAnnotations],
+    *,
+    per_category: int = 12,
+    target_contact_cap: int = 12,
+    benign_precursor_cap: int = 12,
+) -> dict[str, object]:
+    """Reproduce every frozen extraction identity before optimizer access."""
+    fit_ids, monitor_ids = _train_monitor_partition(
+        runs, sorted(runs), precursor_samples
+    )
+    partitions = {run_id: "fit" for run_id in fit_ids} | {
+        run_id: "monitor" for run_id in monitor_ids
+    }
+    fit_positive, monitor_positive = model_v2_rebalanced_positive_plan(
+        runs, precursor_samples, annotations
+    )
+    positive_rows: list[dict[str, object]] = []
+    negative_rows: list[dict[str, object]] = []
+    mask_rows: list[dict[str, object]] = []
+    violations: Counter[str] = Counter()
+    eligible_delayed: list[str] = []
+
+    for partition, endpoint_map in (
+        ("fit", fit_positive),
+        ("monitor", monitor_positive),
+    ):
+        for run_id, endpoints in endpoint_map.items():
+            run = runs[run_id]
+            annotation = annotations[run_id]
+            precursor = precursor_samples.get(run_id)
+            for endpoint in endpoints:
+                value = int(endpoint)
+                positive_rows.append(
+                    {
+                        "partition": partition,
+                        "run_id": run_id,
+                        "endpoint_sample": value,
+                        "role": _positive_role(run, value),
+                    }
+                )
+                first = value - HISTORY_MS + 1
+                if first < 0 or value >= run.censor_sample or (
+                    run.fall_sample_diagnostic is not None
+                    and value >= run.fall_sample_diagnostic
+                ):
+                    violations["future_feature_leakage"] += 1
+                if (
+                    annotation.scenario_family == MODEL_V2_DELAYED_SUPPORT_FAMILY
+                    and _positive_role(run, value) == "support"
+                    and precursor is not None
+                    and value < int(precursor)
+                ):
+                    violations["pre_i1_delayed_support_positive"] += 1
+
+    for run_id in sorted(runs):
+        run = runs[run_id]
+        annotation = annotations[run_id]
+        precursor = precursor_samples.get(run_id)
+        if annotation.scenario_family == MODEL_V2_DELAYED_SUPPORT_FAMILY:
+            eligible_delayed.append(run_id)
+            delayed = delayed_support_positive_endpoints(
+                run, precursor, annotation
+            )
+            if len(delayed) != 15:
+                violations["eligible_delayed_support_short_neighborhood"] += 1
+            if precursor is None or not all(
+                int(precursor) + offset in delayed for offset in range(5)
+            ):
+                violations["persistence_neighborhood_shorter_than_5ms"] += 1
+        negative = initial_negative_endpoints(
+            run,
+            precursor,
+            per_category=per_category,
+            annotation=annotation,
+            target_contact_cap=target_contact_cap,
+            benign_precursor_cap=benign_precursor_cap,
+        )
+        for endpoint in negative:
+            value = int(endpoint)
+            negative_rows.append(
+                {
+                    "partition": partitions[run_id],
+                    "run_id": run_id,
+                    "endpoint_sample": value,
+                    "role": _negative_role(run, annotation, value),
+                }
+            )
+            if annotation.future_slip_precursor[value]:
+                violations["future_slip_precursor_ordinary_negative"] += 1
+            if annotation.censored_precursor[value]:
+                violations["censored_precursor_negative"] += 1
+            if annotation.i1_active[value]:
+                violations["i1_or_positive_negative"] += 1
+            if value >= run.censor_sample or (
+                run.fall_sample_diagnostic is not None
+                and value >= run.fall_sample_diagnostic
+            ):
+                violations["post_censor_or_fall"] += 1
+        mask_rows.append(
+            {
+                "run_id": run_id,
+                "future_slip_precursor_samples": int(
+                    np.sum(annotation.future_slip_precursor[: run.censor_sample])
+                ),
+                "future_slip_precursor_sha256": hashlib.sha256(
+                    annotation.future_slip_precursor[: run.censor_sample].tobytes()
+                ).hexdigest(),
+                "censored_precursor_samples": int(
+                    np.sum(annotation.censored_precursor[: run.censor_sample])
+                ),
+                "censored_precursor_sha256": hashlib.sha256(
+                    annotation.censored_precursor[: run.censor_sample].tobytes()
+                ).hexdigest(),
+                "i1_positive_samples": int(
+                    np.sum(annotation.i1_active[: run.censor_sample])
+                ),
+                "i1_positive_sha256": hashlib.sha256(
+                    annotation.i1_active[: run.censor_sample].tobytes()
+                ).hexdigest(),
+                "censor_sample": run.censor_sample,
+                "fall_sample": run.fall_sample_diagnostic,
+            }
+        )
+
+    positive_rows.sort(
+        key=lambda row: (
+            str(row["partition"]),
+            str(row["run_id"]),
+            int(row["endpoint_sample"]),
+            str(row["role"]),
+        )
+    )
+    negative_rows.sort(
+        key=lambda row: (
+            str(row["partition"]),
+            str(row["run_id"]),
+            int(row["endpoint_sample"]),
+            str(row["role"]),
+        )
+    )
+    mask_rows.sort(key=lambda row: str(row["run_id"]))
+    positive_ids = {
+        (str(row["run_id"]), int(row["endpoint_sample"]))
+        for row in positive_rows
+    }
+    negative_ids = {
+        (str(row["run_id"]), int(row["endpoint_sample"]))
+        for row in negative_rows
+    }
+    violations["i1_or_positive_negative"] += len(positive_ids & negative_ids)
+
+    fit_positive_rows = [
+        row for row in positive_rows if row["partition"] == "fit"
+    ]
+    monitor_positive_rows = [
+        row for row in positive_rows if row["partition"] == "monitor"
+    ]
+    delayed_fit_rows = [
+        row
+        for row in fit_positive_rows
+        if row["role"] == "support"
+        and annotations[str(row["run_id"])].scenario_family
+        == MODEL_V2_DELAYED_SUPPORT_FAMILY
+    ]
+    ordinary_fit = sum(
+        row["role"] == "support" for row in fit_positive_rows
+    ) - len(delayed_fit_rows)
+    slip_fit = sum(row["role"] == "slip" for row in fit_positive_rows)
+    violation_names = (
+        "future_slip_precursor_ordinary_negative",
+        "censored_precursor_negative",
+        "i1_or_positive_negative",
+        "post_censor_or_fall",
+        "pre_i1_delayed_support_positive",
+        "future_feature_leakage",
+        "eligible_delayed_support_short_neighborhood",
+        "persistence_neighborhood_shorter_than_5ms",
+    )
+    contradiction = {name: int(violations[name]) for name in violation_names}
+    fit_negative = sum(row["partition"] == "fit" for row in negative_rows)
+    return {
+        "effective_train_run_count": len(runs),
+        "extraction_policy_sha256": canonical_sha256(
+            model_v2_rebalance_policy()
+        ),
+        "positive_window_ids_sha256": _endpoint_identity_hash(positive_rows),
+        "negative_window_ids_sha256": _endpoint_identity_hash(negative_rows),
+        "masked_window_sha256": canonical_sha256(mask_rows),
+        "all_positive_count": len(positive_rows),
+        "all_negative_count": len(negative_rows),
+        "fit_positive_counts": {
+            "slip": slip_fit,
+            "ordinary_support": ordinary_fit,
+            "delayed_support": len(delayed_fit_rows),
+            "support": ordinary_fit + len(delayed_fit_rows),
+            "total": len(fit_positive_rows),
+        },
+        "monitor_positive_count": len(monitor_positive_rows),
+        "fit_negative_count": fit_negative,
+        "monitor_negative_count": len(negative_rows) - fit_negative,
+        "delayed_support": {
+            "eligible_runs": len(eligible_delayed),
+            "fit_represented_runs": len(
+                {str(row["run_id"]) for row in delayed_fit_rows}
+            ),
+            "by_source": {
+                source: {
+                    "eligible_runs": sum(
+                        runs[run_id].source_terrain == source
+                        for run_id in eligible_delayed
+                    ),
+                    "fit_positive_windows": sum(
+                        runs[str(row["run_id"])].source_terrain == source
+                        for row in delayed_fit_rows
+                    ),
+                }
+                for source in ("concrete", "marble")
+            },
+        },
+        "masked_sample_counts": {
+            "future_slip_precursor": sum(
+                int(row["future_slip_precursor_samples"]) for row in mask_rows
+            ),
+            "censored_precursor": sum(
+                int(row["censored_precursor_samples"]) for row in mask_rows
+            ),
+            "i1_positive": sum(
+                int(row["i1_positive_samples"]) for row in mask_rows
+            ),
+        },
+        "contradiction_audit": contradiction,
+        "passed": not any(contradiction.values()),
+    }
+
+
 def _merge_endpoint_maps(
     *values: Mapping[str, Sequence[int]],
 ) -> dict[str, tuple[int, ...]]:
@@ -619,6 +1028,76 @@ def _distribution(values: Sequence[float]) -> dict[str, float | None]:
     }
 
 
+def _event_side(run: HazardRun, event: str) -> str:
+    samples = (
+        run.slip_event_samples_per_foot
+        if event == "slip"
+        else run.support_event_samples_per_foot
+    )
+    active = [index for index, value in enumerate(samples) if value is not None]
+    if active == [0]:
+        return "left"
+    if active == [1]:
+        return "right"
+    if active == [0, 1]:
+        return "bilateral"
+    return "none"
+
+
+def positive_exposure_summary(
+    windows: WindowSet,
+    runs: Mapping[str, HazardRun],
+    annotations: Mapping[str, HazardRunAnnotations],
+) -> dict[str, int]:
+    """Count every positive endpoint by the predeclared exposure cells."""
+    counts: Counter[str] = Counter()
+    for run_id_value, endpoint_value, target in zip(
+        windows.run_ids, windows.endpoint_samples, windows.targets
+    ):
+        if int(target) != 1:
+            continue
+        run_id = str(run_id_value)
+        endpoint = int(endpoint_value)
+        run = runs[run_id]
+        annotation = annotations[run_id]
+        role = _positive_role(run, endpoint)
+        counts[role] += 1
+        if role == "support":
+            kind = (
+                "delayed_support"
+                if annotation.scenario_family == MODEL_V2_DELAYED_SUPPORT_FAMILY
+                else "ordinary_support"
+            )
+            counts[kind] += 1
+            counts[f"{kind}_{run.source_terrain}"] += 1
+            counts[f"support_{_event_side(run, 'support')}"] += 1
+        else:
+            counts[f"slip_speed_{annotation.nominal_speed_mps:.2f}"] += 1
+            counts[f"slip_{_event_side(run, 'slip')}"] += 1
+    counts["total"] = int(np.sum(windows.targets == 1))
+    names = (
+        "total",
+        "slip",
+        "support",
+        "ordinary_support",
+        "ordinary_support_concrete",
+        "ordinary_support_marble",
+        "delayed_support",
+        "delayed_support_concrete",
+        "delayed_support_marble",
+        "support_left",
+        "support_right",
+        "support_bilateral",
+        "slip_speed_0.20",
+        "slip_speed_0.25",
+        "slip_speed_0.30",
+        "slip_left",
+        "slip_right",
+        "slip_bilateral",
+    )
+    return {name: int(counts[name]) for name in names}
+
+
 def _mine_training_round(
     runs: Mapping[str, HazardRun],
     precursor_samples: Mapping[str, int | None],
@@ -631,6 +1110,8 @@ def _mine_training_round(
     result: dict[str, tuple[int, ...]] = {}
     selected_scores: list[float] = []
     family_counts: Counter[str] = Counter()
+    source_counts: Counter[str] = Counter()
+    speed_counts: Counter[str] = Counter()
     contributing_runs = 0
     duplicate_count = 0
     spacing_violations = 0
@@ -652,6 +1133,8 @@ def _mine_training_round(
         if len(selected):
             contributing_runs += 1
             family_counts[annotation.scenario_family] += len(selected)
+            source_counts[run.source_terrain] += len(selected)
+            speed_counts[f"{annotation.nominal_speed_mps:.2f}"] += len(selected)
         duplicate_count += len(set(selected) & set(prior.get(run_id, ())))
         spacing_violations += int(np.sum(np.diff(selected) < HNM_MINIMUM_SPACING_MS))
         for endpoint in selected:
@@ -674,6 +1157,8 @@ def _mine_training_round(
         "mined_windows": sum(len(value) for value in result.values()),
         "runs_contributing": contributing_runs,
         "selected_by_family": dict(sorted(family_counts.items())),
+        "selected_by_source": dict(sorted(source_counts.items())),
+        "selected_by_speed": dict(sorted(speed_counts.items())),
         "selected_probability": _distribution(selected_scores),
         "train_only": True,
         "replay_stride_ms": HNM_REPLAY_STRIDE_MS,
@@ -710,6 +1195,11 @@ def train_hazard_candidate(
     annotations: Mapping[str, HazardRunAnnotations],
     checkpoint_prefix: str = "unified",
     progress: Callable[[str], None] = print,
+    normalizer_override: Normalizer | None = None,
+    normalizer_source_path: Path | None = None,
+    fit_positive_endpoints: Mapping[str, Sequence[int]] | None = None,
+    monitor_positive_endpoints: Mapping[str, Sequence[int]] | None = None,
+    extraction_audit_override: Mapping[str, object] | None = None,
 ) -> HazardCandidate:
     """Train Round 0 plus exactly three TRAIN-only hard-negative rounds."""
     if any(run.split != "train" for run in runs.values()):
@@ -720,38 +1210,62 @@ def train_hazard_candidate(
     fit_ids, monitor_ids = _train_monitor_partition(
         runs, sorted(runs), precursor_samples
     )
-    extraction_audit = audit_hazard_extraction(
-        runs,
-        sorted(runs),
-        precursor_samples,
-        annotations,
-        per_category=int(
-            training_config.get("initial_negative_per_gait_category", 12)
-        ),
-        positive_cap=int(training_config.get("positive_cap_per_run", 20)),
-        target_contact_cap=int(
-            training_config.get("target_contact_cap_per_run", 12)
-        ),
-        benign_precursor_cap=int(
-            training_config.get("benign_precursor_cap_per_run", 12)
-        ),
+    extraction_audit = (
+        audit_hazard_extraction(
+            runs,
+            sorted(runs),
+            precursor_samples,
+            annotations,
+            per_category=int(
+                training_config.get("initial_negative_per_gait_category", 12)
+            ),
+            positive_cap=int(training_config.get("positive_cap_per_run", 20)),
+            target_contact_cap=int(
+                training_config.get("target_contact_cap_per_run", 12)
+            ),
+            benign_precursor_cap=int(
+                training_config.get("benign_precursor_cap_per_run", 12)
+            ),
+        )
+        if extraction_audit_override is None
+        else dict(extraction_audit_override)
     )
     if not extraction_audit["passed"]:
         raise RuntimeError("Hazard extraction violated a frozen negative mask")
     extraction_path = artifact_path / "extraction_audit.json"
     _write_json(extraction_path, extraction_audit)
-    normalizer = fit_hazard_normalizer(runs, sorted(runs))
     schema = hazard_feature_schema()
-    normalizer_path = artifact_path / "normalization" / "gru_history20.json"
-    _write_json(
-        normalizer_path,
-        {
-            **normalizer.to_dict(),
-            "components": ["pelvis_imu6"],
-            "feature_schema": list(schema),
-            "feature_schema_sha256": canonical_sha256(schema),
-            "train_only": True,
-        },
+    if normalizer_override is None:
+        normalizer = fit_hazard_normalizer(runs, sorted(runs))
+        normalizer_path = artifact_path / "normalization" / "gru_history20.json"
+        _write_json(
+            normalizer_path,
+            {
+                **normalizer.to_dict(),
+                "components": ["pelvis_imu6"],
+                "feature_schema": list(schema),
+                "feature_schema_sha256": canonical_sha256(schema),
+                "train_only": True,
+            },
+        )
+        normalizer_fits = 1
+    else:
+        if normalizer_source_path is None or not normalizer_source_path.is_file():
+            raise ValueError("reused normalizer requires an existing source artifact")
+        normalizer = normalizer_override
+        normalizer_path = normalizer_source_path.resolve()
+        normalizer_fits = 0
+    fit_material_ids = sorted(
+        set(fit_ids)
+        | (set(fit_positive_endpoints) if fit_positive_endpoints is not None else set())
+    )
+    monitor_material_ids = sorted(
+        set(monitor_ids)
+        | (
+            set(monitor_positive_endpoints)
+            if monitor_positive_endpoints is not None
+            else set()
+        )
     )
     accumulated: dict[str, tuple[int, ...]] = {}
     round_records: list[dict[str, object]] = []
@@ -759,7 +1273,7 @@ def train_hazard_candidate(
     for round_id in range(HNM_ROUNDS + 1):
         fit_windows = build_hazard_windows(
             runs,
-            fit_ids,
+            fit_material_ids,
             precursor_samples,
             normalizer,
             extra_negative_endpoints=accumulated,
@@ -774,10 +1288,12 @@ def train_hazard_candidate(
             benign_precursor_cap=int(
                 training_config.get("benign_precursor_cap_per_run", 12)
             ),
+            positive_endpoints=fit_positive_endpoints,
+            negative_run_ids=fit_ids,
         )
         monitor_windows = build_hazard_windows(
             runs,
-            monitor_ids,
+            monitor_material_ids,
             precursor_samples,
             normalizer,
             extra_negative_endpoints=accumulated,
@@ -792,7 +1308,10 @@ def train_hazard_candidate(
             benign_precursor_cap=int(
                 training_config.get("benign_precursor_cap_per_run", 12)
             ),
+            positive_endpoints=monitor_positive_endpoints,
+            negative_run_ids=monitor_ids,
         )
+        exposure = positive_exposure_summary(fit_windows, runs, annotations)
         paths: list[Path] = []
         epochs: list[int] = []
         epochs_completed: list[int] = []
@@ -855,6 +1374,14 @@ def train_hazard_candidate(
             "optimizer_steps": optimizer_steps,
             "final_train_loss": final_train_losses,
             "best_validation_cross_entropy": best_validation_losses,
+            "positive_exposure_available": exposure,
+            "positive_batch_exposure_by_seed": {
+                str(seed): {
+                    name: int(count) * int(epochs_completed[index])
+                    for name, count in exposure.items()
+                }
+                for index, seed in enumerate(training_config["seeds"])
+            },
             "checkpoint_sha256": {
                 str(path.relative_to(root)): sha256_file(path) for path in paths
             },
@@ -887,6 +1414,7 @@ def train_hazard_candidate(
             "normalizer_fit_run_ids_sha256": canonical_sha256(
                 list(normalizer.fit_run_ids)
             ),
+            "normalizer_fits": normalizer_fits,
             "extraction_audit_path": str(extraction_path.relative_to(root)),
             "extraction_audit_sha256": sha256_file(extraction_path),
             "checkpoint_sha256": {
@@ -1129,7 +1657,12 @@ def _training_recipe(document: Mapping[str, object]) -> dict[str, object]:
     window = document["window_extraction"]
     return {
         **document["training"],
-        "positive_cap_per_run": int(window["positive_cap_per_run"]),
+        "positive_cap_per_run": int(
+            window.get(
+                "positive_cap_per_run",
+                window["slip_positive"]["legacy_union_cap_per_run"],
+            )
+        ),
         "initial_negative_per_gait_category": int(
             window["initial_negative"]["per_gait_category"]
         ),
@@ -1184,6 +1717,289 @@ def _comparison_metrics(
             "delta": metric(v2, path) - metric(v1, path),
         }
         for name, path in paths.items()
+    }
+
+
+def _longest_threshold_excursion(values: np.ndarray, threshold: float) -> int:
+    longest = 0
+    current = 0
+    for value in values:
+        current = current + 1 if float(value) >= threshold else 0
+        longest = max(longest, current)
+    return longest
+
+
+def _probability_at_sample(replay, sample: int) -> float | None:
+    matches = np.flatnonzero(replay.endpoints == int(sample))
+    return None if not len(matches) else float(replay.probabilities[int(matches[0])])
+
+
+def _delayed_support_validation_diagnostics(
+    runs: Mapping[str, HazardRun],
+    replays: Mapping[str, object],
+    precursor_samples: Mapping[str, int | None],
+    manifest_rows: Mapping[str, Mapping[str, object]],
+    validation_result: Mapping[str, object],
+    *,
+    threshold: float,
+    persistence_ms: int,
+) -> dict[str, object]:
+    primary_rows = {
+        str(row["run_id"]): row for row in validation_result["primary"]["rows"]
+    }
+    rows: list[dict[str, object]] = []
+    for run_id in sorted(runs):
+        manifest_row = manifest_rows[run_id]
+        if manifest_row["scenario_family"] != MODEL_V2_DELAYED_SUPPORT_FAMILY:
+            continue
+        run = runs[run_id]
+        replay = replays[run_id]
+        i1 = precursor_samples[run_id]
+        support = support_event_sample(run)
+        if i1 is None or support is None:
+            raise RuntimeError("V2_VALIDATION delayed Support lost a physical anchor")
+        crossings = replay.endpoints[replay.probabilities >= threshold]
+        onsets = reflex_onset_samples(
+            replay, threshold=threshold, persistence_ms=persistence_ms
+        )
+        primary = primary_rows[run_id]
+        first_crossing = None if not len(crossings) else int(crossings[0])
+        first_reflex = None if not len(onsets) else int(onsets[0])
+        result = (
+            "correct"
+            if bool(primary["valid_detection"])
+            else "premature"
+            if bool(primary["premature"])
+            else "miss"
+            if first_reflex is None
+            else "out_of_valid_window"
+        )
+        rows.append(
+            {
+                "run_id": run_id,
+                "source": run.source_terrain,
+                "i1_sample": int(i1),
+                "support_sample": support,
+                "first_threshold_crossing": first_crossing,
+                "first_reflex": first_reflex,
+                "probability_at_i1": _probability_at_sample(replay, int(i1)),
+                "probability_at_support": _probability_at_sample(replay, support),
+                "maximum_probability": float(np.max(replay.probabilities)),
+                "maximum_consecutive_at_or_above_threshold_ms": (
+                    _longest_threshold_excursion(replay.probabilities, threshold)
+                ),
+                "primary_result": result,
+                "i1_to_reflex_ms": (
+                    None if first_reflex is None else first_reflex - int(i1)
+                ),
+                "reflex_to_support_ms": (
+                    None if first_reflex is None else support - first_reflex
+                ),
+                "established_support_latency_ms": (
+                    None
+                    if primary["support_valid_detection"] is None
+                    else int(primary["support_valid_detection"]) - support
+                ),
+            }
+        )
+    by_source = {}
+    for source in ("concrete", "marble"):
+        selected = [row for row in rows if row["source"] == source]
+        by_source[source] = {
+            "correct": sum(row["primary_result"] == "correct" for row in selected),
+            "runs": len(selected),
+            "recall": (
+                None
+                if not selected
+                else sum(row["primary_result"] == "correct" for row in selected)
+                / len(selected)
+            ),
+            "probability_at_i1": _distribution(
+                [row["probability_at_i1"] for row in selected]
+            ),
+            "maximum_consecutive_at_or_above_threshold_ms": _distribution(
+                [
+                    row["maximum_consecutive_at_or_above_threshold_ms"]
+                    for row in selected
+                ]
+            ),
+        }
+    return {
+        "rows": rows,
+        "overall": {
+            "correct": sum(row["primary_result"] == "correct" for row in rows),
+            "runs": len(rows),
+            "recall": sum(row["primary_result"] == "correct" for row in rows)
+            / len(rows),
+            "miss_or_out_of_window": sum(
+                row["primary_result"] in ("miss", "out_of_valid_window")
+                for row in rows
+            ),
+        },
+        "by_source": by_source,
+    }
+
+
+def _validation_preservation_summary(
+    runs: Mapping[str, HazardRun],
+    replays: Mapping[str, object],
+    annotations: Mapping[str, HazardRunAnnotations],
+    precursor_samples: Mapping[str, int | None],
+    manifest_rows: Mapping[str, Mapping[str, object]],
+    validation_result: Mapping[str, object],
+    delayed: Mapping[str, object],
+) -> dict[str, object]:
+    primary_rows = {
+        str(row["run_id"]): row for row in validation_result["primary"]["rows"]
+    }
+
+    def recall(selected: Sequence[Mapping[str, object]]) -> dict[str, object]:
+        return {
+            "correct": sum(bool(row["valid_detection"]) for row in selected),
+            "runs": len(selected),
+            "recall": (
+                None
+                if not selected
+                else sum(bool(row["valid_detection"]) for row in selected)
+                / len(selected)
+            ),
+        }
+
+    slip_rows = [
+        row for row in primary_rows.values() if row["slip_sample"] is not None
+    ]
+    slip_timing = {"immediate": [], "delayed": []}
+    for row in slip_rows:
+        run_id = str(row["run_id"])
+        if annotations[run_id].dataset_id == "unified_hazard_reflex_20260829":
+            name = "immediate"
+        else:
+            classification = str(
+                manifest_rows[run_id]["delayed_ice_summary"]["classification"]
+            )
+            name = "immediate" if classification == "IMMEDIATE_SLIP" else "delayed"
+        slip_timing[name].append(row)
+
+    ordinary_support = [
+        row
+        for run_id, row in primary_rows.items()
+        if row["support_sample"] is not None
+        and manifest_rows[run_id]["scenario_family"]
+        != MODEL_V2_DELAYED_SUPPORT_FAMILY
+    ]
+    ordinary_side = {
+        side: recall(
+            [
+                row
+                for row in ordinary_support
+                if manifest_rows[str(row["run_id"])]["support_event_summary"][
+                    "side"
+                ]
+                == side
+            ]
+        )
+        for side in ("LEFT_ONLY", "RIGHT_ONLY")
+    }
+    premature_categories: Counter[str] = Counter()
+    for run_id, row in primary_rows.items():
+        if not bool(row["premature"]):
+            continue
+        onset = row["system_first_onset"]
+        if onset is None:
+            continue
+        sample = int(onset)
+        annotation = annotations[run_id]
+        if annotation.future_slip_precursor[sample]:
+            name = "inside_future_slip_precursor"
+        elif annotation.benign_release_precursor[sample]:
+            name = "inside_benign_release"
+        elif annotation.censored_precursor[sample]:
+            name = "inside_censored_precursor"
+        else:
+            name = "before_or_outside_precursor"
+        premature_categories[name] += 1
+
+    return {
+        "ordinary_support": {
+            "overall": recall(ordinary_support),
+            "by_side": ordinary_side,
+        },
+        "slip": {
+            "overall": recall(slip_rows),
+            "by_speed": validation_result["speed"],
+            "by_side": validation_result["side"]["slip"],
+            "by_timing": {
+                name: recall(rows) for name, rows in slip_timing.items()
+            },
+        },
+        "specificity": {
+            "confirmed_no_hazard": {
+                "rate": validation_result["primary"][
+                    "primary_no_hazard_specificity"
+                ],
+                "runs": validation_result["primary"]["primary_no_hazard_runs"],
+            },
+            "hard_normal": validation_result["families"][
+                "HARD_GROUND_NORMAL_SPEED_MATRIX"
+            ],
+            "ice_benign": validation_result["families"]["ICE_BENIGN_CONTROL"],
+            "staged_sand": validation_result["families"][
+                "STAGED_SAND_BENIGN_CONTROL"
+            ],
+            "speed_sand": validation_result["families"][
+                "SPEED_STRATIFIED_SAND_BENIGN"
+            ],
+        },
+        "delayed_support": delayed,
+        "premature_ice_classification": {
+            name: int(premature_categories[name])
+            for name in (
+                "inside_future_slip_precursor",
+                "before_or_outside_precursor",
+                "inside_benign_release",
+                "inside_censored_precursor",
+            )
+        },
+        "ice_precursor_secondary": validation_result["ice_precursor_secondary"],
+        "primary_scores_rewritten": False,
+    }
+
+
+def _three_model_comparison(
+    v1: Mapping[str, object],
+    baseline: Mapping[str, object],
+    rebalanced: Mapping[str, object],
+    delayed: Mapping[str, Mapping[str, object]],
+) -> dict[str, object]:
+    def model_metrics(
+        result: Mapping[str, object], delayed_result: Mapping[str, object]
+    ) -> dict[str, object]:
+        primary = result["primary"]
+        return {
+            "overall_hazard": primary["overall_hazard_recall"],
+            "slip": primary["slip_hazard_recall"],
+            "support": primary["support_hazard_recall"],
+            "confirmed_specificity": primary["primary_no_hazard_specificity"],
+            "premature": primary["system_premature_run_rate"],
+            "right_only_support": result["side"]["support"]["RIGHT_ONLY"][
+                "recall"
+            ],
+            "delayed_support": delayed_result["overall"]["recall"],
+            "marble_delayed_support": delayed_result["by_source"]["marble"][
+                "recall"
+            ],
+            "staged_sand_specificity": result["families"][
+                "STAGED_SAND_BENIGN_CONTROL"
+            ]["specificity"],
+            "speed_sand_specificity": result["families"][
+                "SPEED_STRATIFIED_SAND_BENIGN"
+            ]["specificity"],
+        }
+
+    return {
+        "v1": model_metrics(v1, delayed["v1"]),
+        "baseline_v2": model_metrics(baseline, delayed["baseline_v2"]),
+        "rebalanced_v2": model_metrics(rebalanced, delayed["rebalanced_v2"]),
     }
 
 
@@ -1407,6 +2223,530 @@ def run_model_v2_data_only_training(
             "v2_validation_result_sha256": sha256_file(v2_result_path),
             "precursor_secondary_definition": "frozen_30_to_50mm_episode_view",
             "internal_validation_verdict": verdict,
+            "generalization_candidate": True,
+        }
+        model_freeze_path = artifact_path / "model_v2_freeze.json"
+        _write_json(model_freeze_path, model_freeze)
+        result["model_v2_freeze_sha256"] = sha256_file(model_freeze_path)
+        _write_json(result_path, result)
+    return result
+
+
+def run_model_v2_extraction_rebalanced_training(
+    root: Path,
+    config_path: Path,
+    *,
+    dry_run: bool = False,
+    progress: Callable[[str], None] = print,
+) -> dict[str, object]:
+    """Execute the frozen extraction-only Model V2 intervention."""
+    document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    if document["experiment"]["id"] != "MODEL_V2_EXTRACTION_REBALANCED_TRAINING":
+        raise ValueError("unsupported extraction-rebalanced training config")
+    config_sha = sha256_file(config_path)
+    design_path = root / str(document["design"]["path"])
+    if sha256_file(design_path) != str(document["design"]["config_sha256"]):
+        raise RuntimeError("frozen extraction-rebalance design config changed")
+    design = yaml.safe_load(design_path.read_text(encoding="utf-8"))
+    if (
+        design["dry_run_freeze"]["extraction_rebalance_design_sha256"]
+        != document["design"]["extraction_rebalance_design_sha256"]
+        or canonical_sha256(model_v2_rebalance_policy())
+        != document["design"]["extraction_policy_sha256"]
+    ):
+        raise RuntimeError("frozen extraction-rebalance identity changed")
+    baseline = document["baseline_v2"]
+    _verify_protected_records(
+        root,
+        (
+            baseline["candidate_freeze"],
+            baseline["normalizer"],
+            *baseline["checkpoints"],
+        ),
+    )
+    data = prepare_model_v2_training_data(root, document)
+    recipe = _training_recipe(document)
+    extraction = audit_model_v2_rebalanced_extraction(
+        data.runs,
+        data.precursor_samples,
+        data.annotations,
+        per_category=int(recipe["initial_negative_per_gait_category"]),
+        target_contact_cap=int(recipe["target_contact_cap_per_run"]),
+        benign_precursor_cap=int(recipe["benign_precursor_cap_per_run"]),
+    )
+    expected_positive = document["window_extraction"]["expected_fit_positive"]
+    expected_fit = {
+        "slip": int(expected_positive["slip"]),
+        "ordinary_support": int(expected_positive["ordinary_support"]),
+        "delayed_support": int(expected_positive["delayed_support"]),
+        "support": int(expected_positive["ordinary_support"])
+        + int(expected_positive["delayed_support"]),
+        "total": int(expected_positive["total"]),
+    }
+    if (
+        not extraction["passed"]
+        or extraction["extraction_policy_sha256"]
+        != document["design"]["extraction_policy_sha256"]
+        or extraction["positive_window_ids_sha256"]
+        != document["design"]["proposed_positive_window_ids_sha256"]
+        or extraction["negative_window_ids_sha256"]
+        != document["design"]["negative_window_ids_sha256"]
+        or extraction["masked_window_sha256"]
+        != document["design"]["masked_window_sha256"]
+        or extraction["fit_positive_counts"] != expected_fit
+        or int(extraction["fit_negative_count"])
+        != int(document["window_extraction"]["expected_fit_negative"])
+        or int(extraction["all_positive_count"])
+        != int(document["window_extraction"]["expected_all_positive"])
+        or int(extraction["all_negative_count"])
+        != int(document["window_extraction"]["expected_all_negative"])
+    ):
+        raise RuntimeError("pretraining extraction differs from frozen design")
+    normalizer_path = root / str(document["normalizer"]["path"])
+    if sha256_file(normalizer_path) != str(document["normalizer"]["sha256"]):
+        raise RuntimeError("frozen baseline V2 normalizer changed")
+    normalizer = load_hazard_normalizer(normalizer_path)
+    artifact_path = root / str(document["artifacts"]["path"])
+    pretraining_path = artifact_path / "pretraining_audit.json"
+    pretraining = {
+        "execution_config_sha256": config_sha,
+        "design_config_sha256": document["design"]["config_sha256"],
+        "extraction_rebalance_design_sha256": document["design"][
+            "extraction_rebalance_design_sha256"
+        ],
+        "input_audit": data.input_audit,
+        "effective_train_composition": data.composition,
+        "extraction_audit": extraction,
+        "normalizer_sha256": sha256_file(normalizer_path),
+        "optimizer_steps": 0,
+        "checkpoint_writes": 0,
+        "normalizer_fits": 0,
+        "hnm_rounds": 0,
+        "v2_validation_waveform_opened": False,
+        "generalization_validation_v2_inference": False,
+        "generalization_holdout_guard_count": 0,
+    }
+    if dry_run:
+        _write_json(pretraining_path, pretraining)
+        return {
+            "status": "MODEL_V2_EXTRACTION_REBALANCED_PRETRAINING_READY",
+            "execution_config_sha256": config_sha,
+            "pretraining_audit_sha256": sha256_file(pretraining_path),
+            "extraction": extraction,
+            "normalizer_fits": 0,
+        }
+    if not pretraining_path.is_file():
+        raise RuntimeError("run frozen extraction dry-run before optimizer step 1")
+    if json.loads(pretraining_path.read_text(encoding="utf-8")) != pretraining:
+        raise RuntimeError("pretraining audit changed after freeze")
+    forbidden_existing = (
+        artifact_path / "candidate_freeze.json",
+        artifact_path / "candidate_evaluation_freeze.json",
+        artifact_path / "v2_validation_evaluation.json",
+        artifact_path / "training_result.json",
+    )
+    if any(path.exists() for path in forbidden_existing) or any(
+        (artifact_path / "checkpoints").glob("*.pt")
+    ):
+        raise RuntimeError("extraction-rebalanced training artifacts already exist")
+
+    fit_positive, monitor_positive = model_v2_rebalanced_positive_plan(
+        data.runs, data.precursor_samples, data.annotations
+    )
+    candidate = train_hazard_candidate(
+        root,
+        data.runs,
+        data.precursor_samples,
+        artifact_path,
+        recipe,
+        data.annotations,
+        checkpoint_prefix=str(document["artifacts"]["checkpoint_prefix"]),
+        progress=progress,
+        normalizer_override=normalizer,
+        normalizer_source_path=normalizer_path,
+        fit_positive_endpoints=fit_positive,
+        monitor_positive_endpoints=monitor_positive,
+        extraction_audit_override=extraction,
+    )
+    if (
+        candidate.record["normalizer_fits"] != 0
+        or candidate.record["normalizer_sha256"]
+        != document["normalizer"]["sha256"]
+    ):
+        raise RuntimeError("training did not reuse the frozen V2 normalizer")
+    training_record = {
+        "execution_config_sha256": config_sha,
+        "effective_train_ids_sha256": document["effective_train"][
+            "effective_run_ids_sha256"
+        ],
+        "extraction_rebalance_design_sha256": document["design"][
+            "extraction_rebalance_design_sha256"
+        ],
+        "candidate": candidate.record,
+        "normalizer_fits": 0,
+        "threshold_searches": 0,
+        "persistence_searches": 0,
+        "architecture_searches": 0,
+        "seed_searches": 0,
+        "new_simulation_runs": 0,
+    }
+    training_record_path = artifact_path / "training_record.json"
+    _write_json(training_record_path, training_record)
+
+    exposure_rounds = [
+        {
+            "round": row["round"],
+            "available_fit_endpoints": row["positive_exposure_available"],
+            "actual_batch_exposure_by_seed": row[
+                "positive_batch_exposure_by_seed"
+            ],
+            "epochs_completed": row["epochs_completed"],
+        }
+        for row in candidate.record["rounds"]
+    ]
+    aggregate_exposure: Counter[str] = Counter()
+    for row in exposure_rounds:
+        for seed_counts in row["actual_batch_exposure_by_seed"].values():
+            aggregate_exposure.update(
+                {name: int(value) for name, value in seed_counts.items()}
+            )
+    exposure_provenance = {
+        "definition": "each_fit_endpoint_is_seen_once_per_completed_epoch",
+        "sampler": "deterministic_shuffled_dataloader_drop_last_false",
+        "adaptive_sampling": False,
+        "rounds": exposure_rounds,
+        "aggregate_batch_exposure": dict(sorted(aggregate_exposure.items())),
+    }
+    exposure_path = artifact_path / "exposure_provenance.json"
+    _write_json(exposure_path, exposure_provenance)
+
+    hnm_provenance = {
+        "rounds": [
+            {
+                "hnm_round": int(row["round"]) + 1,
+                **row["hard_negative_mining"],
+            }
+            for row in candidate.record["rounds"]
+            if "hard_negative_mining" in row
+        ],
+        "source": "effective_train_only",
+        "policy_unchanged": True,
+        "selected_window_identities_may_differ_with_model_weights": True,
+        "forbidden_splits": [
+            "V2_VALIDATION",
+            "Generalization_VALIDATION",
+            "Generalization_HOLDOUT",
+            "Unified_HOLDOUT",
+        ],
+    }
+    hnm_path = artifact_path / "hnm_provenance.json"
+    _write_json(hnm_path, hnm_provenance)
+
+    architecture_sha = canonical_sha256(document["architecture"])
+    if architecture_sha != str(document["baseline_v2"]["architecture_sha256"]):
+        raise RuntimeError("Model V2 architecture identity changed")
+    candidate_freeze = {
+        "candidate_id": document["artifacts"]["candidate_id"],
+        "source_commit": document["experiment"]["source_commit"],
+        "execution_config_sha256": config_sha,
+        "design_config_sha256": document["design"]["config_sha256"],
+        "extraction_rebalance_design_sha256": document["design"][
+            "extraction_rebalance_design_sha256"
+        ],
+        "extraction_policy_sha256": extraction["extraction_policy_sha256"],
+        "positive_window_ids_sha256": extraction["positive_window_ids_sha256"],
+        "negative_window_ids_sha256": extraction["negative_window_ids_sha256"],
+        "masked_window_sha256": extraction["masked_window_sha256"],
+        "v2_dataset_freeze_sha256": document["v2_dataset"][
+            "dataset_freeze_sha256"
+        ],
+        "effective_train_ids_sha256": document["effective_train"][
+            "effective_run_ids_sha256"
+        ],
+        "normalizer_path": str(normalizer_path.relative_to(root)),
+        "normalizer_sha256": candidate.record["normalizer_sha256"],
+        "normalizer_fits": 0,
+        "checkpoint_sha256": candidate.record["checkpoint_sha256"],
+        "ensemble_membership": list(document["training"]["seeds"]),
+        "architecture": document["architecture"],
+        "architecture_sha256": architecture_sha,
+        "feature_schema_sha256": document["features"]["schema_sha256"],
+        "threshold": document["runtime_decision"]["threshold"],
+        "persistence_ms": document["runtime_decision"]["persistence_ms"],
+        "hnm_provenance_sha256": sha256_file(hnm_path),
+        "exposure_provenance_sha256": sha256_file(exposure_path),
+        "training_record_sha256": sha256_file(training_record_path),
+        "candidate_frozen_before_validation": True,
+        "v2_validation_evaluated": False,
+        "generalization_validation_v2_inference": False,
+        "generalization_holdout_guard_count": 0,
+    }
+    candidate_freeze_path = artifact_path / "candidate_freeze.json"
+    _write_json(candidate_freeze_path, candidate_freeze)
+    candidate_freeze_sha = sha256_file(candidate_freeze_path)
+
+    v2_path = root / str(document["v2_dataset"]["path"])
+    validation_runs, validation_annotations = load_model_v2_runs(
+        v2_path,
+        data.v2_manifest,
+        "V2_VALIDATION",
+        candidate_freeze_path=candidate_freeze_path,
+    )
+    validation_rows = {
+        str(row["run_id"]): row
+        for row in data.v2_manifest["runs"]
+        if row["split"] == "V2_VALIDATION" and bool(row["valid"])
+    }
+    validation_precursor = {
+        run_id: (
+            None
+            if row["i1_summary"]["first_sample"] is None
+            else int(row["i1_summary"]["first_sample"])
+        )
+        for run_id, row in validation_rows.items()
+    }
+    gates = document["validation"]["gates"]
+    threshold = float(document["runtime_decision"]["threshold"])
+    persistence_ms = int(document["runtime_decision"]["persistence_ms"])
+
+    rebalanced_replays = replay_hazard_runs(
+        validation_runs, candidate.normalizer, candidate.checkpoint_paths
+    )
+    rebalanced_result = evaluate_model_v2_validation(
+        validation_runs,
+        rebalanced_replays,
+        validation_precursor,
+        validation_annotations,
+        validation_rows,
+        gates,
+        threshold=threshold,
+        persistence_ms=persistence_ms,
+    )
+    rebalanced_path = artifact_path / "v2_validation_evaluation.json"
+    _write_json(rebalanced_path, rebalanced_result)
+
+    baseline_paths = tuple(
+        root / str(row["path"]) for row in document["baseline_v2"]["checkpoints"]
+    )
+    baseline_replays = replay_hazard_runs(
+        validation_runs, normalizer, baseline_paths
+    )
+    baseline_result = evaluate_model_v2_validation(
+        validation_runs,
+        baseline_replays,
+        validation_precursor,
+        validation_annotations,
+        validation_rows,
+        gates,
+        threshold=threshold,
+        persistence_ms=persistence_ms,
+    )
+    frozen_baseline_result = json.loads(
+        (
+            root
+            / "artifacts/runs/20260901_model_v2_data_only_training/v2_validation_evaluation.json"
+        ).read_text(encoding="utf-8")
+    )
+    if baseline_result != frozen_baseline_result:
+        raise RuntimeError("baseline V2 validation replay changed")
+    baseline_path = artifact_path / "baseline_v2_on_v2_validation.json"
+    _write_json(baseline_path, baseline_result)
+
+    v1_normalizer = load_hazard_normalizer(
+        root
+        / "artifacts/runs/20260829_unified_hazard_reflex_system/normalization/gru_history20.json"
+    )
+    v1_paths = tuple(
+        root / str(row["path"]) for row in document["protected_v1"]["checkpoints"]
+    )
+    v1_replays = replay_hazard_runs(validation_runs, v1_normalizer, v1_paths)
+    v1_result = evaluate_model_v2_validation(
+        validation_runs,
+        v1_replays,
+        validation_precursor,
+        validation_annotations,
+        validation_rows,
+        gates,
+        threshold=threshold,
+        persistence_ms=persistence_ms,
+    )
+    frozen_v1_result = json.loads(
+        (
+            root
+            / "artifacts/runs/20260901_model_v2_data_only_training/v1_on_v2_validation.json"
+        ).read_text(encoding="utf-8")
+    )
+    if v1_result != frozen_v1_result:
+        raise RuntimeError("Model V1 validation replay changed")
+    v1_path = artifact_path / "v1_on_v2_validation.json"
+    _write_json(v1_path, v1_result)
+
+    delayed = {
+        "v1": _delayed_support_validation_diagnostics(
+            validation_runs,
+            v1_replays,
+            validation_precursor,
+            validation_rows,
+            v1_result,
+            threshold=threshold,
+            persistence_ms=persistence_ms,
+        ),
+        "baseline_v2": _delayed_support_validation_diagnostics(
+            validation_runs,
+            baseline_replays,
+            validation_precursor,
+            validation_rows,
+            baseline_result,
+            threshold=threshold,
+            persistence_ms=persistence_ms,
+        ),
+        "rebalanced_v2": _delayed_support_validation_diagnostics(
+            validation_runs,
+            rebalanced_replays,
+            validation_precursor,
+            validation_rows,
+            rebalanced_result,
+            threshold=threshold,
+            persistence_ms=persistence_ms,
+        ),
+    }
+    delayed_path = artifact_path / "delayed_support_comparison.json"
+    _write_json(delayed_path, delayed)
+    preservation = _validation_preservation_summary(
+        validation_runs,
+        rebalanced_replays,
+        validation_annotations,
+        validation_precursor,
+        validation_rows,
+        rebalanced_result,
+        delayed["rebalanced_v2"],
+    )
+    preservation_path = artifact_path / "preservation_diagnostics.json"
+    _write_json(preservation_path, preservation)
+    comparison = _three_model_comparison(
+        v1_result, baseline_result, rebalanced_result, delayed
+    )
+    comparison_path = artifact_path / "three_model_comparison.json"
+    _write_json(comparison_path, comparison)
+
+    baseline_delayed = delayed["baseline_v2"]
+    rebalanced_delayed = delayed["rebalanced_v2"]
+    target_improved = (
+        int(rebalanced_delayed["overall"]["correct"])
+        > int(baseline_delayed["overall"]["correct"])
+        and int(rebalanced_delayed["by_source"]["marble"]["correct"])
+        > int(baseline_delayed["by_source"]["marble"]["correct"])
+    )
+    solved_behavior_retained = (
+        float(
+            rebalanced_result["side"]["support"]["RIGHT_ONLY"]["recall"]
+        )
+        >= float(baseline_result["side"]["support"]["RIGHT_ONLY"]["recall"])
+        and float(rebalanced_result["primary"]["primary_no_hazard_specificity"])
+        >= float(baseline_result["primary"]["primary_no_hazard_specificity"])
+        and float(
+            rebalanced_result["families"]["STAGED_SAND_BENIGN_CONTROL"][
+                "specificity"
+            ]
+        )
+        >= float(
+            baseline_result["families"]["STAGED_SAND_BENIGN_CONTROL"][
+                "specificity"
+            ]
+        )
+        and float(
+            rebalanced_result["families"]["SPEED_STRATIFIED_SAND_BENIGN"][
+                "specificity"
+            ]
+        )
+        >= float(
+            baseline_result["families"]["SPEED_STRATIFIED_SAND_BENIGN"][
+                "specificity"
+            ]
+        )
+    )
+    intervention_verdict = (
+        "V2_EXTRACTION_REBALANCE_EFFECTIVE"
+        if target_improved and solved_behavior_retained
+        else "V2_EXTRACTION_REBALANCE_NOT_EFFECTIVE"
+    )
+    internal_verdict = (
+        "MODEL_V2_INTERNAL_VALIDATION_SUPPORTED"
+        if rebalanced_result["all_gates_passed"]
+        else "MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED"
+    )
+    if target_improved and not solved_behavior_retained:
+        next_milestone = "MODEL_V2_REBALANCE_REGRESSION_AUDIT"
+    elif intervention_verdict == "V2_EXTRACTION_REBALANCE_NOT_EFFECTIVE":
+        next_milestone = "MODEL_V2_DELAYED_SUPPORT_FAILURE_AUDIT"
+    elif rebalanced_result["all_gates_passed"]:
+        next_milestone = "MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION"
+    else:
+        next_milestone = "MODEL_V2_CANDIDATE_READINESS_REVIEW"
+
+    evaluation_freeze = {
+        "candidate_id": candidate_freeze["candidate_id"],
+        "candidate_freeze_sha256": candidate_freeze_sha,
+        "execution_config_sha256": config_sha,
+        "normalizer_sha256": candidate_freeze["normalizer_sha256"],
+        "checkpoint_sha256": candidate_freeze["checkpoint_sha256"],
+        "architecture_sha256": architecture_sha,
+        "feature_schema_sha256": document["features"]["schema_sha256"],
+        "threshold": threshold,
+        "persistence_ms": persistence_ms,
+        "hnm_provenance_sha256": sha256_file(hnm_path),
+        "v2_validation_result_sha256": sha256_file(rebalanced_path),
+        "delayed_support_comparison_sha256": sha256_file(delayed_path),
+        "preservation_diagnostics_sha256": sha256_file(preservation_path),
+        "three_model_comparison_sha256": sha256_file(comparison_path),
+        "intervention_verdict": intervention_verdict,
+        "internal_validation_verdict": internal_verdict,
+        "generalization_validation_v2_inference": False,
+        "generalization_holdout_guard_count": 0,
+    }
+    evaluation_freeze_path = artifact_path / "candidate_evaluation_freeze.json"
+    _write_json(evaluation_freeze_path, evaluation_freeze)
+    evaluation_freeze_sha = sha256_file(evaluation_freeze_path)
+    result = {
+        "training_verdict": "MODEL_V2_EXTRACTION_REBALANCED_TRAINING_COMPLETE",
+        "intervention_verdict": intervention_verdict,
+        "internal_validation_verdict": internal_verdict,
+        "recommended_next_milestone": next_milestone,
+        "candidate_freeze_sha256": candidate_freeze_sha,
+        "candidate_evaluation_freeze_sha256": evaluation_freeze_sha,
+        "execution_config_sha256": config_sha,
+        "training_record_sha256": sha256_file(training_record_path),
+        "exposure_provenance_sha256": sha256_file(exposure_path),
+        "hnm_provenance_sha256": sha256_file(hnm_path),
+        "v2_validation_result_sha256": sha256_file(rebalanced_path),
+        "baseline_v2_on_v2_validation_sha256": sha256_file(baseline_path),
+        "v1_on_v2_validation_sha256": sha256_file(v1_path),
+        "target_improved": target_improved,
+        "solved_behavior_retained": solved_behavior_retained,
+        "optimizer_steps": candidate.record["optimizer_steps"],
+        "checkpoint_writes": candidate.record["checkpoint_writes"],
+        "normalizer_fits": 0,
+        "hnm_rounds": HNM_ROUNDS,
+        "threshold_searches": 0,
+        "persistence_searches": 0,
+        "architecture_searches": 0,
+        "seed_searches": 0,
+        "new_simulation_runs": 0,
+        "v2_validation_optimizer_leakage": 0,
+        "generalization_validation_training_leakage": 0,
+        "holdout_training_leakage": 0,
+        "generalization_validation_v2_inference": False,
+        "unified_holdout_waveform_reopened": False,
+        "generalization_holdout_waveform_opened": False,
+        "generalization_holdout_inference": False,
+        "generalization_holdout_guard_count": 0,
+    }
+    result_path = artifact_path / "training_result.json"
+    _write_json(result_path, result)
+    if rebalanced_result["all_gates_passed"]:
+        model_freeze = {
+            **evaluation_freeze,
+            "candidate_evaluation_freeze_sha256": evaluation_freeze_sha,
             "generalization_candidate": True,
         }
         model_freeze_path = artifact_path / "model_v2_freeze.json"

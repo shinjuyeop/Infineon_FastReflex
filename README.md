@@ -4,7 +4,7 @@ Unitree G1 MuJoCo에서 검증된 physical Hazard Reflex와 Terrain advisory를 
 
 ## Current Status
 
-`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_GENERATION_READY; MODEL_V2_DATA_ONLY_TRAINING_COMPLETE; MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED`
+`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_GENERATION_READY; MODEL_V2_DATA_ONLY_TRAINING_COMPLETE; MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED; MODEL_V2_INTERNAL_FAILURE_AUDIT_ACTIONABLE`
 
 ```text
 Hazard
@@ -44,7 +44,9 @@ Ice near-hazard target-semantics verdict는 `ICE_NEAR_HAZARD_TARGET_SEMANTICS_RE
 
 Frozen design을 그대로 실행해 `model_v2_hazard_reflex_20260901` augmentation corpus를 생성·freeze했다. 412개 primary run은 한 번씩 실행되었고 실제 결과는 valid 386, objectively invalid 26이다. `V2_TRAIN`의 actual established-Hazard/no-established-Hazard는 182/108이며 후자에는 I1-only 또는 censored-precursor 18개가 포함되어 confirmed no-hazard는 90이다. Slip/Support는 103/81, Hazard speed 0.20/0.25/0.30 m/s = 53/76/53이며 right-only Support 32와 staged-Sand usable hard negative 26을 포함한다. Dataset verdict는 `MODEL_V2_DATASET_GENERATION_READY`다. 상세 결과는 [`reports/20260901_model_v2_dataset_generation.md`](reports/20260901_model_v2_dataset_generation.md)에 있다.
 
-첫 data-only V2는 Unified TRAIN + valid V2_TRAIN 442개만 사용해 새 normalizer와 같은 11,010-parameter GRU20 3-seed ensemble을 학습했다. V2_VALIDATION은 candidate freeze 뒤 한 번 평가했으며 Hazard 55/64, Slip 29/35, Support 27/30, confirmed no-hazard 26/26, premature 6/64였다. Staged/Speed Sand benign과 right-only Support는 각각 8/8, 12/12, 12/12로 개선됐지만 overall/Slip gate를 실패했으므로 verdict는 `MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED`다. Candidate는 external generalization candidate로 승격하지 않았고, Generalization VALIDATION V2 inference는 0이며 Generalization HOLDOUT은 open count 0으로 sealed다. 다음 단계는 자동 재학습이 아닌 `MODEL_V2_INTERNAL_FAILURE_AUDIT`다. 상세 결과는 [`reports/20260901_model_v2_data_only_training.md`](reports/20260901_model_v2_data_only_training.md)에 있다.
+첫 data-only V2는 Unified TRAIN + valid V2_TRAIN 442개만 사용해 새 normalizer와 같은 11,010-parameter GRU20 3-seed ensemble을 학습했다. V2_VALIDATION은 candidate freeze 뒤 한 번 평가했으며 Hazard 55/64, Slip 29/35, Support 27/30, confirmed no-hazard 26/26, premature 6/64였다. Staged/Speed Sand benign과 right-only Support는 각각 8/8, 12/12, 12/12로 개선됐지만 overall/Slip gate를 실패했으므로 verdict는 `MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED`다. Candidate는 external generalization candidate로 승격하지 않았고 상세 training 결과는 [`reports/20260901_model_v2_data_only_training.md`](reports/20260901_model_v2_data_only_training.md)에 있다.
+
+Read-only internal failure audit verdict는 `MODEL_V2_INTERNAL_FAILURE_AUDIT_ACTIONABLE`이다. 여섯 Slip 실패는 모두 low-response miss가 아니라 frozen primary window보다 이른 high-confidence alert였고, 다섯 건은 future-Slip precursor 내부, 한 건은 30 mm precursor보다 5 ms 앞이었다. 실제 남은 실패는 `.25 m/s` delayed Marble Support 0/3으로, I1에서 `>=0.99`가 3 ms만 유지됐다. TRAIN timing과 event-local waveform은 exact match였지만 delayed Marble fit positive는 48개이고 source별 unique event-local waveform은 하나뿐이었다. 따라서 threshold/persistence, sensor, longer history, LSTM 변경보다 `MODEL_V2_EXTRACTION_REBALANCE_DESIGN`이 다음 최소 milestone이다. 재학습과 external Generalization V2 평가는 시작하지 않았고 Generalization HOLDOUT open count는 0이다. 상세 결과는 [`reports/20260901_model_v2_internal_failure_audit.md`](reports/20260901_model_v2_internal_failure_audit.md)에 있다.
 
 ## Canonical source flow
 
@@ -158,6 +160,7 @@ Viewer는 검증된 memory-only snapshot을 재생하며 종료 시 마지막 fr
 - [`reports/20260901_model_v2_dataset_design.md`](reports/20260901_model_v2_dataset_design.md)
 - [`reports/20260901_model_v2_dataset_generation.md`](reports/20260901_model_v2_dataset_generation.md)
 - [`reports/20260901_model_v2_data_only_training.md`](reports/20260901_model_v2_data_only_training.md)
+- [`reports/20260901_model_v2_internal_failure_audit.md`](reports/20260901_model_v2_internal_failure_audit.md)
 
 Current architecture는 [`docs/architecture.md`](docs/architecture.md), dataset contract는 [`docs/dataset.md`](docs/dataset.md), 검증 규칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)에 있다.
 

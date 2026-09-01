@@ -1,0 +1,100 @@
+schema_version: 1
+
+experiment:
+  id: MODEL_V2_INTERNAL_FAILURE_AUDIT
+  milestone: MODEL_V2_INTERNAL_FAILURE_AUDIT
+  date: 2026-09-01
+  timezone: Asia/Seoul
+  source_commit: ad338e86a626ce0a3f8ba3ec3b312db6469e98e1
+  purpose: localize_the_frozen_Model_V2_internal_failures_without_retraining_tuning_or_new_evidence_consumption
+
+protected_v1:
+  model_v1_restorable: true
+  hazard_freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  normalizer_sha256: 610a91c24a594a3cd1701b07549f4f3c4b7f4cb04eb354f9d41378214a6800a9
+  checkpoints_sha256:
+    - e6bada49beb2b68c2c33bb9a59a1b3a8dd0f556f174cafce12f43efd2d22d588
+    - b04877dc08290a34077ae2deb753085d840640ee8da2bd920d010eb2ce8c2506
+    - b6c782bdfb3789ae7af785ec2b02260a8ae54179d7c531f87e27e0e35301a753
+
+protected_v2:
+  candidate_id: model_v2_data_only_gru20_20260901
+  candidate_freeze_sha256: edb16b7d96fb38e680e36dcca5ecd7b1c1682ba410b94d21f40c2a38d4ed8725
+  normalizer_sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  checkpoints_sha256:
+    - dd6c8581161963265d4323b8316f01367e359357673f0596faaa2a27051771c8
+    - 8e6709da112845840aae0094dd997fad4ee7f9d8256a2ee0fc5e9a0df3b724a0
+    - 811f486c1bd47f91a854fdbd004b8408a5f00bfaa83a22ce91608de1d3b54c42
+  architecture_sha256: ae4753699399aa7e4a93639935e085156ef28ed100a77058d7308eb1549aa897
+  extraction_policy_sha256: 46aa8e72782e0749605cc0100376adbe3e97b97159b332079c95fbd0e1acda74
+  threshold: 0.99
+  persistence_ms: 5
+
+protected_v2_dataset:
+  dataset_id: model_v2_hazard_reflex_20260901
+  dataset_freeze_sha256: fd81b647051b63e7b76ab72c6dedd616cf06d752fcbc1db31ba02f8aebe68744
+  manifest_sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25
+  physical_signature_sha256: 2eded4ad80c5060f57ed44d37a6fcad709fb7cca36b4b116b5b2687c2c29f297
+  npz_aggregate_sha256: 5a8dfd54d1c08413dc6fb18d957269a5fbfea8cf526e4f29c78510886186e11c
+  train_split_sha256: 8749884bec50325d1d9bb82ec5f76ce9fea0fd07594cf1f4bd921ef4a82c277e
+  validation_split_sha256: 826fa70578e153f8b83c888aa16ea7ca87996ac209d55df2dcb286a174fead0c
+
+authorized_evidence:
+  - Unified_TRAIN
+  - V2_TRAIN
+  - V2_VALIDATION
+  - frozen_training_extraction_and_hnm_artifacts
+  - previously_authorized_development_calibration_and_semantics_summaries
+
+sealed_evidence:
+  Generalization_VALIDATION_v2_inference: false
+  Generalization_HOLDOUT_waveform_opened: false
+  Generalization_HOLDOUT_inference: false
+  Generalization_HOLDOUT_guard_count: 0
+  Unified_HOLDOUT_waveform_reopened: false
+  Unified_HOLDOUT_new_inference: false
+
+audit_targets:
+  - low_speed_slip
+  - right_only_slip
+  - delayed_support
+  - premature_ice
+
+secondary_targets:
+  - isolated_0_30_slip_miss
+  - bilateral_slip_misses
+
+analyses:
+  - physical_timing
+  - probability
+  - seed
+  - feature
+  - run_coverage
+  - fit_window_coverage
+  - hnm_distribution
+  - sampling_exposure
+
+diagnostic_thresholds:
+  runtime: 0.99
+  descriptive_only: [0.95, 0.90]
+  search: false
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  seed_searches: 0
+  new_simulation_runs: 0
+
+no_training: true
+no_generation: true
+no_threshold_search: true
+no_persistence_search: true
+no_architecture_search: true
+no_seed_search: true

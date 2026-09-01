@@ -1,0 +1,312 @@
+schema_version: 1
+
+experiment:
+  id: MODEL_V2_EXTRACTION_REBALANCE_DESIGN
+  milestone: MODEL_V2_EXTRACTION_REBALANCE_DESIGN
+  date: 2026-09-01
+  timezone: Asia/Seoul
+  source_commit: ff058ae30e7097097a4d76f5b50fdc182c12be09
+  purpose: freeze_the_smallest_TRAIN_only_positive_extraction_change_before_any_retraining
+
+baseline_candidate:
+  candidate_id: model_v2_data_only_gru20_20260901
+  path: artifacts/runs/20260901_model_v2_data_only_training
+  candidate_freeze_sha256: edb16b7d96fb38e680e36dcca5ecd7b1c1682ba410b94d21f40c2a38d4ed8725
+  normalizer:
+    path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json
+    sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+  checkpoints:
+    - seed: 20260828
+      path: artifacts/runs/20260901_model_v2_data_only_training/checkpoints/model_v2_data_only_gru_history20_round3_seed20260828.pt
+      sha256: dd6c8581161963265d4323b8316f01367e359357673f0596faaa2a27051771c8
+    - seed: 20260829
+      path: artifacts/runs/20260901_model_v2_data_only_training/checkpoints/model_v2_data_only_gru_history20_round3_seed20260829.pt
+      sha256: 8e6709da112845840aae0094dd997fad4ee7f9d8256a2ee0fc5e9a0df3b724a0
+    - seed: 20260830
+      path: artifacts/runs/20260901_model_v2_data_only_training/checkpoints/model_v2_data_only_gru_history20_round3_seed20260830.pt
+      sha256: 811f486c1bd47f91a854fdbd004b8408a5f00bfaa83a22ce91608de1d3b54c42
+  architecture_sha256: ae4753699399aa7e4a93639935e085156ef28ed100a77058d7308eb1549aa897
+  extraction_policy_sha256: 46aa8e72782e0749605cc0100376adbe3e97b97159b332079c95fbd0e1acda74
+  preserved: true
+  overwritten: false
+
+datasets:
+  unchanged: true
+  effective_train:
+    strategy: RETAIN_AND_AUGMENT
+    run_count: 442
+    run_ids_sha256: 0466ea84871d178856ffb10d8b1c0cec730286b35b589c73ff1b5fb1065aa5ab
+    sources:
+      - dataset_id: unified_hazard_reflex_20260829
+        split: train
+        valid_run_count: 152
+        run_ids_sha256: 89cf0600e7e7eb4a2d23ff711e27938e5d398120869a11d87ffb15b4d313d81f
+      - dataset_id: model_v2_hazard_reflex_20260901
+        split: V2_TRAIN
+        valid_run_count: 290
+        run_ids_sha256: 67dbae574b09986d9f73f89df5bccb93416d96dbe5dda0c01c6e9b65e74f4ea4
+  model_v2:
+    path: data/raw/model_v2_hazard_reflex_20260901
+    dataset_freeze_sha256: fd81b647051b63e7b76ab72c6dedd616cf06d752fcbc1db31ba02f8aebe68744
+    manifest_sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25
+    physical_signature_sha256: 2eded4ad80c5060f57ed44d37a6fcad709fb7cca36b4b116b5b2687c2c29f297
+    npz_aggregate_sha256: 5a8dfd54d1c08413dc6fb18d957269a5fbfea8cf526e4f29c78510886186e11c
+    validation_split_sha256: 826fa70578e153f8b83c888aa16ea7ca87996ac209d55df2dcb286a174fead0c
+    validation_valid_run_ids_sha256: cc316aad56a0e8bc50b3930b99396f2946fb7c5d3ad758ee8290e9e6c861e6e4
+
+protected:
+  v1:
+    model_v1_restorable: true
+    hazard_freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+    feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+    normalizer_sha256: 610a91c24a594a3cd1701b07549f4f3c4b7f4cb04eb354f9d41378214a6800a9
+    checkpoint_sha256:
+      - e6bada49beb2b68c2c33bb9a59a1b3a8dd0f556f174cafce12f43efd2d22d588
+      - b04877dc08290a34077ae2deb753085d840640ee8da2bd920d010eb2ce8c2506
+      - b6c782bdfb3789ae7af785ec2b02260a8ae54179d7c531f87e27e0e35301a753
+  v2_baseline:
+    candidate_preserved: true
+    candidate_freeze_sha256: edb16b7d96fb38e680e36dcca5ecd7b1c1682ba410b94d21f40c2a38d4ed8725
+  generalization_holdout:
+    run_count: 36
+    guard_count: 0
+    waveform_opened: false
+    inference: false
+
+rebalance:
+  one_variable_intervention: positive_extraction_and_optimizer_exposure_only
+  exact_positive_precedence:
+    - legacy_slip_positive
+    - delayed_support_i1_neighborhood
+    - delayed_support_interior_neighborhood
+    - delayed_support_established_neighborhood
+    - legacy_ordinary_support_positive
+  ordinary_support:
+    policy: preserve_exact_baseline_fit_and_monitor_endpoint_identities
+    i1_to_established_even_points: 5
+    established_offsets_ms: [-20, 0, 20, 40]
+    legacy_union_cap_per_run: 20
+  delayed_support:
+    eligibility:
+      split: V2_TRAIN
+      valid: true
+      scenario_family: DELAYED_SAND_SUPPORT_ONSET
+      usable_i1_required: true
+      usable_support_required: true
+      endpoint_before_censor_and_fall_required: true
+    sources: [concrete, marble]
+    source_aware_grouping: [support, ordinary_or_delayed, source_terrain]
+    symmetric_source_rule: true
+    source_specific_quota: false
+    validation_run_or_probability_selection: false
+    i1_neighborhood:
+      offsets_ms: [0, 1, 2, 3, 4]
+      contiguous_duration_ms: 5
+      begins_at_or_after_i1: true
+    i1_to_support_interior:
+      anchor: floor_halfway_between_i1_and_support
+      formula: floor((i1_sample + support_sample) / 2)
+      offsets_ms: [-2, -1, 0, 1, 2]
+      contiguous_duration_ms: 5
+    support_local:
+      anchor: established_support_sample
+      offsets_ms: [0, 1, 2, 3, 4]
+      contiguous_duration_ms: 5
+    deduplicate_endpoints: true
+    cap_per_run: 15
+    truncation_order: chronological_after_deduplication
+    projected_current_interval_ms: 56
+    projected_eligible_runs: 18
+    projected_ineligible_runs: 0
+    projected_fit_represented_runs: 18
+    fit_partition_override:
+      scope: delayed_support_positive_endpoints_only
+      assignment: fit
+      rationale: every_eligible_delayed_support_run_must_receive_optimizer_exposure
+    monitor_partition:
+      delayed_support_positive_endpoints: 0
+      unchanged_other_positive_endpoints: 598
+      unchanged_all_negative_endpoints: true
+    no_pre_i1_positive: true
+  slip:
+    policy: preserve_exact_baseline_fit_and_monitor_endpoint_identities
+    canonical_offsets_ms: {start: -30, stop: 40, stride: 5}
+    legacy_union_cap_per_run: 20
+    rare_side_protection: none
+    oversampling: false
+    synthetic_mirroring: false
+  rare_positive_protection:
+    grouping: [support, ordinary_or_delayed, source_terrain]
+    guarantee: every_eligible_delayed_support_run_contributes_15_fit_positive_endpoints
+    per_run_custom_exceptions: false
+    slip_side_grouping_added: false
+  negative:
+    policy: preserve_exact_baseline_fit_and_monitor_endpoint_identities
+    initial_per_gait_category: 12
+    explicit_target_contact_cap_per_run: 12
+    benign_precursor_cap_per_run: 12
+    required_families:
+      - hard_normal
+      - ice_benign
+      - benign_near_threshold_ice
+      - staged_sand_benign
+      - speed_sand_benign
+      - other_confirmed_benign
+  precursor_masks:
+    future_slip_30_to_50_mm: mask_from_ordinary_negative_mining_outside_canonical_slip_positive
+    fully_observed_benign_release: eligible_negative
+    censored_precursor: mask
+    unchanged: true
+  censor_masks:
+    invalid_runs: excluded
+    post_censor: excluded
+    post_fall: excluded
+    unchanged: true
+  causality:
+    history_ms: 20
+    feature_dimension: 80
+    endpoint_tensor: sensor_history_less_than_or_equal_to_endpoint_only
+    privileged_i1_or_support_in_runtime_tensor: false
+    centered_windows: false
+    future_feature_leakage: false
+
+normalizer:
+  reuse_v2_normalizer: true
+  fit_in_this_milestone: false
+  sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+
+hnm:
+  unchanged: true
+  run_in_this_milestone: false
+  rounds: 3
+  source: effective_train_only
+  replay_stride_ms: 1
+  max_per_run: 12
+  minimum_spacing_ms: 30
+  accumulated_duplicate_policy: exclude_exact_endpoint
+  forbidden_masks_unchanged: true
+
+architecture:
+  unchanged: true
+  model_family: gru
+  input: pelvis_imu6
+  input_shape: [20, 80]
+  hidden_size: 32
+  layers: 1
+  bidirectional: false
+  dropout: 0.0
+  output_classes: [NORMAL, HAZARD_REFLEX_REQUIRED]
+  parameters: 11010
+
+runtime:
+  unchanged: true
+  ensemble: mean_probability_all_three_predeclared_seeds
+  threshold: 0.99
+  persistence_ms: 5
+
+future_training:
+  candidate_id: model_v2_extraction_rebalanced_gru20_20260901
+  separate_from_baseline_candidate: true
+  effective_train_run_count: 442
+  reuse_v2_normalizer: true
+  seeds: [20260828, 20260829, 20260830]
+  initialization: deterministic_pytorch_default_after_seed
+  optimizer: Adam
+  learning_rate: 0.001
+  weight_decay: 0.0
+  loss: inverse_frequency_weighted_cross_entropy
+  batch_size: 128
+  max_epochs: 40
+  patience: 6
+  gradient_clipping: none
+  shuffle: deterministic_each_epoch
+  epoch_selection: internal_train_monitor_validation_loss
+  sampler: current_deterministic_shuffled_dataloader
+  batch_provenance_required:
+    - slip_or_support
+    - ordinary_or_delayed_support
+    - concrete_or_marble_delayed_support
+    - nominal_speed
+    - physical_event_side
+  no_search: true
+  start_in_this_milestone: false
+
+future_evaluation:
+  split: V2_VALIDATION
+  one_shot_after_candidate_freeze: true
+  generalization_validation_before_internal_decision: false
+  primary_gates:
+    overall_hazard_recall_min: 0.90
+    slip_hazard_recall_min: 0.95
+    support_hazard_recall_min: 0.85
+    primary_no_hazard_specificity_min: 0.95
+    ice_benign_specificity_min: 0.95
+    system_premature_run_rate_max: 0.10
+    slip_p95_latency_ms_max: 40
+    support_p95_established_latency_ms_max: 50
+    staged_sand_specificity_min: 0.95
+    speed_sand_specificity_min: 0.95
+    right_support_recall_min: 0.85
+  precursor_secondary_metric:
+    separate_from_primary: true
+    target_semantics_unchanged: true
+  historical_delayed_support_baseline:
+    concrete: {correct: 3, total: 3}
+    marble: {correct: 0, total: 3}
+
+dry_run_freeze:
+  artifact: artifacts/runs/20260901_model_v2_extraction_rebalance_design/extraction_design_summary.json
+  effective_train_run_ids_sha256: 0466ea84871d178856ffb10d8b1c0cec730286b35b589c73ff1b5fb1065aa5ab
+  extraction_policy_sha256: 3c7ce82ed905d932ec8f17d69d7e5edb5d79ee7602ba95ffe2a53d2407142cd2
+  current_positive_window_ids_sha256: c6a7bcd2dc8e8cc1ce89460af202488269c8c89363b0473e784ee9266ce0a4a9
+  proposed_positive_window_ids_sha256: 498f5d1f4419e3bfa72fc2f9649326db26f00e7a9523d9b3ecc8032436a3e0bb
+  negative_window_ids_sha256: 392c1fda06953135bfed9a97c7cabb3915d4c50fdf9ff11b2ac8e6550448936c
+  masked_window_sha256: 32bae2d81b05709771545b375dd6cffb95d2dfc17c2808a7adf3a7f70174c35a
+  extraction_rebalance_design_sha256: 58a3949c29c8aa313cedc345dc8fa5eb0222cb85d94d31dac488adff69aed29b
+  deterministic_repeat_match: true
+  projected_fit_positive:
+    current: {slip: 1680, ordinary_support: 640, delayed_support: 104, support: 744, total: 2424}
+    proposed: {slip: 1680, ordinary_support: 640, delayed_support: 270, support: 910, total: 2590}
+    change: {absolute: 166, percent: 6.848185}
+  projected_fit_negative:
+    current: 25585
+    proposed: 25585
+  delayed_support_by_source:
+    concrete: {eligible_runs: 9, fit_represented_runs: 9, fit_positive_windows: 135}
+    marble: {eligible_runs: 9, fit_represented_runs: 9, fit_positive_windows: 135}
+  contradiction_violations:
+    future_slip_precursor_ordinary_negative: 0
+    censored_precursor_negative: 0
+    i1_or_positive_negative: 0
+    post_censor_or_fall: 0
+    pre_i1_delayed_support_positive: 0
+    future_feature_leakage: 0
+    eligible_delayed_support_missing_anchor: 0
+    eligible_delayed_support_short_neighborhood: 0
+    persistence_neighborhood_shorter_than_5ms: 0
+
+sealed:
+  Generalization_VALIDATION_V2_not_run: true
+  Generalization_HOLDOUT_run_count: 36
+  Generalization_HOLDOUT_guard_count: 0
+  Generalization_HOLDOUT_waveform_opened: false
+  Unified_HOLDOUT_unopened: true
+  Unified_HOLDOUT_new_inference: false
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  model_inferences: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  seed_searches: 0
+  new_simulation_runs: 0
+
+verdict: MODEL_V2_EXTRACTION_REBALANCE_DESIGN_READY
+recommended_next_milestone: MODEL_V2_EXTRACTION_REBALANCED_TRAINING
+no_training: true
+no_generation: true
+no_model_inference: true

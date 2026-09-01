@@ -1,0 +1,297 @@
+schema_version: 1
+
+experiment:
+  id: ICE_NEAR_HAZARD_TARGET_SEMANTICS_STUDY
+  milestone: ICE_NEAR_HAZARD_TARGET_SEMANTICS_STUDY
+  date: 2026-09-01
+  timezone: Asia/Seoul
+  source_commit_at_start: 0a076dbaf218b55af1079bec4747e280be161efe
+  origin_main_at_start: 0a076dbaf218b55af1079bec4747e280be161efe
+  branch_at_start: main
+  worktree_clean_at_start: true
+  purpose: development_only_physical_semantics_resolution_for_near_threshold_Ice_contact_states
+
+frozen_sources:
+  failure_mode_audit:
+    config: {path: configs/experiment/20260901_generalization_failure_mode_audit.yaml, sha256: 15dbd4002aed38fc9db849b17ec44dc4b270b9b2edad0e003954d8f4b2662cb1}
+    report: {path: reports/20260901_generalization_failure_mode_audit.md, sha256: 704b7639e32b311131f01d0b96561396017cd86fc74ef6bcf9fa0bad0f6e0814}
+  zero_retrain_generalization:
+    config: {path: configs/experiment/20260831_generalization_dataset_zero_retrain.yaml, sha256: 68c92b9dd7615b8cce6dff59315e51577c2cab75575fb4e37b1588d1ec1758aa}
+    report: {path: reports/20260831_generalization_dataset_zero_retrain.md, sha256: 2ec4f87751cde3c31e7c0d93a8ebdb0d4559acc4f3585605fb71d2bd887ff2a9}
+  Ice_resolution:
+    config: {path: configs/experiment/20260831_ice_generalization_gap_resolution.yaml, sha256: 95ce4b8ce48c47eba785a9a18cac0e6f9bff853050e1b8ad2f42ffaf4008ccd2}
+    report: {path: reports/20260831_ice_generalization_gap_resolution.md, sha256: a25d60bbb1a32c5df91023f37ed74ddabfe95706a80ef14671c4672a105b93bf}
+  scenario_calibration:
+    config: {path: configs/experiment/20260831_generalization_scenario_calibration.yaml, sha256: 42088569621bf91cce22a12501698f23ae27b529f17fd356bbf8777f2ccab9c6}
+    report: {path: reports/20260831_generalization_scenario_calibration.md, sha256: f78780c580a806bab2ab233072427f9f2db899296b3dcfb298f9ef0828ddb508}
+  unified_baseline:
+    config: {path: configs/experiment/20260829_unified_hazard_reflex_system.yaml, sha256: 35036507643540a799510c6bf7dbd3e3c3e6b303146748ffae3d4cec28f825cb}
+    report: {path: reports/20260829_unified_hazard_reflex_system.md, sha256: a5ac9339757c33d5b17a80c56088c2c38b1e8a8260e20cf64c634501438628c8}
+  canonical_docs:
+    architecture: {path: docs/architecture.md, sha256: a4c5073c50906c24e645faf7e08f6667302f888589596b0461e235760b617db3}
+    dataset: {path: docs/dataset.md, sha256: f39c99a995dcb7aac7252e2aa2678b7f3e05d652387dfd7179bbd213b60dd7ff}
+    experiment_protocol: {path: docs/experiment_protocol.md, sha256: 1956c4b01803c84c527827c69330d68412c940136d887f9a35b5c27f46be2ef4}
+
+protected_implementation:
+  simulator_config: {path: configs/simulator/g1.yaml, sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d}
+  simulation_g1: {path: src/fastreflex/simulation/g1.py, sha256: d41308b6801aa648284ea05b22ce0c304fd97078cf47f6cd56b1f3b0d715bee2}
+  simulation_hazards: {path: src/fastreflex/simulation/hazards.py, sha256: 97d26ff789eea5ba2c4e0a6bba57108fd5ffab59ec8bbd373fe028fba97391a7}
+  simulation_terrain: {path: src/fastreflex/simulation/terrain.py, sha256: 70816edeed3377b940cfaf2a4de089158343b03068604003329b44e50b58ed43}
+  dataset_hazard: {path: src/fastreflex/dataset/hazard.py, sha256: ad08f439e88d3aea6705dcb26b59e5344be53f6e26e926796c5bbb96039f4be2}
+  evaluation_hazard: {path: src/fastreflex/evaluation/hazard.py, sha256: 97b6ea6217d7e05a098d409c94f6db1c534c83ac38d39b1aafb6a8ac88888c4e}
+  features: {path: src/fastreflex/features.py, sha256: 2ae549882720f5f9ee26f1ec073664f9e92816ae52b49f8d7d8a5754ac7f08f6}
+  policy: {path: artifacts/external/unitree_g1/g1_velocity_policy.onnx, sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28}
+
+protected_models:
+  Hazard_V1:
+    freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+    feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+    runtime_input: pelvis_imu6
+    feature_dimension: 80
+    input_shape: [20, 80]
+    family: gru
+    hidden_size: 32
+    layers: 1
+    bidirectional: false
+    ensemble_size: 3
+    threshold: 0.99
+    persistence_ms: 5
+    parameters: 11010
+    normalizer: {path: artifacts/runs/20260829_unified_hazard_reflex_system/normalization/gru_history20.json, sha256: 610a91c24a594a3cd1701b07549f4f3c4b7f4cb04eb354f9d41378214a6800a9}
+    checkpoints:
+      - {path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260828.pt, sha256: e6bada49beb2b68c2c33bb9a59a1b3a8dd0f556f174cafce12f43efd2d22d588}
+      - {path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260829.pt, sha256: b04877dc08290a34077ae2deb753085d840640ee8da2bd920d010eb2ce8c2506}
+      - {path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260830.pt, sha256: b6c782bdfb3789ae7af785ec2b02260a8ae54179d7c531f87e27e0e35301a753}
+  Terrain_V1:
+    runtime_input: touchdown_left_foot_fsr4
+    family: mlp
+    observation_ms: 50
+    ensemble_size: 3
+    classes: [CONCRETE, MARBLE, ICE, SAND]
+    advisory_only: true
+    normalizer_sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+    checkpoint_sha256:
+      seed_17.pt: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+      seed_29.pt: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+      seed_43.pt: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+
+evidence_boundary:
+  allowed_waveforms:
+    - Unified_TRAIN
+    - Unified_VALIDATION_if_previously_opened
+    - GENERALIZATION_VALIDATION
+    - generalization_scenario_calibration_pilots
+    - Ice_generalization_gap_resolution_pilots
+    - ice_near_hazard_semantics_20260901
+  Unified_HOLDOUT:
+    waveform_access: prohibited
+    new_inference: prohibited
+    reopened_count: 0
+  GENERALIZATION_HOLDOUT:
+    role: sealed_future_Model_V2_unbiased_test
+    metadata_only_count: 36
+    waveform_access: prohibited
+    model_inference: prohibited
+    visualization: prohibited
+    open_count: 0
+  pooled_semantics_name: DEVELOPMENT_PHYSICAL_EPISODE_POOL
+  generalization_performance_pooling: prohibited
+
+previous_observation_parity:
+  required_before_new_analysis: true
+  delayed_Ice_validation:
+    premature_runs: 3
+    total_runs: 6
+    qualifying_episode_terminal_alert_ms_range: [10, 14]
+    alert_drift_mm_range: [29.0, 41.0]
+    alert_velocity_mps_range: [0.392, 0.648]
+    episode_max_drift_mm_range: [41.56, 44.92]
+  Ice_benign_false_positive:
+    run_id: ghr_ibc_v_c020
+    first_threshold_crossing_sample: 2466
+    first_reflex_sample: 2470
+    maximum_probability: 0.999956
+    terminal_episode_ms: 13
+    seed_consensus: UNANIMOUS
+    drift_at_reflex_mm: 34.844
+    episode_max_drift_mm: 43.569
+  parity_mismatch_action: stop_before_new_simulation
+
+physical_semantics:
+  established_Slip:
+    status: frozen_unchanged
+    observable: touchdown_anchor_tangential_foot_drift_m
+    threshold_m: 0.050
+    persistence_ms: 3
+    aggregation: any_foot
+  development_precursor_name: ICE_PRECURSOR_CANDIDATE
+  precursor_status: development_physical_hypothesis_not_established_Slip
+  precursor_definition_may_use_model_output: false
+  episode_unit: per_foot_maximal_contiguous_physical_contact_episode
+  target_episode_eligibility:
+    exact_Ice_contact_required: true
+    loaded_contact_required_at_state_landmark: true
+    finite_drift_required: true
+    before_fall_or_duration_censor: true
+  touchdown: first_exact_Ice_identity_rising_edge_within_episode_or_null
+  maximum_drift: maximum_finite_loaded_exact_Ice_drift_within_episode
+  next_target_episode: first_chronological_target_Ice_episode_starting_at_or_after_current_episode_release_across_either_foot
+  drift_bands_mm:
+    - {id: 0_20, lower_inclusive: 0, upper_exclusive: 20}
+    - {id: 20_30, lower_inclusive: 20, upper_exclusive: 30}
+    - {id: 30_40, lower_inclusive: 30, upper_exclusive: 40}
+    - {id: 40_50, lower_inclusive: 40, upper_exclusive: 50}
+    - {id: established_50_plus, lower_inclusive: 50, upper_exclusive: null}
+  band_analysis:
+    exposure_rule: episode_contributes_to_every_band_it_reaches
+    landmark: first_loaded_exact_Ice_sample_reaching_band_lower_bound_before_same_foot_established_Slip
+    primary_precursor_region_mm: [20, 50]
+  future_outcomes:
+    priority: [SAME_EPISODE_SLIP, NEXT_EPISODE_SLIP, LATER_SLIP, BENIGN_RELEASE, CENSORED]
+    SAME_EPISODE_SLIP: same_foot_established_Slip_onset_later_in_current_episode
+    NEXT_EPISODE_SLIP: no_same_episode_Slip_and_established_Slip_in_first_target_episode_starting_after_current_release
+    LATER_SLIP: no_same_or_next_episode_Slip_and_any_foot_established_Slip_within_followup_horizon
+    BENIGN_RELEASE: complete_release_and_full_followup_observed_without_any_foot_established_Slip
+    CENSORED: fall_or_duration_end_prevents_full_followup_and_no_earlier_class_applies
+  followup_horizons_ms: [100, 250, 500, 1000]
+  followup_anchor: each_drift_band_entry_landmark
+  benign_followup_horizon_ms: 1000
+  contact_phase:
+    loading_ms: 20
+    terminal_release_ms: 20
+    categories: [LOADING, STANCE, TERMINAL_RELEASE]
+    fraction_elapsed_is_post_hoc_diagnostic_only: true
+  velocity:
+    optimize_threshold: prohibited
+    statistics: [median, p25, p75, p10, p90, min, max]
+  statistical_unit: contact_episode
+  run_balanced_summary: required_where_possible
+  real_world_probability_claim: prohibited
+
+existing_episode_census:
+  sources:
+    - GENERALIZATION_VALIDATION
+    - Ice_generalization_gap_resolution_pilots
+    - generalization_scenario_calibration_pilots
+    - Unified_TRAIN
+  unavailable_episode_fields_must_be_reported_not_imputed: true
+  freshness_decision:
+    existing_near_hazard_episodes_at_or_above_30mm: 489
+    existing_benign_release_near_hazard_episodes_at_or_above_30mm: 9
+    sparse_benign_evidence: true
+    fresh_semantics_corpus_required: true
+
+fresh_dataset:
+  dataset_id: ice_near_hazard_semantics_20260901
+  path: data/raw/ice_near_hazard_semantics_20260901
+  role: development_only_physical_target_semantics
+  Hazard_TRAIN: false
+  Generalization_HOLDOUT: false
+  final_performance_benchmark: false
+  duration_s: 8.0
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  expected_samples: 8000
+  designed_runs: 48
+  split_counts: {SEMANTICS_DISCOVERY: 32, SEMANTICS_CONFIRMATION: 16}
+  train_split_count: 0
+  mechanics:
+    target_terrain: ice
+    slip_pattern: transition
+    sink_pattern: uniform
+    sink_severity: moderate
+    support_pattern: balanced_soft
+    spatial_alignment: centered_full_width
+    side_topology: full_width_oracle_decides
+    ice_friction: [0.05, 0.001, 0.00001]
+  grid:
+    expansion_order: [source_terrain, speed_mps, patch_start_x_m, patch_width_m]
+    source_terrain: [concrete, marble]
+    speed_mps: [0.20, 0.25, 0.30]
+    patch_start_x_m: [0.326, 0.334]
+    patch_width_m: [0.232, 0.248, 0.730, 0.760]
+    run_id_order: expansion_order_then_one_based_three_digit_index
+    run_id_prefix: inhs
+  split_protocol:
+    timing: before_simulation
+    formula: confirmation_if_sum_of_zero_based_source_speed_start_width_indices_modulo_3_equals_0_else_discovery
+    approximate_ratio: 2_to_1
+    outcome_can_change_membership: false
+    model_output_can_change_membership: false
+    membership_hash_required: true
+  execution:
+    run_each_predeclared_signature_once: true
+    adaptive_replacement: prohibited
+    result_driven_backfill: prohibited
+    invalid_simulation_only_exclusion: true
+    confirmation_waveform_analysis_before_interpretation_freeze: prohibited
+
+signature_exclusion:
+  fields: [source_terrain, target_terrain, speed_mps, patch_start_x_m, patch_width_m, slip_pattern, sink_pattern, sink_severity, support_pattern]
+  references:
+    Unified_256: {path: data/raw/unified_hazard_reflex_20260829/manifest.json, sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6, count: 256}
+    Generalization_72: {path: data/raw/generalization_hazard_reflex_20260831/manifest.json, sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53, count: 72}
+    calibration_78: {path: data/raw/generalization_scenario_calibration_20260831/manifest.json, sha256: 8a09ab1c68da68ad44f9fffeb58d8b59c84c2afdc0e882418c20475fa233dea6, count: 78}
+    Ice_resolution_48: {path: data/raw/ice_generalization_gap_resolution_20260831/manifest.json, sha256: 5dbe5fbc5895e0440fc8061953c5cc5561dfc1444ea8ad40da67439171ce47dd, count: 48}
+    other_frozen_manifests: all_available_data_raw_manifests_with_physical_signature
+  required_overlap_each: 0
+  required_internal_duplicates: 0
+  required_discovery_confirmation_overlap: 0
+
+semantics_freeze:
+  discovery_options:
+    A: NEAR_ICE_STATE_IS_HARD_NEGATIVE
+    B: ICE_SLIP_PRECURSOR_SUPPORTED
+    C: MIXED_NEAR_HAZARD_STATE
+    D: SEMANTICS_INCONCLUSIVE
+  model_V1_outputs_allowed_before_freeze: false
+  candidate_rule_optional: true
+  rule_must_be_physical_only: true
+  interpretation_and_optional_rule_freeze_required_before_confirmation_open: true
+  confirmation_open_count: 1
+  confirmation_rule_tuning: prohibited
+  confirmation_model_evaluation: prohibited
+  post_freeze_Hazard_V1_overlay: read_only
+
+execution_policy:
+  no_oracle_change: true
+  no_model_selection: true
+  Hazard_V1_retraining: prohibited
+  Terrain_V1_retraining: prohibited
+  Model_V2_dataset_generation: prohibited
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  Hazard_V1_files_modified: 0
+  Terrain_V1_files_modified: 0
+  right_side_Support_training: prohibited
+  speed_diversity_training: prohibited
+  staged_Sand_generation: prohibited
+
+historical_preservation:
+  previous_generalization_verdict: ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED
+  rewrite_previous_score: prohibited
+  ghr_ibc_v_c020_official_score: NO_HAZARD_false_positive
+  architecture_conclusion: ARCHITECTURE_CHANGE_NOT_YET_JUSTIFIED
+  sensor_candidate: {pelvis_imu_channels: 6, left_fsr_channels: 4, physical_channels: 10, status: provisional_not_frozen}
+
+outputs:
+  dataset_path: data/raw/ice_near_hazard_semantics_20260901
+  artifact_path: artifacts/runs/20260901_ice_near_hazard_target_semantics
+  report_path: reports/20260901_ice_near_hazard_target_semantics.md
+  generated_outputs_committed: false
+
+verdicts:
+  resolved: ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED
+  inconclusive: ICE_NEAR_HAZARD_TARGET_SEMANTICS_INCONCLUSIVE
+  recommendations:
+    - ICE_NEAR_HAZARD_AS_HARD_NEGATIVE
+    - ICE_PHYSICAL_PRECURSOR_SUPPORTED
+    - ICE_MIXED_PRECURSOR_SEMANTICS
+    - ICE_TARGET_SEMANTICS_INCONCLUSIVE
+  resolved_next_milestone: MODEL_V2_DATASET_DESIGN
+  auto_start_next_milestone: false

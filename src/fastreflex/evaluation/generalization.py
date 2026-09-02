@@ -64,6 +64,8 @@ class GeneralizationData:
     runs: Mapping[str, HazardRun]
     annotations: Mapping[str, HazardRunAnnotations]
     manifest_rows: Mapping[str, Mapping[str, object]]
+    exact_terrain_contacts: Mapping[str, np.ndarray]
+    payload_deserializations: int
 
 
 def _load_yaml(path: Path) -> Mapping[str, Any]:
@@ -218,7 +220,12 @@ def load_generalization_manifest(
 
 def _load_generalization_row(
     dataset_path: Path, row: Mapping[str, Any]
-) -> tuple[HazardRun, HazardRunAnnotations, Mapping[str, object]]:
+) -> tuple[
+    HazardRun,
+    HazardRunAnnotations,
+    Mapping[str, object],
+    np.ndarray,
+]:
     path = dataset_path / str(row["file"])
     if sha256_file(path) != str(row["file_sha256"]):
         raise RuntimeError(f"Generalization run changed: {row['run_id']}")
@@ -363,7 +370,7 @@ def _load_generalization_row(
             "episodes": episodes,
         },
     }
-    return run, annotation, enriched
+    return run, annotation, enriched, exact
 
 
 def load_generalization_split(
@@ -385,17 +392,27 @@ def load_generalization_split(
     runs: dict[str, HazardRun] = {}
     annotations: dict[str, HazardRunAnnotations] = {}
     rows: dict[str, Mapping[str, object]] = {}
+    exact_contacts: dict[str, np.ndarray] = {}
     for row in manifest["runs"]:
         if row["split"] != split:
             continue
-        run, annotation, enriched = _load_generalization_row(dataset_path, row)
+        run, annotation, enriched, exact = _load_generalization_row(
+            dataset_path, row
+        )
         runs[run.run_id] = run
         annotations[run.run_id] = annotation
         rows[run.run_id] = enriched
+        exact_contacts[run.run_id] = exact
     expected = VALIDATION_COUNT if split == VALIDATION_SPLIT else HOLDOUT_COUNT
     if len(runs) != expected:
         raise RuntimeError(f"Generalization {split} count changed")
-    return GeneralizationData(runs=runs, annotations=annotations, manifest_rows=rows)
+    return GeneralizationData(
+        runs=runs,
+        annotations=annotations,
+        manifest_rows=rows,
+        exact_terrain_contacts=exact_contacts,
+        payload_deserializations=len(runs),
+    )
 
 
 def _result_name(row: Mapping[str, object]) -> str:

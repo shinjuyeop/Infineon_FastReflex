@@ -71,7 +71,7 @@ The result is float32 `[samples,80]`. Delta prefixes are zero. Rolling windows a
 
 The model is the shared `GRUBaseline` with input 80, hidden size 32, one unidirectional layer and two outputs. A causal input window is exactly `[20,80]`. The three-seed ensemble averages `HAZARD_REFLEX_REQUIRED` softmax probability. The current operating point is inclusive threshold 0.99 and five consecutive 1 ms samples. Parameter count is 11,010.
 
-The supported runtime result remains the frozen Model V1 artifact. Separately, the exact anchor-refined Model V2 candidate is frozen as `final_generalization_candidate` for one future simulation-generalization HOLDOUT operation. It uses the same class/schema/decision contract with its frozen V2 normalizer and weights. This role does not replace Model V1's supported result and does not claim HOLDOUT, real-robot, deployment, or final-sensor support.
+The supported runtime result remains the frozen Model V1 artifact. Separately, the exact anchor-refined Model V2 candidate `model_v2_anchor_refined_gru20_20260902` was frozen as `final_generalization_candidate` and evaluated in the single authorized Generalization HOLDOUT opening. It improved V1 substantially and corrected all 14 Support cases, but failed the frozen overall Hazard, Slip, and specificity gates. Its final verdict is `MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED`; it is not a simulation-generalization-supported release candidate and does not replace Model V1's supported result. The provisional architecture is retained only as the immutable object for failure interpretation, not as a real-robot, deployment, or final-sensor claim.
 
 ## 3. Terrain contract
 
@@ -125,7 +125,7 @@ These references are privileged scoring/label fields. They are excluded from run
 
 `training/hazard.py` owns positive windows, true negative regions, TRAIN-only normalizer fitting and HNM. The fixed HNM contract is three rounds after Round 0, 1 ms replay, K=12 per run, 30 ms minimum spacing, and no negative after I1 becomes active. V2 additionally masks future-Slip and censored Ice precursor endpoints while allowing explicitly observed benign releases outside every established-positive region. Supplied runs must declare `split: train`; otherwise training construction fails.
 
-`evaluation/hazard.py` owns continuous replay, probability aggregation, threshold/persistence, physical run metrics and read-only verification of selected freezes. `evaluation/generalization.py` owns the development comparison and fail-closed Generalization split loader. `evaluation/readiness.py` owns metadata-only final-candidate, protected-data, frozen-contract, and future one-shot authorization checks. Scientific HOLDOUT is not reopened during routine verification.
+`evaluation/hazard.py` owns continuous replay, probability aggregation, threshold/persistence, physical run metrics and read-only verification of selected freezes. `evaluation/generalization.py` owns the development comparison and fail-closed Generalization split loader. `evaluation/readiness.py` owns metadata-only final-candidate, protected-data, and frozen-contract checks. `evaluation/holdout.py` owns the consumed one-shot summary verifier and permanent second-open refusal. Scientific HOLDOUT payloads are never reopened during routine verification.
 
 `dataset/terrain.py`, `training/terrain.py`, and `evaluation/terrain.py` own the corresponding clean-event, training and runtime inference responsibilities. No historical Terrain-gated Hazard fusion module remains in the current dependency graph.
 

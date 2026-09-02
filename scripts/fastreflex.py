@@ -31,6 +31,9 @@ MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_ID = (
 MODEL_V2_FINAL_CANDIDATE_HOLDOUT_READINESS_REVIEW_ID = (
     "MODEL_V2_FINAL_CANDIDATE_FREEZE_AND_HOLDOUT_READINESS_REVIEW"
 )
+MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_ID = (
+    "MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION"
+)
 SUPPORTED_EXPERIMENT_IDS = frozenset(
     (
         HAZARD_EXPERIMENT_ID,
@@ -41,6 +44,7 @@ SUPPORTED_EXPERIMENT_IDS = frozenset(
         MODEL_V2_ANCHOR_REFINED_TRAINING_ID,
         MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_ID,
         MODEL_V2_FINAL_CANDIDATE_HOLDOUT_READINESS_REVIEW_ID,
+        MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_ID,
     )
 )
 HISTORICAL_MESSAGE = (
@@ -350,6 +354,14 @@ def _evaluate(args: argparse.Namespace) -> int:
         )
 
         result = run_final_candidate_holdout_readiness_review(
+            REPOSITORY_ROOT, args.config.resolve()
+        )
+    elif experiment_id == MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_ID:
+        from fastreflex.evaluation.holdout import (
+            run_generalization_holdout_one_shot_evaluation,
+        )
+
+        result = run_generalization_holdout_one_shot_evaluation(
             REPOSITORY_ROOT, args.config.resolve()
         )
     elif experiment_id == MODEL_V2_ANCHOR_REFINED_TRAINING_ID:

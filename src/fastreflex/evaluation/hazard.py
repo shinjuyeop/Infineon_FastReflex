@@ -34,7 +34,7 @@ from fastreflex.features import (
     feature_schema_hash,
 )
 from fastreflex.models.baselines import parameter_count
-from fastreflex.training.trainer import load_checkpoint
+from fastreflex.models.checkpoint import load_checkpoint
 
 
 HISTORY_MS = 20

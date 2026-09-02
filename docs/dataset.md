@@ -23,9 +23,9 @@ Physical signatures are unique, split overlap is zero, and prior research-manife
 
 ## 2. Fresh zero-retrain generalization corpus
 
-The separate dataset identity `generalization_hazard_reflex_20260831` contains 72 fresh runs across five predeclared scenario families. It has 36 `GENERALIZATION_VALIDATION` and 36 sealed `GENERALIZATION_HOLDOUT` runs, with no TRAIN split. Its signatures have zero overlap with the Unified 256, calibration 78, Ice-resolution 48, historical exclusions, or the opposite generalization split.
+The separate dataset identity `generalization_hazard_reflex_20260831` contains 72 fresh runs across five predeclared scenario families. It has 36 `GENERALIZATION_VALIDATION` and 36 consumed `GENERALIZATION_HOLDOUT` runs, with no TRAIN split. Its signatures have zero overlap with the Unified 256, calibration 78, Ice-resolution 48, historical exclusions, or the opposite generalization split.
 
-This corpus was generated model-blind and frozen before any current-candidate replay. It is not part of model training, normalization, hard-negative mining, checkpoint selection, threshold selection, or persistence selection. Physical readiness is `GENERALIZATION_DATASET_READY`. Generalization VALIDATION is now consumed development evidence: exact Model V1 and the exact promoted Model V2 were compared there, and the Model V2 primary Slip gate remained failed at 11/12 despite strong overall transfer. The exact V2 candidate is frozen for final evaluation, while Generalization HOLDOUT remains unopened at guard count 0.
+This corpus was generated model-blind and frozen before any current-candidate replay. It is not part of model training, normalization, hard-negative mining, checkpoint selection, threshold selection, or persistence selection. Physical readiness is `GENERALIZATION_DATASET_READY`. Generalization VALIDATION is consumed development evidence. Generalization HOLDOUT was then opened exactly once for the frozen final candidate: guard `0 -> 1`, 36/36 payloads, one deserialization per run, and V1/V2/Terrain from the same pass. Its final verdict is `MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED`. The guard remains permanently 1, payloads cannot be reopened, and saved summaries cannot be used as tuning or training evidence.
 
 Generated NPZ, manifest, freeze and evaluation artifacts remain Gitignored. The committed contract and result are `configs/experiment/20260831_generalization_dataset_zero_retrain.yaml` and `reports/20260831_generalization_dataset_zero_retrain.md`.
 
@@ -111,7 +111,7 @@ Load behavior is fail-closed:
 
 Routine candidate verification reads frozen metadata and artifact hashes only. It does not open HOLDOUT waveforms.
 
-The Generalization final-candidate readiness verifier additionally permits safe HOLDOUT IDs, counts, split membership, file existence, stored hashes, file sizes, and guard metadata. It never deserializes HOLDOUT NPZ payloads. A future authorized evaluation must claim guard `0 -> 1` atomically, open all 36 runs in one operation, and cannot claim a second scientific open.
+The Generalization one-shot evaluator claimed guard `0 -> 1` atomically before the first payload read and opened all 36 runs in one operation. The result verifier now permits only saved-summary reads plus safe IDs, counts, split membership, file existence, stored hashes, file sizes, and guard metadata. It never deserializes HOLDOUT NPZ payloads and refuses a second scientific open. The consumed HOLDOUT may never be reset, reopened, relabeled, filtered, or used for candidate adaptation.
 
 ## 8. Hazard preprocessing boundary
 

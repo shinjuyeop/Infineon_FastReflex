@@ -12,6 +12,7 @@ import torch
 from fastreflex.dataset.loader import CLASS_NAMES, WindowSet
 from fastreflex.evaluation.metrics import classification_metrics
 from fastreflex.models.baselines import build_model
+from fastreflex.models.checkpoint import load_checkpoint as load_frozen_checkpoint
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -233,21 +234,5 @@ def save_checkpoint(
 
 
 def load_checkpoint(path: Path) -> tuple[nn.Module, dict[str, object]]:
-    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
-    if checkpoint.get("format") != "fastreflex_raw_imu_baseline":
-        raise ValueError("unsupported checkpoint format")
-    model = build_model(
-        checkpoint["family"],
-        int(checkpoint["window_samples"]),
-        int(checkpoint.get("input_channels", 6)),
-        class_count=len(checkpoint.get("class_names", CLASS_NAMES)),
-    )
-    model.load_state_dict(checkpoint["state_dict"])
-    model.eval()
-    metadata = {
-        key: checkpoint[key]
-        for key in ("family", "window_samples", "seed", "best_epoch")
-    }
-    metadata["input_channels"] = int(checkpoint.get("input_channels", 6))
-    metadata["class_names"] = list(checkpoint.get("class_names", CLASS_NAMES))
-    return model, metadata
+    """Compatibility wrapper around the inference-only checkpoint loader."""
+    return load_frozen_checkpoint(path)

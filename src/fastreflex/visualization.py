@@ -54,7 +54,7 @@ from fastreflex.simulation.g1 import (
     run_simulation,
 )
 from fastreflex.simulation.terrain import TERRAIN_CLASS_ORDER
-from fastreflex.training.trainer import load_checkpoint
+from fastreflex.models.checkpoint import load_checkpoint
 
 DEFAULT_EXPERIMENT_CONFIG = Path(
     "configs/experiment/20260829_unified_hazard_reflex_system.yaml"

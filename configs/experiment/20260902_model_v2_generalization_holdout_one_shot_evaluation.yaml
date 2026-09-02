@@ -1,0 +1,336 @@
+schema_version: 1
+
+experiment:
+  id: MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION
+  milestone: MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION
+  date: 2026-09-02
+  timezone: Asia/Seoul
+  source_commit: 6b8f610aa36316f7b9a66864ffe0837ad16d0d83
+  purpose: first_and_only_scientific_open_of_the_frozen_generalization_holdout
+  mode: one_shot_evaluation_only
+
+readiness:
+  verdict: HOLDOUT_READY
+  config:
+    path: configs/experiment/20260902_model_v2_final_candidate_holdout_readiness_review.yaml
+    sha256: 0206dd12078ffa191cc6424a35cdead889c9614a1ecb38a9a830a1d464368ec8
+  freeze:
+    path: artifacts/runs/20260902_model_v2_final_candidate_holdout_readiness_review/readiness_review_freeze.json
+    sha256: 0167d72942ee402b7bdcb83f5bcd3e69c62f4db8044c1bf62bfd8607487eb7c6
+
+development_config:
+  path: configs/experiment/20260902_model_v2_generalization_development_evaluation.yaml
+  sha256: 76aa8d6072bdd5cd521e980f62a5ea6b0ec611cec03a6faca883252fe2503b84
+
+final_candidate:
+  candidate_id: model_v2_anchor_refined_gru20_20260902
+  role: final_generalization_candidate
+  record:
+    path: configs/model/final_generalization_candidate.yaml
+    sha256: 52644d3efb0e756002bd43a7f94aea0a16a65eb2ff014c72548f2b3b138b7bc2
+  development_promotion:
+    path: configs/model/development_candidate.yaml
+    sha256: 1e4931e35e873cd721b412c6a45f66340f7ee9eebc1900d9c4aa3dc9ab3d092f
+  candidate_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json
+    sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f
+  internal_evaluation_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_evaluation_freeze.json
+    sha256: cad3902137b622c3a3d15ecb3d6c3bb31ee9751f3605fb8d43daa6ac81695c07
+  external_evaluation_freeze:
+    path: artifacts/runs/20260902_model_v2_generalization_development_evaluation/evaluation_freeze.json
+    sha256: cc559c592f64ed8afd27b039d57ace35d8bbb3efad1cac64e3d10788e0ffa556
+  normalizer:
+    path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json
+    sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+  checkpoints:
+    - seed: 20260828
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260828.pt
+      sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9
+    - seed: 20260829
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260829.pt
+      sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39
+    - seed: 20260830
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260830.pt
+      sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd
+  ensemble_membership: [20260828, 20260829, 20260830]
+  architecture:
+    input: pelvis_imu6
+    feature_dimension: 80
+    input_shape: [20, 80]
+    model_family: gru
+    hidden_size: 32
+    layers: 1
+    bidirectional: false
+    parameters: 11010
+    sha256: ae4753699399aa7e4a93639935e085156ef28ed100a77058d7308eb1549aa897
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  threshold: 0.99
+  persistence_ms: 5
+  replay_stride_ms: 1
+  mutation: prohibited
+
+baseline_v1:
+  id: unified_hazard_reflex_gru_history20_hnm3
+  config:
+    path: configs/experiment/20260829_unified_hazard_reflex_system.yaml
+    sha256: 35036507643540a799510c6bf7dbd3e3c3e6b303146748ffae3d4cec28f825cb
+  freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+  normalizer:
+    path: artifacts/runs/20260829_unified_hazard_reflex_system/normalization/gru_history20.json
+    sha256: 610a91c24a594a3cd1701b07549f4f3c4b7f4cb04eb354f9d41378214a6800a9
+  checkpoints:
+    - seed: 20260828
+      path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260828.pt
+      sha256: e6bada49beb2b68c2c33bb9a59a1b3a8dd0f556f174cafce12f43efd2d22d588
+    - seed: 20260829
+      path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260829.pt
+      sha256: b04877dc08290a34077ae2deb753085d840640ee8da2bd920d010eb2ce8c2506
+    - seed: 20260830
+      path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260830.pt
+      sha256: b6c782bdfb3789ae7af785ec2b02260a8ae54179d7c531f87e27e0e35301a753
+  architecture: {model_family: gru, input_shape: [20, 80], hidden_size: 32, layers: 1, parameters: 11010}
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  threshold: 0.99
+  persistence_ms: 5
+  read_only: true
+
+terrain_v1:
+  config:
+    path: configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml
+    sha256: 8f78b56a658ea944f3355c5b178c8c5b057a7e2d192b63b412bde04c9543b7a8
+  model_path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models
+  input: left_fsr4
+  input_shape: [50, 4]
+  observation_ms: 50
+  model_family: mlp
+  ensemble_membership: [17, 29, 43]
+  held_state: true
+  classes: [CONCRETE, MARBLE, ICE, SAND]
+  normalizer:
+    path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/normalization.json
+    sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+  checkpoints:
+    - seed: 17
+      path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_17.pt
+      sha256: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+    - seed: 29
+      path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_29.pt
+      sha256: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+    - seed: 43
+      path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_43.pt
+      sha256: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+  advisory_only: true
+  hazard_gate: false
+  read_only: true
+
+dataset:
+  id: generalization_hazard_reflex_20260831
+  path: data/raw/generalization_hazard_reflex_20260831
+  manifest:
+    path: data/raw/generalization_hazard_reflex_20260831/manifest.json
+    sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53
+  dataset_freeze:
+    path: artifacts/runs/20260831_generalization_dataset_zero_retrain/dataset_freeze.json
+    sha256: f9e68535fad40e4e0578ff83399fb91fe96bf59717b3d12076bb0436dd992763
+  total_count: 72
+  validation_count: 36
+  holdout_split: GENERALIZATION_HOLDOUT
+  holdout_count: 36
+  holdout_run_ids_canonical_sha256: 6c911c33bc7ea1eb89a58f129d44848989ba4f6aea070f9c15084bdcc2b00c1f
+  split_membership_sha256: 929c963dff786d74728e1aad4be2457fe1dc6b4ef667fdddb1e5c01825822787
+  physical_signatures_sha256: e835ac8c7bc51b5a0925b8ebba1eb7d4e0b29b3015cc6b0bba16cf059f159553
+  payload_deserializations_per_run: 1
+  split_movement: prohibited
+  relabeling: prohibited
+  run_exclusion: prohibited
+
+primary_contract:
+  implementation: fastreflex.evaluation.hazard.evaluate_hazard_replays
+  metrics:
+    - overall_hazard_recall
+    - slip_hazard_recall
+    - support_hazard_recall
+    - primary_no_hazard_specificity
+    - ice_benign_specificity
+    - system_premature_run_rate
+    - slip_latency_ms
+    - support_precursor_latency_ms
+    - support_established_latency_ms
+  gates:
+    overall_hazard_recall_min: 0.90
+    slip_hazard_recall_min: 0.95
+    support_hazard_recall_min: 0.85
+    primary_no_hazard_specificity_min: 0.95
+    ice_benign_specificity_min: 0.95
+    system_premature_run_rate_max: 0.10
+    slip_p95_latency_ms_max: 40
+    support_p95_established_latency_ms_max: 50
+  event_timing:
+    slip_valid_window_ms: [-30, 40]
+    support_valid_window: [I1, established_support_plus_50_ms]
+    pre_i1_support_alert: premature
+    no_hazard_any_reflex: false_positive
+    first_premature_reflex_cannot_be_rescued: true
+  physical_semantics:
+    hazard: established_slip_OR_established_support
+    slip: {drift_threshold_m: 0.050, persistence_ms: 3, aggregation: any_foot}
+    support: {spread_threshold_m: 0.010, persistence_ms: 20}
+    i1: {loaded_spread_derivative_threshold: 0.0, persistence_ms: 20}
+    actual_outcome_over_design_intent: true
+    terrain_is_hazard_gate: false
+
+secondary_contract:
+  implementation: fastreflex.evaluation.hazard.evaluate_ice_precursor_secondary
+  annotation_implementation: fastreflex.dataset.generation.annotate_ice_precursors
+  label: ICE_PRECURSOR_CANDIDATE
+  definition: loaded_exact_ice_drift_in_half_open_interval_0.030_to_0.050_m
+  lower_m_inclusive: 0.030
+  upper_m_exclusive: 0.050
+  future_followup_ms: 1000
+  outcome_categories:
+    - SAME_EPISODE_SLIP
+    - NEXT_EPISODE_SLIP
+    - LATER_SLIP
+    - BENIGN_RELEASE
+    - CENSORED
+  metrics:
+    - future_slip_precursor_episodes
+    - alert_inside_precursor
+    - alert_before_established_slip
+    - benign_release_precursor_alerts
+    - censored_precursor_alerts
+    - same_next_later_slip
+    - precursor_to_reflex_ms
+    - reflex_to_established_slip_ms
+  semantics_verdict: ICE_PHYSICAL_PRECURSOR_SUPPORTED
+  primary_score_replacement: false
+
+final_verdict_hierarchy:
+  primary:
+    - GENERALIZATION_HOLDOUT_PRIMARY_GATES_PASS
+    - GENERALIZATION_HOLDOUT_PRIMARY_GATES_FAIL
+  scientific:
+    - MODEL_V2_GENERALIZATION_HOLDOUT_SUPPORTED
+    - MODEL_V2_GENERALIZATION_HOLDOUT_SUPPORTED_WITH_ICE_TIMING_TENSION
+    - MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED
+    - MODEL_V2_GENERALIZATION_HOLDOUT_INCONCLUSIVE
+  supported_requires: all_primary_gates_pass
+  supported_with_ice_timing_tension_requires:
+    - primary_failure_is_solely_or_predominantly_Ice_Slip_timing
+    - physically_supported_future_Slip_precursor_response
+    - genuine_Hazard_misses_absent_or_isolated
+    - specificity_strong
+    - Support_strong
+    - no_new_unexplained_failure_mechanism
+  not_supported_if:
+    - material_genuine_detection_misses
+    - material_specificity_failure
+    - material_Support_failure
+    - new_unexplained_speed_side_or_source_failure
+    - failure_not_explained_by_frozen_semantics
+  inconclusive_only_for: integrity_or_insufficient_evidence
+  secondary_cannot_rescue_primary: true
+
+same_pass_models:
+  - V1_HAZARD
+  - FINAL_V2_HAZARD
+  - TERRAIN_V1_ADVISORY
+
+reporting:
+  families:
+    - ONE_CONTACT_DELAYED_ICE_SLIP
+    - ICE_BENIGN_CONTROL
+    - DELAYED_SAND_SUPPORT_ONSET
+    - RIGHT_SAND_SUPPORT
+    - SPEED_STRATIFIED_HAZARD
+  speed_subtypes: [ICE_SLIP, SAND_SUPPORT, SAND_BENIGN]
+  speeds_mps: [0.20, 0.25, 0.30]
+  sides: [LEFT_ONLY, RIGHT_ONLY, BILATERAL, NONE]
+  sources: [concrete, marble]
+  failure_categories:
+    - SUPPORTED_ICE_PRECURSOR_TIMING_CONFLICT
+    - GENUINE_DETECTION_MISS
+    - BENIGN_FALSE_ALERT
+    - PRE_I1_SUPPORT_FALSE_ALERT
+    - LATE_DETECTION
+    - CENSORED_OR_AMBIGUOUS
+    - OTHER
+  subgroup_gates: prohibited
+  family_exclusion: prohibited
+
+guard:
+  record_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  required_before: 0
+  transition: 0_to_1
+  required_after: 1
+  scientific_open_count: 1
+  durable_before_first_payload_deserialization: true
+  second_scientific_open_forbidden: true
+  reset_forbidden: true
+
+post_open_rules:
+  no_training: true
+  no_retuning: true
+  no_model_selection: true
+  no_threshold_change: true
+  no_persistence_change: true
+  no_architecture_change: true
+  no_seed_change: true
+  no_checkpoint_change: true
+  no_metric_change: true
+  no_relabeling: true
+  no_family_exclusion: true
+  no_scientific_rerun: true
+
+execution:
+  evaluator_path: src/fastreflex/evaluation/holdout.py
+  evaluator_sha256: 5450360221322035a1cc44f3051fc59731578e7c3392316ac2ac6e22a04b0a5d
+  evaluator_schema_version: 1
+  command: PYTHONPATH=src python scripts/fastreflex.py evaluate --config configs/experiment/20260902_model_v2_generalization_holdout_one_shot_evaluation.yaml
+  operation: entire_36_run_split_in_one_scientific_operation
+  source_files:
+    - {path: src/fastreflex/evaluation/holdout.py, sha256: 5450360221322035a1cc44f3051fc59731578e7c3392316ac2ac6e22a04b0a5d}
+    - {path: src/fastreflex/evaluation/generalization.py, sha256: 5d3b95aad5149ec25ba18f57ea613ea3df6a656b7de71651ce65aec04eebe2bd}
+    - {path: src/fastreflex/evaluation/hazard.py, sha256: 62f4dfa8435005fa6da2973df92d788af2443c624e609176fb4ae3e6e59fa49b}
+    - {path: src/fastreflex/evaluation/terrain.py, sha256: 5e8248da6bb3f8dd9cd2a28460f9d02d15e72f0ade4318d284abb2e1827088cb}
+    - {path: src/fastreflex/evaluation/readiness.py, sha256: 831fff03790faa38d9fc6a0d41887fd4fd05e8e88d5e30a4b3c34cf79ca147fc}
+    - {path: src/fastreflex/models/checkpoint.py, sha256: 19f2aa96c188084a3169b973cf3434361d957261c8daa5def745a93b87999768}
+    - {path: src/fastreflex/models/baselines.py, sha256: c32fe5ea2a5c0310656d32ff48d3e0354eff4901bc1f58cc332e6d8d0029c180}
+    - {path: src/fastreflex/features.py, sha256: 2ae549882720f5f9ee26f1ec073664f9e92816ae52b49f8d7d8a5754ac7f08f6}
+    - {path: src/fastreflex/dataset/hazard.py, sha256: ad08f439e88d3aea6705dcb26b59e5344be53f6e26e926796c5bbb96039f4be2}
+    - {path: src/fastreflex/dataset/generation.py, sha256: 435ffa6b29b7559e11efb13bb743c16491f41dcc06916e903771e947d5f70bdc}
+    - {path: src/fastreflex/dataset/terrain.py, sha256: 6bdfae80f916cabc60906b7be05eb321b765655494fee42c43951a722544de41}
+    - {path: scripts/fastreflex.py, sha256: 47dd5652959460821627d0914f95095a9dd374c094f275b9e2f8e349aea85269}
+  trainer_or_optimizer_path: false
+  configuration_frozen_before_guard_transition: true
+  partial_adaptive_access: false
+  visualization: false
+
+artifacts:
+  path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation
+  deterministic_json: true
+  required:
+    - holdout_access_guard.json
+    - run_level_results.json
+    - primary_metrics.json
+    - secondary_metrics.json
+    - terrain_diagnostics.json
+    - family_results.json
+    - speed_results.json
+    - side_results.json
+    - source_results.json
+    - evaluation_result.json
+    - evaluation_freeze.json
+  contain_holdout_waveforms: false
+  contain_model_probabilities: false
+
+no_training: true
+no_generation: true
+no_threshold_search: true
+no_persistence_search: true
+no_model_selection: true
+no_metric_change: true
+no_visualization: true
+no_partial_adaptive_access: true
+second_scientific_open_forbidden: true

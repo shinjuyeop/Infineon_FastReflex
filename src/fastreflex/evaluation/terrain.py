@@ -18,8 +18,8 @@ from fastreflex.dataset.hazard import (
 )
 from fastreflex.dataset.loader import sha256_file
 from fastreflex.dataset.terrain import TERRAIN_CLASS_NAMES, build_touchdown_event_rows
+from fastreflex.models.checkpoint import load_checkpoint
 from fastreflex.simulation.g1 import SimulationResult
-from fastreflex.training.trainer import load_checkpoint
 
 
 UNKNOWN = 0
@@ -65,6 +65,7 @@ class TerrainTrace:
     first_target_valid_sample: int | None
     clean_event_count: int
     prediction_feet: np.ndarray | None = None
+    prediction_true_ids: np.ndarray | None = None
 
 
 def terrain_predictions(trace: TerrainTrace) -> tuple[TerrainPrediction, ...]:
@@ -207,13 +208,37 @@ def replay_terrain(
     """Classify clean touchdown windows and hold the latest advisory state."""
     if result.exact_terrain_contact is None or result.runtime.foot_fsr is None:
         raise ValueError("Terrain replay requires exact contact and FSR8")
+    return replay_terrain_arrays(
+        result.runtime.timestamp_us,
+        result.exact_terrain_contact,
+        result.runtime.foot_fsr,
+        run,
+        models,
+        mean,
+        std,
+        deployment_scheme=deployment_scheme,
+    )
+
+
+def replay_terrain_arrays(
+    timestamp_us: np.ndarray,
+    exact_terrain_contact: np.ndarray,
+    foot_fsr8: np.ndarray,
+    run: HazardRun,
+    models: Sequence[torch.nn.Module],
+    mean: np.ndarray,
+    std: np.ndarray,
+    *,
+    deployment_scheme: str = "left_only",
+) -> TerrainTrace:
+    """Replay Terrain from one already-loaded scientific run payload."""
     rows = build_touchdown_event_rows(
         run.run_id,
         run.split,
         run.source_terrain,
         run.target_terrain,
-        result.runtime.timestamp_us,
-        result.exact_terrain_contact,
+        timestamp_us,
+        exact_terrain_contact,
         run.fall_sample_diagnostic,
         run.event_type in (EVENT_TYPE_SLIP, EVENT_TYPE_BOTH),
         run.event_type in (EVENT_TYPE_SUPPORT, EVENT_TYPE_BOTH),
@@ -229,6 +254,7 @@ def replay_terrain(
     prediction_ids: list[int] = []
     probability_rows: list[np.ndarray] = []
     feet: list[str] = []
+    true_ids: list[int] = []
     current = UNKNOWN
     cursor = 0
     for row in sorted(eligible, key=lambda value: int(value["touchdown_sample"])):
@@ -237,7 +263,7 @@ def replay_terrain(
         if update >= len(state) or update >= run.censor_sample:
             continue
         window = terrain_fsr4_window(
-            result.runtime.foot_fsr, touchdown, str(row["foot"])
+            foot_fsr8, touchdown, str(row["foot"])
         )
         prediction, probabilities = predict_terrain_window(
             window, models, mean, std
@@ -249,6 +275,7 @@ def replay_terrain(
         prediction_ids.append(prediction)
         probability_rows.append(probabilities)
         feet.append(str(row["foot"]).upper())
+        true_ids.append(int(row["terrain_class_id"]))
     state[cursor:] = current
     target_state = TERRAIN_PREDICTION_TO_STATE[run.target_terrain.upper()]
     valid = np.flatnonzero(
@@ -267,6 +294,7 @@ def replay_terrain(
         first_target_valid_sample=None if not len(valid) else int(valid[0]),
         clean_event_count=len(eligible),
         prediction_feet=np.asarray(feet, dtype="<U5"),
+        prediction_true_ids=np.asarray(true_ids, dtype=np.int8),
     )
 
 

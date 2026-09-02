@@ -4,7 +4,7 @@ Unitree G1 MuJoCo에서 검증된 physical Hazard Reflex와 Terrain advisory를 
 
 ## Current Status
 
-`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_GENERATION_READY; MODEL_V2_DATA_ONLY_TRAINING_COMPLETE; MODEL_V2_EXTRACTION_REBALANCED_TRAINING_COMPLETE; MODEL_V2_ANCHOR_REFINED_TRAINING_COMPLETE; V2_ANCHOR_REFINEMENT_EFFECTIVE; MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED; MODEL_V2_CANDIDATE_READINESS_REVIEW_COMPLETE; MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_COMPLETE; GENERALIZATION_PRIMARY_GATES_FAIL; GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION; MODEL_V2_FINAL_CANDIDATE_HOLDOUT_READINESS_REVIEW_COMPLETE; HOLDOUT_READY; FINAL_GENERALIZATION_CANDIDATE_FROZEN`
+`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_GENERATION_READY; MODEL_V2_DATA_ONLY_TRAINING_COMPLETE; MODEL_V2_EXTRACTION_REBALANCED_TRAINING_COMPLETE; MODEL_V2_ANCHOR_REFINED_TRAINING_COMPLETE; V2_ANCHOR_REFINEMENT_EFFECTIVE; MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED; MODEL_V2_CANDIDATE_READINESS_REVIEW_COMPLETE; MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_COMPLETE; GENERALIZATION_PRIMARY_GATES_FAIL; GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION; MODEL_V2_FINAL_CANDIDATE_HOLDOUT_READINESS_REVIEW_COMPLETE; FINAL_GENERALIZATION_CANDIDATE_FROZEN; MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_COMPLETE; GENERALIZATION_HOLDOUT_PRIMARY_GATES_FAIL; MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED; SIMULATION_GENERALIZATION_EVIDENCE_NOT_SUPPORTED`
 
 ```text
 Hazard
@@ -58,7 +58,7 @@ Frozen late-interior anchor로 별도 3-seed GRU20 candidate를 학습했다. V1
 
 Exact promoted V2를 frozen 36-run Generalization VALIDATION에 한 번 평가했다. Model V1의 Hazard 13/26, Slip 7/12, Support 6/14, primary specificity 5/10에서 V2는 각각 25/26, 11/12, 14/14, 10/10으로 개선됐고 Ice-benign도 3/4→4/4, premature도 7/26→1/26으로 개선됐다. 원래 Slip gate 95%는 91.67%로 실패하므로 primary verdict는 `GENERALIZATION_PRIMARY_GATES_FAIL`이다. 단 하나의 primary 실패는 이미 frozen된 future-Slip Ice precursor 안의 sustained early response이고 genuine detection failure는 0이어서 development verdict는 `GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION`이다. Candidate retune/retraining은 없었고 Generalization HOLDOUT은 guard count 0으로 sealed이며 final Model V2/HOLDOUT support는 아직 없다. 다음 권고 milestone은 별도 `MODEL_V2_FINAL_CANDIDATE_FREEZE_AND_HOLDOUT_READINESS_REVIEW`다. 상세 결과는 [`reports/20260902_model_v2_generalization_development_evaluation.md`](reports/20260902_model_v2_generalization_development_evaluation.md)에 있다.
 
-최종 readiness review는 같은 anchor-refined V2를 변경 없이 `FINAL_GENERALIZATION_CANDIDATE`로 freeze했고 verdict는 `HOLDOUT_READY`다. Generalization VALIDATION의 V1 대비 큰 개선과 `SUPPORTED_WITH_ICE_TIMING_TENSION` 해석은 유지하지만, Slip primary 11/12 <95% 실패도 그대로 보존한다. Generalization HOLDOUT은 waveform/inference 없이 guard count 0으로 완전히 sealed되어 있으며 아직 final HOLDOUT support는 없다. 다음 단계는 별도 `MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION`이다. 상세 계약과 한계는 [`reports/20260902_model_v2_final_candidate_holdout_readiness_review.md`](reports/20260902_model_v2_final_candidate_holdout_readiness_review.md)에 있다.
+최종 readiness review는 같은 anchor-refined V2 `model_v2_anchor_refined_gru20_20260902`를 변경 없이 `FINAL_GENERALIZATION_CANDIDATE`로 freeze했고, 이어서 frozen 36-run Generalization HOLDOUT을 단 한 번 열었다. 같은 payload pass에서 V1/V2/Terrain을 평가한 결과 V1→V2는 Hazard 14/28→25/28, Slip 8/14→11/14, Support 6/14→14/14, premature 9/28→2/28로 개선됐지만 primary specificity는 5/8→5/8로 개선되지 않았다. V2는 overall Hazard, Slip, specificity gate를 실패했고, 두 supported Ice timing conflict 외에 0.30 m/s Ice Slip late detection 1건과 Sand benign false alert 3건이 있어 final verdict는 `MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED`다. Guard는 영구적으로 1이며 이 HOLDOUT은 다시 열거나 tuning/training evidence로 사용할 수 없다. 다음 권고 milestone은 `MODEL_V2_HOLDOUT_FAILURE_INTERPRETATION`이고 아직 시작하지 않았다. 상세 결과는 [`reports/20260902_model_v2_generalization_holdout_one_shot_evaluation.md`](reports/20260902_model_v2_generalization_holdout_one_shot_evaluation.md)에 있다.
 
 ## Canonical source flow
 
@@ -66,7 +66,7 @@ Exact promoted V2를 frozen 36-run Generalization VALIDATION에 한 번 평가�
 Hazard:
 simulation/g1.py -> dataset/hazard.py -> features.py
                  -> training/hazard.py -> models/baselines.py
-                 -> evaluation/{hazard,generalization,readiness}.py
+                 -> evaluation/{hazard,generalization,readiness,holdout}.py
 
 Terrain:
 simulation/{g1,sensors,terrain}.py -> dataset/terrain.py
@@ -81,6 +81,7 @@ simulation/{g1,sensors,terrain}.py -> dataset/terrain.py
 - `features.py`: selected Pelvis IMU6 → causal 80D contract
 - `training/hazard.py`: TRAIN-only normalization/windowing와 3-round HNM
 - `evaluation/hazard.py`: continuous replay, 0.99/5 ms decision, metrics, frozen-candidate verification
+- `evaluation/holdout.py`: Generalization HOLDOUT의 consumed one-shot result verification과 second-open refusal
 - `dataset/terrain.py`: exact clean-touchdown indexing과 Terrain dataset contract
 - `training/terrain.py`: Terrain training responsibility
 - `evaluation/terrain.py`: FSR4/50 ms inference, held state, advisory cause refinement
@@ -180,6 +181,7 @@ Viewer는 검증된 memory-only snapshot을 재생하며 종료 시 마지막 fr
 - [`reports/20260902_model_v2_candidate_readiness_review.md`](reports/20260902_model_v2_candidate_readiness_review.md)
 - [`reports/20260902_model_v2_generalization_development_evaluation.md`](reports/20260902_model_v2_generalization_development_evaluation.md)
 - [`reports/20260902_model_v2_final_candidate_holdout_readiness_review.md`](reports/20260902_model_v2_final_candidate_holdout_readiness_review.md)
+- [`reports/20260902_model_v2_generalization_holdout_one_shot_evaluation.md`](reports/20260902_model_v2_generalization_holdout_one_shot_evaluation.md)
 
 Current architecture는 [`docs/architecture.md`](docs/architecture.md), dataset contract는 [`docs/dataset.md`](docs/dataset.md), 검증 규칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)에 있다.
 

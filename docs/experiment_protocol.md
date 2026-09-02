@@ -19,7 +19,7 @@ Split assignment occurs at run/physical-condition level before simulation. Windo
 
 TRAIN may fit model weights, normalizers and hard negatives. VALIDATION may select declared candidates and the operating point only after HNM is complete. HOLDOUT may be opened once after the candidate freeze; no reselection follows.
 
-The Unified one-shot HOLDOUT is consumed scientific evidence. Repository consolidation and ordinary verification do not reopen or reinterpret it. The separate 36-run Generalization HOLDOUT remains sealed at guard count 0 for the exact final Generalization candidate.
+The Unified and Generalization one-shot HOLDOUTs are consumed scientific evidence. Repository consolidation and ordinary verification do not reopen or reinterpret them. The 36-run Generalization HOLDOUT guard is permanently 1 after the exact final Generalization candidate's single authorized pass.
 
 ## 3. Unified Hazard training
 
@@ -57,9 +57,9 @@ Current regression tests cover feature/schema parity, normalized tensor parity, 
 
 The exact `model_v2_anchor_refined_gru20_20260902` ensemble is frozen under the role `final_generalization_candidate`. The role is an alias to the existing normalizer and three checkpoints; it does not duplicate or mutate artifacts. Generalization VALIDATION remains development evidence with historical primary verdict `GENERALIZATION_PRIMARY_GATES_FAIL` because Slip recall is 11/12, below the frozen 95% gate. The separate interpretation is `GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION`; the sole primary failure is a sustained response inside the already-frozen loaded-Ice `[0.030,0.050) m` precursor, not a genuine detector miss.
 
-The future Generalization HOLDOUT operation retains the exact primary metrics, gates, and event windows used on Generalization VALIDATION. Ice-precursor outcomes remain a separately reported secondary diagnostic and cannot rescue or rewrite a primary score. Frozen V1 and final V2 must run on all 36 HOLDOUT runs in one shared authorized pass; the predeclared frozen Terrain candidate may run in that same pass as advisory-only.
+The completed Generalization HOLDOUT operation retained the exact primary metrics, gates, and event windows used on Generalization VALIDATION. Ice-precursor outcomes remained a separately reported secondary diagnostic and did not rescue or rewrite a primary score. Frozen V1, final V2, and advisory Terrain ran on all 36 HOLDOUT runs in one shared pass, with each payload deserialized once. Final V2 achieved Hazard 25/28, Slip 11/14, Support 14/14, primary specificity 5/8, Ice-benign specificity 2/2, and premature 2/28. The primary and final verdicts are `GENERALIZATION_HOLDOUT_PRIMARY_GATES_FAIL` and `MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED`.
 
-Readiness verification may inspect only IDs, counts, split membership, file existence, stored hashes, file sizes, and guard metadata. It cannot deserialize HOLDOUT payloads. The scientific evaluator must atomically claim guard `0 -> 1`, reject an unapproved candidate or nonzero initial guard, and refuse a second open. After opening there is no training, retuning, model selection, metric/relabeling change, family exclusion, or scientific rerun.
+Readiness verification inspected only IDs, counts, split membership, file existence, stored hashes, file sizes, and guard metadata. The scientific evaluator atomically claimed guard `0 -> 1` before payload access and now refuses a second open. Post-open verification reads and hash-checks only saved summaries and immutable metadata; it cannot deserialize HOLDOUT payloads. There is no training, retuning, model selection, metric/relabeling change, family exclusion, or scientific rerun after consumption.
 
 ## 6. Terrain training and evaluation
 

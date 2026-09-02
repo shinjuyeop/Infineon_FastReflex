@@ -21,6 +21,7 @@ from fastreflex.dataset.hazard import (
 from fastreflex.dataset.loader import WindowSet
 from fastreflex.dataset.loader import sha256_file
 from fastreflex.evaluation.hazard import (
+    verify_model_v2_anchor_refined_training_result,
     verify_model_v2_extraction_rebalanced_training_result,
 )
 from fastreflex.dataset.generation import (
@@ -33,7 +34,10 @@ from fastreflex.training.hazard import (
     HNM_REPLAY_STRIDE_MS,
     HNM_ROUNDS,
     HNM_TOP_K_PER_RUN,
+    audit_model_v2_anchor_refined_extraction,
     audit_model_v2_rebalanced_extraction,
+    model_v2_anchor_refinement_candidates,
+    model_v2_anchor_refined_policy,
     audit_hazard_extraction,
     fit_hazard_normalizer,
     initial_negative_endpoints,
@@ -129,6 +133,87 @@ def _annotations() -> HazardRunAnnotations:
 
 
 class TrainingTest(unittest.TestCase):
+    def test_model_v2_anchor_refined_extraction_matches_frozen_design(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        config_path = (
+            root
+            / "configs/experiment/20260902_model_v2_anchor_refined_training.yaml"
+        )
+        dataset_path = root / "data/raw/model_v2_hazard_reflex_20260901"
+        if not dataset_path.is_dir():
+            self.skipTest("frozen Model V2 dataset is not available")
+        document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data = prepare_model_v2_training_data(root, document)
+        audit = audit_model_v2_anchor_refined_extraction(
+            data.runs,
+            data.precursor_samples,
+            data.annotations,
+        )
+
+        self.assertTrue(audit["passed"])
+        self.assertEqual(
+            canonical_sha256(model_v2_anchor_refinement_candidates()),
+            "cd6af9180613101f61fe271f2055d1c8a69daf7acf1d73ef429c8e0f47c555cb",
+        )
+        self.assertEqual(
+            canonical_sha256(model_v2_anchor_refined_policy()),
+            "52004bc2ddc307316a7a888855a1bd8014e50b96aa45a178a10965e890f4b199",
+        )
+        self.assertEqual(
+            audit["positive_window_ids_sha256"],
+            "248719864bc1974ac54a21de63f04a6d5e6f55ef3e3c37092cf0ec757872d09e",
+        )
+        self.assertEqual(
+            audit["negative_window_ids_sha256"],
+            "392c1fda06953135bfed9a97c7cabb3915d4c50fdf9ff11b2ac8e6550448936c",
+        )
+        self.assertEqual(
+            audit["masked_window_sha256"],
+            "32bae2d81b05709771545b375dd6cffb95d2dfc17c2808a7adf3a7f70174c35a",
+        )
+        self.assertEqual(
+            audit["monitor_endpoint_sha256"],
+            "39d30234f674446f305b1b51d446977ba301e6db1e0591ac14dbe7172cbb1bf5",
+        )
+        self.assertEqual(
+            audit["monitor_positive_sha256"],
+            "e4cd285091e55c92c773512b44958273d7773a708bad876806cec6a8401f9c88",
+        )
+        self.assertEqual(audit["all_positive_count"], 3_135)
+        self.assertEqual(audit["all_negative_count"], 32_209)
+        self.assertEqual(
+            audit["fit_positive_counts"],
+            {
+                "slip": 1_680,
+                "ordinary_support": 640,
+                "delayed_support": 198,
+                "support": 838,
+                "total": 2_518,
+            },
+        )
+        self.assertEqual(audit["fit_negative_count"], 25_585)
+        self.assertEqual(
+            audit["monitor_positive_counts"],
+            {
+                "slip": 431,
+                "ordinary_support": 167,
+                "delayed_support_concrete": 8,
+                "delayed_support_marble": 11,
+                "total": 617,
+            },
+        )
+        self.assertEqual(audit["monitor_negative_count"], 6_624)
+        self.assertEqual(audit["fit_monitor_endpoint_overlap"], 0)
+        self.assertEqual(audit["delayed_support"]["fit_represented_runs"], 18)
+        self.assertEqual(
+            audit["delayed_support"]["by_source"],
+            {
+                "concrete": {"eligible_runs": 9, "fit_positive_windows": 99},
+                "marble": {"eligible_runs": 9, "fit_positive_windows": 99},
+            },
+        )
+        self.assertEqual(set(audit["contradiction_audit"].values()), {0})
+
     def test_model_v2_rebalanced_extraction_matches_frozen_design(self) -> None:
         root = Path(__file__).resolve().parents[1]
         config_path = (
@@ -256,6 +341,50 @@ class TrainingTest(unittest.TestCase):
             self.assertEqual(sha256_file(root / record["path"]), record["sha256"])
         self.assertFalse(result["generalization_validation_v2_inference"])
         self.assertFalse(result["unified_holdout_waveform_reopened"])
+        self.assertFalse(result["generalization_holdout_waveform_opened"])
+        self.assertFalse(result["generalization_holdout_inference"])
+        self.assertEqual(result["generalization_holdout_guard_count"], 0)
+
+    def test_anchor_refined_candidate_reuses_normalizer_and_isolates_artifacts(
+        self,
+    ) -> None:
+        root = Path(__file__).resolve().parents[1]
+        config_path = (
+            root
+            / "configs/experiment/20260902_model_v2_anchor_refined_training.yaml"
+        )
+        document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        artifact_path = root / str(document["artifacts"]["path"])
+        if not (artifact_path / "training_result.json").is_file():
+            self.skipTest("frozen anchor-refined candidate is not available")
+        candidate = json.loads(
+            (artifact_path / "candidate_freeze.json").read_text(encoding="utf-8")
+        )
+        result = json.loads(
+            (artifact_path / "training_result.json").read_text(encoding="utf-8")
+        )
+        verified = verify_model_v2_anchor_refined_training_result(
+            root, config_path
+        )
+
+        self.assertTrue(verified["passed"])
+        self.assertEqual(candidate["normalizer_fits"], 0)
+        self.assertEqual(
+            candidate["normalizer_sha256"],
+            "e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a",
+        )
+        protected_paths = {
+            str(row["path"])
+            for row in (
+                *document["protected_v1"]["checkpoints"],
+                *document["baseline_v2"]["checkpoints"],
+                *document["rebalanced_v2"]["checkpoints"],
+            )
+        }
+        self.assertFalse(protected_paths & set(candidate["checkpoint_sha256"]))
+        self.assertFalse(result["generalization_validation_v2_inference"])
+        self.assertFalse(result["unified_holdout_waveform_reopened"])
+        self.assertFalse(result["unified_holdout_new_inference"])
         self.assertFalse(result["generalization_holdout_waveform_opened"])
         self.assertFalse(result["generalization_holdout_inference"])
         self.assertEqual(result["generalization_holdout_guard_count"], 0)

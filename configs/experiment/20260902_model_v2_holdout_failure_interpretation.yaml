@@ -1,0 +1,191 @@
+schema_version: 1
+
+experiment:
+  id: MODEL_V2_HOLDOUT_FAILURE_INTERPRETATION
+  milestone: MODEL_V2_HOLDOUT_FAILURE_INTERPRETATION
+  date: 2026-09-02
+  timezone: Asia/Seoul
+  source_commit: 7fdb61940a6fc60edbd0b2ad5e0726b5eb07d3b6
+  purpose: explain_consumed_generalization_holdout_failures_without_reopening_holdout_payloads
+  mode: read_only_interpretation
+
+consumed_holdout:
+  dataset_id: generalization_hazard_reflex_20260831
+  split: GENERALIZATION_HOLDOUT
+  run_count: 36
+  guard: 1
+  scientific_open_count: 1
+  raw_payload_access_forbidden: true
+  model_inference_forbidden: true
+  physical_event_recomputation_forbidden: true
+  visualization_forbidden: true
+  second_scientific_open_forbidden: true
+  guard_reset_forbidden: true
+  execution_config:
+    path: configs/experiment/20260902_model_v2_generalization_holdout_one_shot_evaluation.yaml
+    sha256: ec53c761f426aaeba5528916c60a6c3f69550007987cdf5f3754304cd4bbef0a
+  one_shot_result:
+    path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/evaluation_result.json
+    sha256: 2948449fb818335ec2e03ac0b90c34280714bac53570e05f3e67ae1c9bd839da
+  run_level:
+    path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/run_level_results.json
+    sha256: 18a7a40205f59dd230ef5cbb2a838027a2bfb5764f460d0c72abf1063539152d
+  primary_metrics:
+    path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/primary_metrics.json
+    sha256: a0e4b9436c559df6f6966debdfa17b1e22ca494299db9b9ec742650f354e8615
+  secondary_metrics:
+    path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/secondary_metrics.json
+    sha256: 190e7117dc83c221a34e0002314093cbb2237d6f78603e93bcd89507f9bc3628
+  terrain_diagnostics:
+    path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/terrain_diagnostics.json
+    sha256: 2fd5e867c7b254dc09011b435c5c1a0202e2dc48373ef98c3a98bce77aaa3730
+  guard_record:
+    path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+    sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154
+
+authorized_development_data:
+  unified_train:
+    dataset_id: unified_hazard_reflex_20260829
+    path: data/raw/unified_hazard_reflex_20260829
+    split: train
+    manifest_sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6
+  model_v2_train:
+    dataset_id: model_v2_hazard_reflex_20260901
+    path: data/raw/model_v2_hazard_reflex_20260901
+    split: V2_TRAIN
+    manifest_sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25
+  model_v2_validation:
+    dataset_id: model_v2_hazard_reflex_20260901
+    path: data/raw/model_v2_hazard_reflex_20260901
+    split: V2_VALIDATION
+    manifest_sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25
+  generalization_validation:
+    dataset_id: generalization_hazard_reflex_20260831
+    path: data/raw/generalization_hazard_reflex_20260831
+    split: GENERALIZATION_VALIDATION
+    manifest_sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53
+  ice_semantics:
+    dataset_id: ice_near_hazard_semantics_20260901
+    path: data/raw/ice_near_hazard_semantics_20260901
+    manifest_sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759
+  raw_development_payload_access_allowed: true
+  development_model_probability_analysis_allowed: true
+  development_feature_analysis_allowed: true
+
+protected_models:
+  v1:
+    candidate_id: unified_hazard_reflex_gru20_20260829
+    freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+    restorable: true
+  baseline_v2:
+    candidate_id: model_v2_data_only_gru20_20260901
+    freeze_sha256: edb16b7d96fb38e680e36dcca5ecd7b1c1682ba410b94d21f40c2a38d4ed8725
+    restorable: true
+  extraction_rebalanced_v2:
+    candidate_id: model_v2_extraction_rebalanced_gru20_20260901
+    freeze_sha256: ca1ba7abae1746528cdd098b903ce8f967937a625773bb8029fc486645fc4533
+    restorable: true
+  final_v2:
+    candidate_id: model_v2_anchor_refined_gru20_20260902
+    record_path: configs/model/final_generalization_candidate.yaml
+    record_sha256: 52644d3efb0e756002bd43a7f94aea0a16a65eb2ff014c72548f2b3b138b7bc2
+    candidate_freeze_sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f
+    normalizer_sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+    checkpoint_sha256:
+      - 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9
+      - 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39
+      - fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd
+    restorable: true
+  terrain_v1:
+    normalizer_sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+    checkpoint_sha256:
+      - 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+      - de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+      - 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+    advisory_only: true
+    restorable: true
+
+protected_datasets:
+  unified: {expected_runs: 256}
+  model_v2: {expected_runs: 412}
+  generalization: {expected_runs: 72}
+  ice_semantics: {expected_runs: 48}
+  mutation_forbidden: true
+
+failure_targets:
+  sand_benign_false_alerts:
+    - ghr_ssh_sb_h_c020
+    - ghr_ssh_sb_h_c030
+    - ghr_ssh_sb_h_m030
+  slip_late_detection:
+    - ghr_ssh_is_h_c030
+  ice_precursor_timing_conflicts:
+    - ghr_ibc_h_c020
+    - ghr_ocd_h_c020
+
+analysis_scope:
+  saved_holdout_results_only: true
+  development_raw_data_allowed: true
+  metadata_cell_analysis: true
+  model_probability_comparison_on_development_only: true
+  feature_analysis_on_development_only: true
+  contact_fsr_diagnostics_on_development_only: true
+  holdout_waveform_or_feature_analysis: false
+  holdout_model_inference: false
+  holdout_physical_event_recomputation: false
+
+historical_verdicts:
+  primary: GENERALIZATION_HOLDOUT_PRIMARY_GATES_FAIL
+  final: MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED
+  simulation: SIMULATION_GENERALIZATION_EVIDENCE_NOT_SUPPORTED
+  data_coverage: DATA_COVERAGE_HYPOTHESIS_NOT_SUPPORTED
+  immutable: true
+
+future_use_policy:
+  holdout_raw_runs_for_training: forbidden
+  holdout_run_level_signals_for_training: forbidden
+  holdout_scores_for_tuning: forbidden
+  holdout_threshold_behavior_for_operating_point_search: forbidden
+  future_modified_candidate_requires_new_development_corpus: true
+  future_modified_candidate_requires_new_independent_final_holdout: true
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  seed_searches: 0
+  new_simulation_runs: 0
+  holdout_scientific_opens_total: 1
+  holdout_payload_reads_this_milestone: 0
+  holdout_model_inference_this_milestone: 0
+
+no_training: true
+no_generation: true
+no_holdout_payload_access: true
+no_threshold_search: true
+no_persistence_search: true
+no_architecture_search: true
+no_model_selection: true
+no_metric_change: true
+no_relabeling: true
+no_run_exclusion: true
+no_visualization: true
+
+artifacts:
+  report: reports/20260902_model_v2_holdout_failure_interpretation.md
+  generated_analysis_path: artifacts/runs/20260902_model_v2_holdout_failure_interpretation
+  contain_holdout_waveforms: false
+
+verdict_options:
+  - MODEL_V2_HOLDOUT_FAILURE_INTERPRETATION_ACTIONABLE
+  - MODEL_V2_HOLDOUT_FAILURE_INTERPRETATION_INCONCLUSIVE
+
+next_milestone_options:
+  - SAND_BENIGN_GENERALIZATION_STUDY_DESIGN
+  - HAZARD_SENSOR_OBSERVABILITY_STUDY_DESIGN
+  - SLIP_LATE_DETECTION_STUDY_DESIGN
+  - MODEL_V3_HYPOTHESIS_DESIGN

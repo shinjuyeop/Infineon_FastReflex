@@ -1,0 +1,171 @@
+schema_version: 1
+
+experiment:
+  id: SAND_BENIGN_MILD_DOMAIN_CALIBRATION_REDESIGN
+  status: CALIBRATION_CONTRACT_FROZEN
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  source_commit: 3e6a6306b5f52d333b67571921f0f867e5513b03
+  evidence_type: model_blind_physical_domain_calibration_only
+
+starting_evidence:
+  failed_dataset_id: sand_benign_generalization_redesigned_study_20260902
+  failed_dataset_path: data/raw/sand_benign_generalization_redesigned_study_20260902
+  failed_dataset_freeze_sha256: 87956c511684a78780d8bc7c1ac50552779de55b85a739e0221d1fa449f9416a
+  failure_review_config: configs/experiment/20260902_sand_benign_redesigned_domain_failure_review.yaml
+  failure_review_config_sha256: ddae06af4167e75b02ad5060a644fc516f99a68d9f9234f27b9d229b258515da
+  failure_review_report: reports/20260902_sand_benign_redesigned_domain_failure_review.md
+  current_mild_strict: {REDESIGNED_DISCOVERY: 45, REDESIGNED_CONFIRMATION: 35}
+  current_mild_planned_per_split: 48
+  current_insufficient_followup_fall_censors: 20
+  observation_window_primary_cause_rejected: true
+  allowed_historical_evidence:
+    - model_blind_physical_manifests
+    - current_mild_physical_traces
+    - previous_sand_calibration_physical_traces
+    - frozen_physical_generation_audits
+    - scenario_and_file_integrity_metadata
+
+scientific_boundary:
+  forbidden:
+    - model_v1_inference
+    - model_v2_inference
+    - terrain_inference
+    - hazard_probabilities
+    - threshold_or_reflex_scoring
+    - normalized_causal_80d_analysis
+    - gru_state_or_margin_analysis
+    - training_or_hnm
+    - checkpoint_or_normalizer_creation
+    - threshold_or_persistence_tuning
+    - architecture_or_sensor_fusion_experiments
+    - historical_holdout_payload_access
+    - current_confirmation_model_science
+  consumed_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  required_guard_after: 1
+  required_scientific_open_count: 1
+  full_recalibrated_study_generation: forbidden
+
+calibration_question:
+  objective: identify_the_smallest_robust_broad_mild_sand_geometry_and_exposure_domain
+  hypotheses:
+    H1_start_width_interaction: patch_exit_and_contact_sequence_explain_nonmonotonic_width_outcomes
+    H2_speed_exposure_interaction: residence_or_loaded_exposure_differs_by_command_speed
+    H3_source_interaction: hard_ground_source_changes_entry_state_or_sand_response
+    H4_topology_phase_interaction: entry_topology_and_realized_precontact_phase_change_viability
+    H5_common_domain: one_shared_geometry_envelope_is_sufficient_across_all_six_cells
+  factor_domain:
+    source_terrain: [concrete, marble]
+    speed_mps: [0.20, 0.25, 0.30]
+    target_terrain: sand
+    sink_severity: mild
+    topology: [transition_left, transition_right]
+    patch_start_x_m_review_range: [0.318, 0.345]
+    patch_width_m_review_range: [0.766, 0.834]
+    observation_duration_s: 9.0
+  preserve_unless_defect_found:
+    - source_and_speed_axes
+    - moderate_boundary_domain
+    - ordinary_and_delayed_support_domains
+    - precontact_phase_at_target_minus_20ms
+    - topology_semantics
+    - physical_geometry_realization_strategy
+    - observation_duration_9s
+    - censor_aware_physical_label_contract
+    - generation_gates
+    - confirmation_protocol
+
+physical_metrics:
+  primary:
+    - objective_physical_outcome
+    - invalid_reason
+    - first_target_contact_ms
+    - first_fall_ms
+    - target_to_fall_ms
+    - first_and_last_loaded_target_contact_ms
+    - cumulative_loaded_sand_exposure_ms
+    - target_contact_duration_ms
+    - complete_target_contact_episode_count
+    - incomplete_target_contact_episode_count
+    - precontact_phase_20ms
+    - leading_foot
+    - loaded_side_at_contact
+    - patch_entry_x_m
+    - patch_exit_x_m
+    - peak_transition_displacement_m
+    - peak_support_spread_m
+    - normalized_load_redistribution
+    - normalized_peak_load_derivative
+  derived_exposure_selection_rule: prefer_the_simplest_quantity_that_separates_stable_and_unstable_cases_across_independent_cells
+  predictive_machine_learning: forbidden
+
+pilot_protocol:
+  decision_after_existing_data_analysis: required_before_any_batch
+  maximum_new_simulations: 72
+  maximum_batches: 3
+  model_blind: true
+  calibration_only: true
+  retain_all_outcomes: true
+  within_batch_adaptation: forbidden
+  adaptive_replacement_or_backfill: forbidden
+  adaptation_between_batches: physical_results_only
+  every_batch_frozen_before_first_simulation: true
+  fresh_run_ids_and_scenario_signatures: true
+  default_cell_balance: all_six_source_speed_cells
+  duration_extension_pilot: forbidden_without_new_implementation_evidence
+
+decision_rules:
+  common_domain_preferred: true
+  conditioned_domain_allowed_only_if:
+    - same_geometry_interaction_replicates_across_multiple_fresh_points
+    - conditioning_has_a_simple_physical_interpretation
+    - all_six_source_speed_cells_remain_represented
+  stable_region_requires:
+    - support_from_multiple_independent_scenarios
+    - no_systematic_cell_instability
+    - physically_benign_displacement_and_spread
+  verification_population_minimum: 24
+  verification_cell_minimum: 4
+  overall_strict_benign_rate_minimum: 0.85
+  per_cell_strict_benign_minimum: 3
+  required_global_precontact_phases: [LEFT_SINGLE_SUPPORT, RIGHT_SINGLE_SUPPORT]
+  required_global_topologies: [transition_left, transition_right]
+  future_domain_must_have_nontrivial_geometry_and_entry_diversity: true
+  ready_requires:
+    - robust_mild_domain_supported
+    - exact_fresh_176_run_design_frozen
+    - historical_exact_overlap_zero
+    - future_cross_split_exact_and_forbidden_near_overlap_zero
+    - no_model_evidence_used
+  needs_more_evidence_if: pilot_ceiling_reached_without_robust_domain
+  blocked_if: viable_domain_requires_collapsing_intended_geometry_or_cell_diversity
+
+historical_signature_policy:
+  exact_overlap_max: 0
+  manifests:
+    - {path: data/raw/unified_hazard_reflex_20260829/manifest.json, sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6}
+    - {path: data/raw/model_v2_hazard_reflex_20260901/manifest.json, sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25}
+    - {path: data/raw/generalization_hazard_reflex_20260831/manifest.json, sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53}
+    - {path: data/raw/ice_near_hazard_semantics_20260901/manifest.json, sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759}
+    - {path: data/raw/sand_benign_generalization_study_20260902/manifest.json, sha256: 70a619e35dba72478b298fb5082c68c07bc577e7536ba48b2ce9a52665f9834f}
+    - {path: data/raw/sand_benign_phase_geometry_calibration_20260902/manifest.json, sha256: a30f96943593c2322dde1898060919eab3ec9929167e358743335f1a809c4d77}
+    - {path: data/raw/sand_benign_severity_calibration_20260902/manifest.json, sha256: ab481ddaa38f6fb84c9d3a7d0f0ac2a148463b4aa3eb341b4f8c3a29e9a37415}
+    - {path: data/raw/sand_benign_domain_control_calibration_20260902/manifest.json, sha256: 28274d1bad4f3bc42dd55b6cd4772feed6b6dde9ce48c536d775a640f12fba4a}
+    - {path: data/raw/sand_benign_generalization_redesigned_study_20260902/manifest.json, sha256: 90970438abb9eced3742d387697cf3f3ff4bd8b905b3554ea01f6766a38e501b}
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  v1_inference_runs: 0
+  v2_inference_runs: 0
+  terrain_inference_runs: 0
+  fsr_fusion_experiments: 0
+  old_holdout_payload_reads: 0
+  current_confirmation_model_analysis: 0
+  new_mild_calibration_simulations: 0
+  full_recalibrated_study_generation_runs: 0

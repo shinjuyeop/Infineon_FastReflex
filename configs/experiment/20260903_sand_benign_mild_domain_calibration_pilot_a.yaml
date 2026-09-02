@@ -1,0 +1,73 @@
+schema_version: 1
+
+experiment:
+  id: SAND_BENIGN_PHASE_GEOMETRY_CALIBRATION
+  milestone_id: SAND_BENIGN_MILD_DOMAIN_CALIBRATION_PILOT_A
+  purpose: localize_a_common_mild_sand_entry_exit_and_topology_boundary_across_all_source_speed_cells
+
+calibration:
+  batch_index: 1
+  exact_question: do_fresh_shared_left_and_right_entry_exit_geometries_separate_stable_transition_and_unstable_mild_regions_across_all_six_cells
+  master_contract_path: configs/experiment/20260903_sand_benign_mild_domain_calibration_redesign.yaml
+  master_contract_sha256: 0ac6a6017b38fc412c6311a8ac89c513bd0381e15317de5e7c6dc623bb11c7bd
+  adaptation_basis: current_redesigned_96_mild_physical_traces_and_previous_96_model_blind_calibration_runs_only
+  frozen_before_first_simulation: true
+  deterministic_seed: null
+  planned_run_count: 36
+  dataset_id: sand_benign_mild_domain_calibration_pilot_a_20260903
+  dataset_path: data/raw/sand_benign_mild_domain_calibration_pilot_a_20260903
+  created_at: "2026-09-03T02:19:17+09:00"
+  source_commit: 3e6a6306b5f52d333b67571921f0f867e5513b03
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  simulator_config_path: configs/simulator/g1.yaml
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  consumed_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  duration_s: 9.0
+  model_inference: forbidden
+  within_batch_adaptation: forbidden
+  replacement_or_backfill: forbidden
+  retain_all_outcomes: true
+  label_contract:
+    precontact_phase_lookback_ms: 20
+    benign_post_target_followup_ms: 1000
+    support_post_event_followup_ms: 1000
+    expected_samples: 9000
+  parameter_range:
+    source_terrain: [concrete, marble]
+    speed_mps: [0.20, 0.25, 0.30]
+    sink_severity: [mild]
+    patch_start_x_m: [0.321, 0.341]
+    patch_end_x_m: [1.128, 1.160]
+    patch_width_m: [0.805, 0.825]
+    topology: [transition_left, transition_right]
+  historical_manifests:
+    - {path: data/raw/unified_hazard_reflex_20260829/manifest.json, sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6}
+    - {path: data/raw/model_v2_hazard_reflex_20260901/manifest.json, sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25}
+    - {path: data/raw/generalization_hazard_reflex_20260831/manifest.json, sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53}
+    - {path: data/raw/ice_near_hazard_semantics_20260901/manifest.json, sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759}
+    - {path: data/raw/sand_benign_generalization_study_20260902/manifest.json, sha256: 70a619e35dba72478b298fb5082c68c07bc577e7536ba48b2ce9a52665f9834f}
+    - {path: data/raw/sand_benign_phase_geometry_calibration_20260902/manifest.json, sha256: a30f96943593c2322dde1898060919eab3ec9929167e358743335f1a809c4d77}
+    - {path: data/raw/sand_benign_severity_calibration_20260902/manifest.json, sha256: ab481ddaa38f6fb84c9d3a7d0f0ac2a148463b4aa3eb341b4f8c3a29e9a37415}
+    - {path: data/raw/sand_benign_domain_control_calibration_20260902/manifest.json, sha256: 28274d1bad4f3bc42dd55b6cd4772feed6b6dde9ce48c536d775a640f12fba4a}
+    - {path: data/raw/sand_benign_generalization_redesigned_study_20260902/manifest.json, sha256: 90970438abb9eced3742d387697cf3f3ff4bd8b905b3554ea01f6766a38e501b}
+  sources: [concrete, marble]
+  speeds_mps: [0.20, 0.25, 0.30]
+  run_id_prefix: sbmc_a
+  fixed_mechanics:
+    group: sand_benign
+    scenario_family: sand_benign_mild_domain_calibration
+    target_terrain: sand
+    slip_pattern: uniform
+    sink_severity: mild
+    severity_intent: LOW
+    support_pattern: balanced_deformable
+  templates:
+    - {id: left_inner, patch_start_x_m: 0.327, patch_width_m: 0.805, patch_end_x_m: 1.132, sink_pattern: transition_left}
+    - {id: left_middle, patch_start_x_m: 0.335, patch_width_m: 0.811, patch_end_x_m: 1.146, sink_pattern: transition_left}
+    - {id: left_outer, patch_start_x_m: 0.341, patch_width_m: 0.819, patch_end_x_m: 1.160, sink_pattern: transition_left}
+    - {id: right_inner, patch_start_x_m: 0.321, patch_width_m: 0.807, patch_end_x_m: 1.128, sink_pattern: transition_right}
+    - {id: right_middle, patch_start_x_m: 0.327, patch_width_m: 0.817, patch_end_x_m: 1.144, sink_pattern: transition_right}
+    - {id: right_outer, patch_start_x_m: 0.335, patch_width_m: 0.825, patch_end_x_m: 1.160, sink_pattern: transition_right}

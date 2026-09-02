@@ -1,0 +1,82 @@
+schema_version: 1
+
+promotion:
+  id: MODEL_V2_DEVELOPMENT_CANDIDATE_PROMOTION
+  date: 2026-09-02
+  timezone: Asia/Seoul
+  source_commit: 8a4970cad8778e100751d4f6a8ae4f15b5eb4c03
+  readiness_review_config:
+    path: configs/experiment/20260902_model_v2_candidate_readiness_review.yaml
+    sha256: c8a7f79a916b0d660bd319b0a1f66f9f01c9c76fdf41272b3504521337122b65
+  readiness_verdict: READY_FOR_EXTERNAL_DEVELOPMENT_EVALUATION
+  scope: eligible_for_MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_only
+  final_supported_model: false
+  final_model_freeze: false
+  Generalization_HOLDOUT_approved: false
+  e84_release: false
+
+candidate:
+  id: model_v2_anchor_refined_gru20_20260902
+  candidate_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json
+    sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f
+  evaluation_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_evaluation_freeze.json
+    sha256: cad3902137b622c3a3d15ecb3d6c3bb31ee9751f3605fb8d43daa6ac81695c07
+  normalizer:
+    path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json
+    sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+  checkpoints:
+    - seed: 20260828
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260828.pt
+      sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9
+    - seed: 20260829
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260829.pt
+      sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39
+    - seed: 20260830
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260830.pt
+      sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd
+  architecture_sha256: ae4753699399aa7e4a93639935e085156ef28ed100a77058d7308eb1549aa897
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  threshold: 0.99
+  persistence_ms: 5
+  artifacts_unchanged: true
+
+known_limitation:
+  split: V2_VALIDATION
+  original_primary_slip_result: {correct: 30, total: 35, recall: 0.8571428571428571}
+  original_primary_slip_gate_min: 0.95
+  original_primary_slip_gate_passed: false
+  historical_internal_verdict: MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED
+  primary_score_or_gate_changed: false
+
+physical_interpretation:
+  failed_primary_slip_runs: 5
+  inside_frozen_future_slip_precursor: 5
+  before_precursor: 0
+  benign_release: 0
+  censored: 0
+  true_miss: 0
+  interpretation: all_remaining_primary_failures_are_sustained_supported_early_hazard_responses_inside_LATER_SLIP_precursors
+  does_not_claim_general_precursor_detector: true
+
+next_evaluation:
+  milestone: MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION
+  split: Generalization_VALIDATION
+  compare_identically: [frozen_V1, model_v2_anchor_refined_gru20_20260902]
+  run_count: 36
+  contract_source:
+    path: configs/experiment/20260902_model_v2_candidate_readiness_review.yaml
+    section: next_external_evaluation_contract_if_promoted
+  no_retraining: true
+  no_threshold_or_persistence_change: true
+  no_model_selection_after_result: true
+  execute_now: false
+
+sealed_evidence:
+  Generalization_VALIDATION_new_candidate_inference: false
+  Generalization_HOLDOUT_waveform_opened: false
+  Generalization_HOLDOUT_inference: false
+  Generalization_HOLDOUT_guard_count: 0
+  Unified_HOLDOUT_waveform_reopened: false
+  Unified_HOLDOUT_new_inference: false

@@ -1,0 +1,181 @@
+schema_version: 1
+
+experiment:
+  id: MODEL_V2_CANDIDATE_READINESS_REVIEW
+  milestone: MODEL_V2_CANDIDATE_READINESS_REVIEW
+  date: 2026-09-02
+  timezone: Asia/Seoul
+  source_commit: 8a4970cad8778e100751d4f6a8ae4f15b5eb4c03
+  purpose: determine_external_development_evaluation_readiness_without_changing_the_frozen_primary_contract
+  mode: review_only
+
+candidate:
+  id: model_v2_anchor_refined_gru20_20260902
+  training_config:
+    path: configs/experiment/20260902_model_v2_anchor_refined_training.yaml
+    sha256: 2da935d96c80452d69108ac14aa8a4df8edae297672cf25fd1945eb4deb64dbe
+  candidate_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json
+    sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f
+  evaluation_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_evaluation_freeze.json
+    sha256: cad3902137b622c3a3d15ecb3d6c3bb31ee9751f3605fb8d43daa6ac81695c07
+  normalizer:
+    path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json
+    sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+  checkpoints:
+    - seed: 20260828
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260828.pt
+      sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9
+    - seed: 20260829
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260829.pt
+      sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39
+    - seed: 20260830
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260830.pt
+      sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd
+  architecture_sha256: ae4753699399aa7e4a93639935e085156ef28ed100a77058d7308eb1549aa897
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  architecture: {model_family: gru, history_ms: 20, hidden_size: 32, layers: 1, input: pelvis_imu6, parameters: 11010}
+  threshold: 0.99
+  persistence_ms: 5
+
+historical_primary_result:
+  split: V2_VALIDATION
+  valid_runs: 96
+  hazard: {correct: 59, total: 64, recall: 0.921875, gate_min: 0.90, passed: true}
+  slip: {correct: 30, total: 35, recall: 0.8571428571428571, gate_min: 0.95, passed: false}
+  support: {correct: 30, total: 30, recall: 1.0, gate_min: 0.85, passed: true}
+  confirmed_no_hazard_specificity: {correct: 26, total: 26, specificity: 1.0, gate_min: 0.95, passed: true}
+  premature: {count: 5, total: 64, rate: 0.078125, gate_max: 0.10, passed: true}
+  delayed_support: {correct: 6, total: 6}
+  marble_delayed_support: {correct: 3, total: 3}
+  right_support: {correct: 12, total: 12}
+  staged_sand_benign: {correct: 8, total: 8}
+  speed_sand_benign: {correct: 12, total: 12}
+  only_failed_gate: SLIP_RECALL_AT_LEAST_0.95
+  internal_verdict: MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED
+  scores_and_gates_are_immutable: true
+
+frozen_semantics:
+  established_slip:
+    definition: touchdown_anchor_tangential_drift_at_least_0.050_m_for_3_ms_any_foot
+    drift_threshold_m: 0.050
+    persistence_ms: 3
+    foot_logic: ANY
+  primary_valid_window:
+    start_ms_relative_to_established_slip: -30
+    stop_ms_relative_to_established_slip: 40
+  ice_precursor:
+    label: ICE_PRECURSOR_CANDIDATE
+    definition: loaded_exact_ice_drift_in_half_open_interval_0.030_to_0.050_m
+    lower_m_inclusive: 0.030
+    upper_m_exclusive: 0.050
+    physical_verdict: ICE_PHYSICAL_PRECURSOR_SUPPORTED
+    primary_score_replacement: false
+  semantics_config:
+    path: configs/experiment/20260901_ice_near_hazard_target_semantics.yaml
+    sha256: 29ce97d2dcdb8f783518b956d36522370f9059c4914a64a4d5f7cdbf1f4446e0
+  semantics_report:
+    path: reports/20260901_ice_near_hazard_target_semantics.md
+    sha256: 535c9e50cf5543490d2b3f3aba52e37635c237a8ff7f4ad45b3db4dce2220d5d
+  prior_failure_audit_config:
+    path: configs/experiment/20260901_model_v2_internal_failure_audit.yaml
+    sha256: 9d2a4c5388ee576b589e60c815ae4af3a552bd2b2f92d4b8335e22e01a7ce102
+  prior_failure_audit_report:
+    path: reports/20260901_model_v2_internal_failure_audit.md
+    sha256: 752960e35fca384190d04b7e91fe717b661c9a9800c510d608e8c076374e4965
+
+authorized_evidence:
+  - V2_VALIDATION
+  - effective_TRAIN_frozen_context
+  - prior_Ice_semantics_evidence
+  - prior_failure_audit_evidence
+  - frozen_candidate_and_model_artifacts
+
+sealed_evidence:
+  Generalization_VALIDATION_new_candidate_inference: false
+  Generalization_HOLDOUT_run_count: 36
+  Generalization_HOLDOUT_waveform_opened: false
+  Generalization_HOLDOUT_inference: false
+  Generalization_HOLDOUT_guard_count: 0
+  Unified_HOLDOUT_waveform_reopened: false
+  Unified_HOLDOUT_new_inference: false
+
+review:
+  population: five_Slip_runs_failing_the_frozen_primary_contract
+  failure_categories:
+    - BEFORE_PRECURSOR
+    - INSIDE_FUTURE_SLIP_PRECURSOR
+    - INSIDE_BENIGN_RELEASE_PRECURSOR
+    - INSIDE_CENSORED_PRECURSOR
+    - AFTER_PRECURSOR_BUT_BEFORE_PRIMARY_WINDOW
+    - TRUE_MISS_NO_REFLEX
+  primary_failure_types: [MISS, PREMATURE, OUT_OF_VALID_WINDOW]
+  physical_failure_category: GENUINE_DETECTION_FAILURE
+  readiness_decision_categories:
+    - READY_FOR_EXTERNAL_DEVELOPMENT_EVALUATION
+    - NOT_READY_GENUINE_SLIP_FAILURE
+    - NOT_READY_MIXED_SLIP_FAILURE
+    - READINESS_INCONCLUSIVE
+  preserve_primary_and_secondary_separately: true
+  classification_status: pending_read_only_replay
+
+promotion_rule:
+  eligible_only_if: READY_FOR_EXTERNAL_DEVELOPMENT_EVALUATION
+  promote_exact_candidate_without_changes: true
+  scope: eligibility_for_external_Generalization_VALIDATION_development_evaluation_only
+  final_model_freeze: false
+  holdout_approval: false
+
+next_external_evaluation_contract_if_promoted:
+  milestone: MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION
+  split: Generalization_VALIDATION
+  identical_run_count: 36
+  candidates: [frozen_V1, promoted_anchor_refined_V2]
+  primary_metrics:
+    - hazard_recall
+    - slip_recall
+    - support_recall
+    - confirmed_no_hazard_specificity
+    - ice_benign_specificity_where_denominator_valid
+    - premature_rate
+    - slip_latency
+    - support_timing
+  family_breakdown:
+    - one_contact_delayed_ice
+    - ice_benign
+    - delayed_sand_support
+    - right_sand_support
+    - speed_stratified_scenarios
+  secondary_metrics: existing_frozen_ice_precursor_aware_contract
+  existing_primary_gates_are_authoritative: true
+  outcome_categories:
+    - GENERALIZATION_DEVELOPMENT_SUPPORTED
+    - GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION
+    - GENERALIZATION_DEVELOPMENT_NOT_SUPPORTED
+  no_retraining: true
+  no_threshold_search: true
+  no_model_selection_after_result: true
+  no_holdout: true
+  execute_in_this_milestone: false
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  seed_searches: 0
+  new_simulation_runs: 0
+
+artifacts:
+  review_path: artifacts/runs/20260902_model_v2_candidate_readiness_review
+  tracked_report: reports/20260902_model_v2_candidate_readiness_review.md
+  promotion_record_if_ready: artifacts/releases/model_v2_development_candidate_promotion.json
+
+no_training: true
+no_generation: true
+no_threshold_search: true
+no_metric_change: true

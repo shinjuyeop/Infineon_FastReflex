@@ -25,6 +25,9 @@ MODEL_V2_GENERATION_ID = "MODEL_V2_DATASET_GENERATION"
 MODEL_V2_TRAINING_ID = "MODEL_V2_DATA_ONLY_TRAINING"
 MODEL_V2_REBALANCED_TRAINING_ID = "MODEL_V2_EXTRACTION_REBALANCED_TRAINING"
 MODEL_V2_ANCHOR_REFINED_TRAINING_ID = "MODEL_V2_ANCHOR_REFINED_TRAINING"
+MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_ID = (
+    "MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION"
+)
 SUPPORTED_EXPERIMENT_IDS = frozenset(
     (
         HAZARD_EXPERIMENT_ID,
@@ -33,6 +36,7 @@ SUPPORTED_EXPERIMENT_IDS = frozenset(
         MODEL_V2_TRAINING_ID,
         MODEL_V2_REBALANCED_TRAINING_ID,
         MODEL_V2_ANCHOR_REFINED_TRAINING_ID,
+        MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_ID,
     )
 )
 HISTORICAL_MESSAGE = (
@@ -328,6 +332,14 @@ def _evaluate(args: argparse.Namespace) -> int:
         from fastreflex.evaluation.hazard import verify_supported_candidate
 
         result = verify_supported_candidate(REPOSITORY_ROOT, load_yaml(args.config))
+    elif experiment_id == MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_ID:
+        from fastreflex.evaluation.generalization import (
+            run_generalization_development_evaluation,
+        )
+
+        result = run_generalization_development_evaluation(
+            REPOSITORY_ROOT, args.config.resolve()
+        )
     elif experiment_id == MODEL_V2_ANCHOR_REFINED_TRAINING_ID:
         from fastreflex.evaluation.hazard import (
             verify_model_v2_anchor_refined_training_result,

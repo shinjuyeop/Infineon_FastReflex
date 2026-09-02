@@ -4,7 +4,7 @@ Unitree G1 MuJoCo에서 검증된 physical Hazard Reflex와 Terrain advisory를 
 
 ## Current Status
 
-`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_GENERATION_READY; MODEL_V2_DATA_ONLY_TRAINING_COMPLETE; MODEL_V2_EXTRACTION_REBALANCED_TRAINING_COMPLETE; MODEL_V2_ANCHOR_REFINED_TRAINING_COMPLETE; V2_ANCHOR_REFINEMENT_EFFECTIVE; MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED; MODEL_V2_CANDIDATE_READINESS_REVIEW_COMPLETE; READY_FOR_EXTERNAL_DEVELOPMENT_EVALUATION`
+`UNIFIED_BASELINE_SUPPORTED; ZERO_RETRAIN_GENERALIZATION_NOT_SUPPORTED; ICE_NEAR_HAZARD_TARGET_SEMANTICS_RESOLVED; MODEL_V2_DATASET_GENERATION_READY; MODEL_V2_DATA_ONLY_TRAINING_COMPLETE; MODEL_V2_EXTRACTION_REBALANCED_TRAINING_COMPLETE; MODEL_V2_ANCHOR_REFINED_TRAINING_COMPLETE; V2_ANCHOR_REFINEMENT_EFFECTIVE; MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED; MODEL_V2_CANDIDATE_READINESS_REVIEW_COMPLETE; MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_COMPLETE; GENERALIZATION_PRIMARY_GATES_FAIL; GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION`
 
 ```text
 Hazard
@@ -54,7 +54,9 @@ Frozen extraction 설계로 별도 3-seed GRU20 candidate를 학습했다. V1과
 
 후속 read-only regression audit는 rebalanced candidate가 delayed Support를 고쳤지만 speed-Sand specificity를 회귀시켰고, 가장 가능성 높은 overlap을 dense `Support+[0..4]` anchor로 국소화했다. TRAIN-only anchor-refinement design은 I1 5개와 midpoint 5개를 보존하고 `L=I1+floor(3*(Support-I1)/4)` 한 개를 추가하는 11-endpoint rule을 freeze했으며 verdict는 `MODEL_V2_DELAYED_SUPPORT_ANCHOR_REFINEMENT_DESIGN_READY`다. 재학습은 수행하지 않았고 다음 milestone은 `MODEL_V2_ANCHOR_REFINED_TRAINING`이다. 새 candidate의 V2_VALIDATION 및 Generalization VALIDATION inference는 없었고 Generalization HOLDOUT guard count는 0이다. 상세 결과는 [`reports/20260901_model_v2_delayed_support_anchor_refinement_design.md`](reports/20260901_model_v2_delayed_support_anchor_refinement_design.md)에 있다.
 
-Frozen late-interior anchor로 별도 3-seed GRU20 candidate를 학습했다. V1, baseline V2, rebalanced V2는 그대로 보존됐고 delayed Support는 6/6(Marble 3/3)을 유지하면서 speed-Sand benign과 confirmed specificity가 각각 12/12와 26/26으로 회복됐다. Read-only readiness review에서도 원래 Slip primary gate는 30/35로 실패하고 `MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED`가 그대로 유지된다. 다만 남은 다섯 실패가 모두 frozen future-Slip precursor 내부의 sustained early response이고 genuine miss는 0이므로, anchor-refined V2를 변경 없이 `READY_FOR_EXTERNAL_DEVELOPMENT_EVALUATION`으로 승격했다. 이는 다음 Generalization VALIDATION 평가 자격일 뿐 external generalization이나 final freeze를 뜻하지 않는다. V2 Generalization VALIDATION inference는 아직 없고 Generalization HOLDOUT guard count는 0이다. 상세 결과는 [`reports/20260902_model_v2_candidate_readiness_review.md`](reports/20260902_model_v2_candidate_readiness_review.md)에 있다.
+Frozen late-interior anchor로 별도 3-seed GRU20 candidate를 학습했다. V1, baseline V2, rebalanced V2는 그대로 보존됐고 delayed Support는 6/6(Marble 3/3)을 유지하면서 speed-Sand benign과 confirmed specificity가 각각 12/12와 26/26으로 회복됐다. Read-only readiness review에서도 원래 Slip primary gate는 30/35로 실패하고 `MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED`가 그대로 유지됐다. 다만 남은 다섯 실패가 모두 frozen future-Slip precursor 내부의 sustained early response이고 genuine miss는 0이므로, anchor-refined V2를 변경 없이 `READY_FOR_EXTERNAL_DEVELOPMENT_EVALUATION`으로 승격했다. 이 readiness 결정은 당시 평가 자격일 뿐 external generalization이나 final freeze를 뜻하지 않았다. 상세 결과는 [`reports/20260902_model_v2_candidate_readiness_review.md`](reports/20260902_model_v2_candidate_readiness_review.md)에 있다.
+
+Exact promoted V2를 frozen 36-run Generalization VALIDATION에 한 번 평가했다. Model V1의 Hazard 13/26, Slip 7/12, Support 6/14, primary specificity 5/10에서 V2는 각각 25/26, 11/12, 14/14, 10/10으로 개선됐고 Ice-benign도 3/4→4/4, premature도 7/26→1/26으로 개선됐다. 원래 Slip gate 95%는 91.67%로 실패하므로 primary verdict는 `GENERALIZATION_PRIMARY_GATES_FAIL`이다. 단 하나의 primary 실패는 이미 frozen된 future-Slip Ice precursor 안의 sustained early response이고 genuine detection failure는 0이어서 development verdict는 `GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION`이다. Candidate retune/retraining은 없었고 Generalization HOLDOUT은 guard count 0으로 sealed이며 final Model V2/HOLDOUT support는 아직 없다. 다음 권고 milestone은 별도 `MODEL_V2_FINAL_CANDIDATE_FREEZE_AND_HOLDOUT_READINESS_REVIEW`다. 상세 결과는 [`reports/20260902_model_v2_generalization_development_evaluation.md`](reports/20260902_model_v2_generalization_development_evaluation.md)에 있다.
 
 ## Canonical source flow
 
@@ -62,7 +64,7 @@ Frozen late-interior anchor로 별도 3-seed GRU20 candidate를 학습했다. V1
 Hazard:
 simulation/g1.py -> dataset/hazard.py -> features.py
                  -> training/hazard.py -> models/baselines.py
-                 -> evaluation/hazard.py
+                 -> evaluation/{hazard,generalization}.py
 
 Terrain:
 simulation/{g1,sensors,terrain}.py -> dataset/terrain.py
@@ -174,6 +176,7 @@ Viewer는 검증된 memory-only snapshot을 재생하며 종료 시 마지막 fr
 - [`reports/20260901_model_v2_rebalance_regression_audit.md`](reports/20260901_model_v2_rebalance_regression_audit.md)
 - [`reports/20260902_model_v2_anchor_refined_training.md`](reports/20260902_model_v2_anchor_refined_training.md)
 - [`reports/20260902_model_v2_candidate_readiness_review.md`](reports/20260902_model_v2_candidate_readiness_review.md)
+- [`reports/20260902_model_v2_generalization_development_evaluation.md`](reports/20260902_model_v2_generalization_development_evaluation.md)
 
 Current architecture는 [`docs/architecture.md`](docs/architecture.md), dataset contract는 [`docs/dataset.md`](docs/dataset.md), 검증 규칙은 [`docs/experiment_protocol.md`](docs/experiment_protocol.md)에 있다.
 

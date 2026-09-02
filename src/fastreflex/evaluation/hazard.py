@@ -76,34 +76,45 @@ def load_hazard_normalizer(path: Path) -> Normalizer:
     )
 
 
-def predict_hazard_windows(
+def predict_hazard_window_members(
     models: Sequence[torch.nn.Module], windows: np.ndarray
 ) -> np.ndarray:
-    """Average the selected three-seed binary GRU probabilities."""
+    """Return each frozen ensemble member's binary Hazard probability."""
     values = np.asarray(windows, dtype=np.float32)
     if values.ndim != 3 or values.shape[1:] != (
         HISTORY_MS,
         HAZARD_FEATURE_DIMENSION,
     ):
         raise ValueError("Hazard model input must have shape [batch,20,80]")
+    if not models:
+        raise ValueError("Hazard inference requires at least one frozen model")
     tensor = torch.from_numpy(values)
     with torch.no_grad():
-        probability = [
-            torch.softmax(model(tensor), dim=1)[:, 1].cpu().numpy()
-            for model in models
-        ]
-    return np.mean(np.stack(probability), axis=0).astype(np.float64)
+        probability = np.stack(
+            [
+                torch.softmax(model(tensor), dim=1)[:, 1].cpu().numpy()
+                for model in models
+            ]
+        )
+    return probability.astype(np.float64)
 
 
-def replay_hazard_run(
+def predict_hazard_windows(
+    models: Sequence[torch.nn.Module], windows: np.ndarray
+) -> np.ndarray:
+    """Average the selected three-seed binary GRU probabilities."""
+    return np.mean(predict_hazard_window_members(models, windows), axis=0)
+
+
+def replay_hazard_run_with_members(
     run: HazardRun,
     normalizer: Normalizer,
     models: Sequence[torch.nn.Module],
     *,
     history_ms: int = HISTORY_MS,
     batch_size: int = 512,
-) -> HazardReplay:
-    """Replay at 1 ms using only current and past Pelvis IMU samples."""
+) -> tuple[HazardReplay, tuple[HazardReplay, ...]]:
+    """Replay one fixed ensemble once while retaining member diagnostics."""
     if history_ms != HISTORY_MS:
         raise ValueError("supported Hazard history is frozen at 20 ms")
     features = extract_hazard_features(run.features["PELVIS_IMU6"])
@@ -119,13 +130,40 @@ def replay_hazard_run(
         windows = normalizer.transform(features[indices]).astype(
             np.float32, copy=False
         )
-        chunks.append(predict_hazard_windows(models, windows))
-    return HazardReplay(
-        endpoints=endpoints,
-        probabilities=(
-            np.concatenate(chunks) if chunks else np.empty(0, dtype=np.float64)
-        ),
+        chunks.append(predict_hazard_window_members(models, windows))
+    member_probabilities = (
+        np.concatenate(chunks, axis=1)
+        if chunks
+        else np.empty((len(models), 0), dtype=np.float64)
     )
+    members = tuple(
+        HazardReplay(endpoints=endpoints, probabilities=probabilities)
+        for probabilities in member_probabilities
+    )
+    ensemble = HazardReplay(
+        endpoints=endpoints,
+        probabilities=np.mean(member_probabilities, axis=0),
+    )
+    return ensemble, members
+
+
+def replay_hazard_run(
+    run: HazardRun,
+    normalizer: Normalizer,
+    models: Sequence[torch.nn.Module],
+    *,
+    history_ms: int = HISTORY_MS,
+    batch_size: int = 512,
+) -> HazardReplay:
+    """Replay at 1 ms using only current and past Pelvis IMU samples."""
+    ensemble, _ = replay_hazard_run_with_members(
+        run,
+        normalizer,
+        models,
+        history_ms=history_ms,
+        batch_size=batch_size,
+    )
+    return ensemble
 
 
 def replay_hazard_runs(
@@ -138,6 +176,29 @@ def replay_hazard_runs(
         run_id: replay_hazard_run(run, normalizer, models)
         for run_id, run in sorted(runs.items())
     }
+
+
+def replay_hazard_runs_with_members(
+    runs: Mapping[str, HazardRun],
+    normalizer: Normalizer,
+    checkpoint_paths: Sequence[Path],
+) -> tuple[
+    dict[str, HazardReplay], tuple[dict[str, HazardReplay], ...]
+]:
+    """Replay one exact ensemble and retain its fixed member traces."""
+    models = [load_checkpoint(path)[0] for path in checkpoint_paths]
+    ensemble: dict[str, HazardReplay] = {}
+    members: tuple[dict[str, HazardReplay], ...] = tuple(
+        {} for _ in checkpoint_paths
+    )
+    for run_id, run in sorted(runs.items()):
+        run_ensemble, run_members = replay_hazard_run_with_members(
+            run, normalizer, models
+        )
+        ensemble[run_id] = run_ensemble
+        for selected, replay in zip(members, run_members):
+            selected[run_id] = replay
+    return ensemble, members
 
 
 def sustained_reflex(

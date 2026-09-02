@@ -38,6 +38,8 @@ from fastreflex.evaluation.hazard import (
     HazardReplay,
     evaluate_hazard_replays,
     load_hazard_normalizer,
+    predict_hazard_window_members,
+    predict_hazard_windows,
     reflex_onset_samples,
     reflex_required_trace,
     replay_hazard_run,
@@ -257,6 +259,22 @@ class HazardTest(unittest.TestCase):
         endpoint = int(windows.endpoint_samples[0])
         expected = extract_hazard_features(imu)[endpoint - 19 : endpoint + 1]
         self.assertTrue(np.array_equal(windows.inputs[0], expected))
+
+    def test_retained_member_probabilities_average_to_canonical_ensemble(self) -> None:
+        torch.manual_seed(20260902)
+        models = [
+            torch.nn.Sequential(
+                torch.nn.Flatten(), torch.nn.Linear(20 * 80, 2)
+            )
+            for _ in range(3)
+        ]
+        windows = np.random.default_rng(20260902).normal(
+            size=(4, 20, 80)
+        ).astype(np.float32)
+        members = predict_hazard_window_members(models, windows)
+        ensemble = predict_hazard_windows(models, windows)
+        self.assertEqual(members.shape, (3, 4))
+        self.assertTrue(np.array_equal(ensemble, np.mean(members, axis=0)))
 
     def test_frozen_design_labels_and_i1_semantics_are_unchanged(self) -> None:
         specifications = generate_hazard_specifications(self.document)

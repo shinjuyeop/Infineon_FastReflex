@@ -1,0 +1,60 @@
+schema_version: 1
+
+experiment:
+  id: SAND_BENIGN_SEVERITY_CALIBRATION
+  purpose: frozen_model_blind_pilot_of_balanced_sand_severity_on_calibrated_entry_geometry
+
+calibration:
+  batch_index: 2
+  adaptation_basis: pilot_1_physical_yield_phase_and_followup_only
+  frozen_before_first_simulation: true
+  deterministic_seed: null
+  planned_run_count: 36
+  dataset_id: sand_benign_severity_calibration_20260902
+  dataset_path: data/raw/sand_benign_severity_calibration_20260902
+  created_at: "2026-09-02T20:25:00+09:00"
+  source_commit: b7510761c86a8b55c644d1e1e6aedd4c187c236a
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  simulator_config_path: configs/simulator/g1.yaml
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  consumed_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  duration_s: 9.0
+  model_inference: forbidden
+  within_batch_adaptation: forbidden
+  label_contract:
+    precontact_phase_lookback_ms: 20
+    benign_post_target_followup_ms: 1000
+    support_post_event_followup_ms: 1000
+  parameter_range:
+    source_terrain: [concrete, marble]
+    speed_mps: [0.20, 0.25, 0.30]
+    sink_severity: [mild, moderate, severe]
+    patch_start_x_m: [0.326, 0.336]
+    patch_end_x_m: [1.114, 1.122]
+    topology: [transition_left, transition_right]
+  historical_manifests:
+    - {path: data/raw/unified_hazard_reflex_20260829/manifest.json, sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6}
+    - {path: data/raw/model_v2_hazard_reflex_20260901/manifest.json, sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25}
+    - {path: data/raw/generalization_hazard_reflex_20260831/manifest.json, sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53}
+    - {path: data/raw/ice_near_hazard_semantics_20260901/manifest.json, sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759}
+    - {path: data/raw/sand_benign_generalization_study_20260902/manifest.json, sha256: 70a619e35dba72478b298fb5082c68c07bc577e7536ba48b2ce9a52665f9834f}
+    - {path: data/raw/sand_benign_phase_geometry_calibration_20260902/manifest.json, sha256: a30f96943593c2322dde1898060919eab3ec9929167e358743335f1a809c4d77}
+  sources: [concrete, marble]
+  speeds_mps: [0.20, 0.25, 0.30]
+  run_id_prefix: sbpc_b2
+  fixed_mechanics:
+    group: sand_benign
+    scenario_family: sand_benign_severity_calibration
+    target_terrain: sand
+    slip_pattern: uniform
+    support_pattern: balanced_deformable
+  templates:
+    - {id: mild_l, patch_start_x_m: 0.336, patch_width_m: 0.786, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW}
+    - {id: mild_r, patch_start_x_m: 0.326, patch_width_m: 0.788, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW}
+    - {id: moderate_l, patch_start_x_m: 0.336, patch_width_m: 0.786, sink_pattern: transition_left, sink_severity: moderate, severity_intent: MEDIUM}
+    - {id: moderate_r, patch_start_x_m: 0.326, patch_width_m: 0.788, sink_pattern: transition_right, sink_severity: moderate, severity_intent: MEDIUM}
+    - {id: severe_l, patch_start_x_m: 0.336, patch_width_m: 0.786, sink_pattern: transition_left, sink_severity: severe, severity_intent: NEAR_HAZARD}
+    - {id: severe_r, patch_start_x_m: 0.326, patch_width_m: 0.788, sink_pattern: transition_right, sink_severity: severe, severity_intent: NEAR_HAZARD}

@@ -76,13 +76,16 @@ class GenerationTest(unittest.TestCase):
         document = _load_yaml(DESIGN)
         specifications = expand_model_v2_design(document)
         original_glob = Path.glob
+        design_time_paths = {
+            str(record["path"])
+            for record in document["signature_exclusion"]["frozen_references"]
+        }
 
         def design_time_glob(path: Path, pattern: str):
             return (
                 candidate
                 for candidate in original_glob(path, pattern)
-                if "sand_benign_generalization_study_20260902"
-                not in str(candidate)
+                if str(candidate.relative_to(ROOT)) in design_time_paths
             )
 
         # This frozen validator intentionally saw every manifest that existed

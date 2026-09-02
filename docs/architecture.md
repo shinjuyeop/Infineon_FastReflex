@@ -149,3 +149,9 @@ This repository ends at reviewed Float research artifacts and their contracts. Q
 ## 8. Historical research summary
 
 MoS/Stability, direct NORMAL/SLIP/SINK classification, event-centric detectors, Terrain-gated branches, Support fusion variants and their diagnostic tests are not current runtime dependencies. Their scientific results remain in [`../reports/`](../reports/) and their original source is recoverable from Git history. Dated experiment configs remain as provenance; the current CLI rejects them as historical instead of silently selecting another implementation.
+
+## 9. Sand physical-calibration boundary
+
+`dataset/sand_calibration.py` owns model-blind pilot expansion, pre-simulation freeze, censor-aware physical summaries, failed-study Discovery tabulation, and redesigned-matrix integrity checks. It does not perform Hazard/Terrain inference or feature extraction. The older `dataset/sand_study.py` remains unchanged as the exact implementation provenance of the failed frozen study.
+
+The corrected calibration path distinguishes touchdown-sample contact state from the primary 20 ms pre-contact gait phase. For Support controls, a fully established and sufficiently observed event is not retroactively invalidated by a later fall. These corrections affect only new calibration/redesign artifacts; historical manifests and verdicts are not rewritten.

@@ -140,3 +140,11 @@ Generated raw datasets and arbitrary training outputs live under Gitignored `dat
 ## 11. Historical datasets
 
 Pilot NORMAL/SLIP/SINK, deformable-support, dense fall-risk, event-centric and observer datasets remain scientific provenance, not current schemas. Their configs and reports are preserved. Reproduction of a historical config uses the source commit recorded in that config/report; current source does not retain historical runners merely to keep every dated config executable.
+
+## 12. Sand-benign calibration and redesigned study
+
+The failed `sand_benign_generalization_study_20260902` corpus remains immutable calibration evidence. Its 176 runs and failed `STUDY_CONFIRMATION` are not reused in a new split. Detailed follow-up reads are restricted to its 88-run `STUDY_DISCOVERY`; the failed Confirmation remains sealed from model, 80D, observability, and hypothesis analysis.
+
+Three model-blind calibration datasets contain 24, 36, and 36 runs. They are Gitignored DEVELOPMENT/CALIBRATION artifacts only and are excluded from training and future evidence. The 96-run ceiling is exhausted. The calibration contract measures exact loaded-contact phase 20 ms before first pre-censor target contact, preserves the 1,000 ms observation requirement, and treats a Support event as usable only after I1 ordering, expected side, no Slip, and 1,000 ms of post-event observation. A later fall does not erase an already fully observed event.
+
+The frozen future dataset identity is `sand_benign_generalization_redesigned_study_20260902`: 176 wholly fresh signatures, split 88/88 into `REDESIGNED_DISCOVERY` and sealed `REDESIGNED_CONFIRMATION`. It contains 96 mild broad-benign, 48 moderate boundary-adjacent benign, 24 ordinary Support, and 8 delayed Support designs. Severe 65 mm mechanics are excluded from benign intent because calibration produced 0/36 strict-benign runs; moderate 40 mm is explicitly the maximal calibrated benign tier adjacent to that failed discrete tier, not a relabeling of the historical 52.5–70 mm stratum. Full generation has not started.

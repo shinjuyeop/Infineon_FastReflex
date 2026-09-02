@@ -103,3 +103,11 @@ Dated configs, reports and Git history preserve the research path. This does not
 ## 10. Research-to-Deployment handoff
 
 Research completion does not authorize quantization, export, E84 integration, HIL, Recovery or sensor freeze. Those actions require a reviewed deployment milestone and explicit artifact provenance. This repository's supported result is a Float research candidate and behavior contract, not a target-runtime claim.
+
+## 11. Redesigned Sand generalization protocol
+
+The redesigned Sand study is a development study, not a replacement final HOLDOUT. Its 176-run matrix is frozen before generation and creates fresh `REDESIGNED_DISCOVERY` and `REDESIGNED_CONFIRMATION` runs together under one domain. Invalid outcomes remain in their original split; adaptive replacement, backfill, split movement, and result-driven deletion are prohibited.
+
+Generation and its first audit are model-blind. Phase diversity uses exact loaded-contact state 20 ms before first censor-valid target contact; the touchdown sample remains descriptive because touchdown structurally turns many entries into double support. Predeclared geometry variants replace the previous non-physical cohort IDs. Source/speed conditioning is permitted only through the frozen physical anchors and cannot use model results.
+
+Confirmation stays sealed until all physical generation gates pass, Discovery physical/diversity analysis completes, and exactly one H1/H2/H3 interpretation plus its metrics is hash-frozen. While sealed, only integrity, planned-signature checks, and aggregate objective physical yield are allowed. Model replay, normalized 80D analysis, observability analysis, visualization, and hypothesis selection are forbidden. The historical consumed Generalization HOLDOUT remains at guard 1 and is never involved.

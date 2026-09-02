@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -74,7 +75,21 @@ class GenerationTest(unittest.TestCase):
     def test_frozen_model_v2_matrix_resolves_and_excludes_history(self) -> None:
         document = _load_yaml(DESIGN)
         specifications = expand_model_v2_design(document)
-        audit = validate_model_v2_design(ROOT, document, specifications)
+        original_glob = Path.glob
+
+        def design_time_glob(path: Path, pattern: str):
+            return (
+                candidate
+                for candidate in original_glob(path, pattern)
+                if "sand_benign_generalization_study_20260902"
+                not in str(candidate)
+            )
+
+        # This frozen validator intentionally saw every manifest that existed
+        # at Model V2 design time. Later independent corpora are outside that
+        # historical snapshot and must not invalidate it retroactively.
+        with patch.object(Path, "glob", design_time_glob):
+            audit = validate_model_v2_design(ROOT, document, specifications)
         self.assertEqual(len(specifications), 412)
         self.assertEqual(
             audit["split_counts"], {"V2_TRAIN": 310, "V2_VALIDATION": 102}

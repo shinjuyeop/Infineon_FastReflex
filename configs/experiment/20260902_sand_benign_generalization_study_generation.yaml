@@ -1,0 +1,102 @@
+schema_version: 1
+
+experiment:
+  id: SAND_BENIGN_GENERALIZATION_STUDY_GENERATION
+  milestone: SAND_BENIGN_GENERALIZATION_STUDY_GENERATION
+  date: 2026-09-02
+  timezone: Asia/Seoul
+  source_commit: 701c85267560c77c52da2dc7d26721f66040510d
+  mode: exact_frozen_generation_and_model_blind_physical_diversity_audit
+
+generation:
+  source_commit: 701c85267560c77c52da2dc7d26721f66040510d
+  generation_start: "2026-09-02T18:19:07+09:00"
+  design_config_path: configs/experiment/20260902_sand_benign_generalization_study_design.yaml
+  design_config_sha256: e45dcbe8130e5887c65ec7e9e3ef8c03744f8b589c81bc3ffe12536a0b145f70
+  study_design_sha: 539f18b1e4c27abca826b7a2eac0d5c663e13035e63b1acb5fbab45136470a7f
+  design_hashes:
+    STUDY_PARAMETER_DOMAIN_SHA: c447edb8e54721beb4d5997cce00ba0884f277153eacd30e78e96e05bd899d29
+    STUDY_SCENARIO_MATRIX_SHA: 31925f5719317f42eff46bca0c2ae0c8f7a8d7d7247a0304792a27970b066e38
+    STUDY_SPLIT_PLAN_SHA: 7084b0f430f81cb9e676f08ae7d1995388e105f6a36b1d4019dfd8a0076eea56
+    STUDY_PHYSICAL_LABEL_CONTRACT_SHA: 557b813ec9440b615a70c6fb16fda00a84b84100b938702bd754438f4304702a
+    STUDY_DIVERSITY_METRICS_SHA: dc5aeddfe5e0f6ec4e24fc582aa6d9cc2ea394f2ec1cbd8f038f474166521cee
+    STUDY_OBSERVABILITY_METRICS_SHA: 5d946ac9cb908df903e24cb916182fb89cc4fc5633575264be51f1e532c10c04
+    STUDY_DECISION_RULE_SHA: 5937bc4c728ca04c02fbf106383e7679358cb62d40ef6111c3333c784d770751
+    SAND_BENIGN_GENERALIZATION_STUDY_DESIGN_SHA: 539f18b1e4c27abca826b7a2eac0d5c663e13035e63b1acb5fbab45136470a7f
+  dataset_id: sand_benign_generalization_study_20260902
+  dataset_path: data/raw/sand_benign_generalization_study_20260902
+  planned_total_runs: 176
+  planned_discovery_runs: 88
+  planned_confirmation_runs: 88
+  planned_sand_runs: 144
+  planned_support_controls: 32
+  expected_expanded_matrix_sha256: bc8ddeaeac2f6550ea7a20114b7811c45d36a3170d0ceec2a2ed2e9f155c928a
+  expected_scenario_signature_sha256: 06f98028e7cb4c019e128082a849748bcee24bcf4b3a6d82aed4de5cac25bf94
+  expected_split_sha256:
+    STUDY_DISCOVERY: 42be5f3e29028c7e87eb0f7762e5a51d4aafc541fa0e37f531587f51da36e780
+    STUDY_CONFIRMATION: 2a786fa88b1094908f427e320457907e846fd82410fc1aa650759058ae983893
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  implementation_artifacts:
+    - {path: src/fastreflex/dataset/sand_study.py, sha256: 746b31ecb4ce2bb070ec784b1c6ea60f997d5ffd2b546a694899f736802bdd1f}
+    - {path: src/fastreflex/dataset/generation.py, sha256: 435ffa6b29b7559e11efb13bb743c16491f41dcc06916e903771e947d5f70bdc}
+    - {path: src/fastreflex/simulation/g1.py, sha256: d41308b6801aa648284ea05b22ce0c304fd97078cf47f6cd56b1f3b0d715bee2}
+    - {path: src/fastreflex/simulation/stability.py, sha256: 16de6f9fedc62b9fe50d2651f49192acc1ad255c30408356eca0c947330b398e}
+    - {path: src/fastreflex/simulation/hazards.py, sha256: 97d26ff789eea5ba2c4e0a6bba57108fd5ffab59ec8bbd373fe028fba97391a7}
+    - {path: src/fastreflex/simulation/terrain.py, sha256: 70816edeed3377b940cfaf2a4de089158343b03068604003329b44e50b58ed43}
+  protected_artifacts:
+    - {path: data/raw/unified_hazard_reflex_20260829/manifest.json, sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6}
+    - {path: data/raw/model_v2_hazard_reflex_20260901/manifest.json, sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25}
+    - {path: data/raw/generalization_hazard_reflex_20260831/manifest.json, sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53}
+    - {path: data/raw/ice_near_hazard_semantics_20260901/manifest.json, sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759}
+    - {path: configs/experiment/20260829_unified_hazard_reflex_system.yaml, sha256: 35036507643540a799510c6bf7dbd3e3c3e6b303146748ffae3d4cec28f825cb}
+    - {path: artifacts/runs/20260829_unified_hazard_reflex_system/normalization/gru_history20.json, sha256: 610a91c24a594a3cd1701b07549f4f3c4b7f4cb04eb354f9d41378214a6800a9}
+    - {path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260828.pt, sha256: e6bada49beb2b68c2c33bb9a59a1b3a8dd0f556f174cafce12f43efd2d22d588}
+    - {path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260829.pt, sha256: b04877dc08290a34077ae2deb753085d840640ee8da2bd920d010eb2ce8c2506}
+    - {path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260830.pt, sha256: b6c782bdfb3789ae7af785ec2b02260a8ae54179d7c531f87e27e0e35301a753}
+    - {path: artifacts/runs/20260901_model_v2_data_only_training/candidate_freeze.json, sha256: edb16b7d96fb38e680e36dcca5ecd7b1c1682ba410b94d21f40c2a38d4ed8725}
+    - {path: artifacts/runs/20260901_model_v2_extraction_rebalanced_training/candidate_freeze.json, sha256: ca1ba7abae1746528cdd098b903ce8f967937a625773bb8029fc486645fc4533}
+    - {path: configs/model/final_generalization_candidate.yaml, sha256: 52644d3efb0e756002bd43a7f94aea0a16a65eb2ff014c72548f2b3b138b7bc2}
+    - {path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json, sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f}
+    - {path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json, sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a}
+    - {path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260828.pt, sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9}
+    - {path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260829.pt, sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39}
+    - {path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260830.pt, sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd}
+    - {path: configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml, sha256: 8f78b56a658ea944f3355c5b178c8c5b057a7e2d192b63b412bde04c9543b7a8}
+    - {path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/normalization.json, sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de}
+    - {path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_17.pt, sha256: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628}
+    - {path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_29.pt, sha256: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66}
+    - {path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_43.pt, sha256: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31}
+  consumed_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  cohort_audit:
+    distance_definition: frozen_scaled_physical_signature_euclidean
+    confirmed_median_nearest_distance_min: 0.10
+
+protocol_guards:
+  no_model_inference: true
+  no_training: true
+  no_normalizer_fit: true
+  no_hnm: true
+  no_threshold_search: true
+  no_persistence_search: true
+  confirmation_model_access_forbidden: true
+  old_holdout_payload_access_forbidden: true
+  no_adaptive_backfill: true
+  no_protocol_mutation_after_generation_start: true
+  no_outcome_driven_regeneration: true
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  seed_searches: 0
+  new_simulation_runs: 176
+  model_inference_runs: 0
+  old_holdout_payload_reads: 0
+  old_holdout_inference: 0
+  confirmation_v2_inference: 0

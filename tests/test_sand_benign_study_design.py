@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
+import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
@@ -11,6 +13,13 @@ from unittest.mock import patch
 
 import yaml
 
+from fastreflex.dataset.sand_study import (
+    SAND_STUDY_DATASET_ID,
+    collect_sand_benign_study_dataset,
+    expand_sand_benign_study_design,
+    load_sand_benign_discovery_payload,
+    validate_sand_benign_study_design,
+)
 from fastreflex.evaluation.holdout import verify_generalization_holdout_evaluation
 
 
@@ -22,6 +31,11 @@ CONFIG = (
 HOLDOUT_CONFIG = (
     ROOT
     / "configs/experiment/20260902_model_v2_generalization_holdout_one_shot_evaluation.yaml"
+)
+DATASET = ROOT / "data/raw/sand_benign_generalization_study_20260902"
+GENERATION_CONFIG = (
+    ROOT
+    / "configs/experiment/20260902_sand_benign_generalization_study_generation.yaml"
 )
 COMPONENTS = {
     "STUDY_PARAMETER_DOMAIN_SHA": "parameter_domain",
@@ -182,6 +196,68 @@ class SandBenignStudyDesignTest(unittest.TestCase):
                 )
                 self.assertFalse(same_domain and near_geometry)
 
+    def test_canonical_generation_expansion_is_frozen(self) -> None:
+        specifications = expand_sand_benign_study_design(self.document)
+        audit = validate_sand_benign_study_design(
+            ROOT, self.document, specifications
+        )
+        self.assertEqual(len(specifications), 176)
+        self.assertEqual(
+            audit["split_counts"],
+            {"STUDY_DISCOVERY": 88, "STUDY_CONFIRMATION": 88},
+        )
+        self.assertEqual(audit["group_counts"]["broad_sand_benign"], 96)
+        self.assertEqual(audit["group_counts"]["near_hazard_sand_benign"], 48)
+        self.assertEqual(audit["group_counts"]["ordinary_support_control"], 24)
+        self.assertEqual(audit["group_counts"]["delayed_support_control"], 8)
+        self.assertEqual(audit["exact_duplicate_signatures"], 0)
+        self.assertFalse(any(audit["historical_overlap_by_reference"].values()))
+
+    def test_generation_path_has_no_model_inference_calls(self) -> None:
+        source = inspect.getsource(collect_sand_benign_study_dataset)
+        for forbidden in ("predict_proba(", "load_model(", "torch.load(", "onnxruntime"):
+            self.assertNotIn(forbidden, source)
+
+    def test_generation_config_protects_implementation_and_history(self) -> None:
+        generation = yaml.safe_load(GENERATION_CONFIG.read_text(encoding="utf-8"))[
+            "generation"
+        ]
+        self.assertEqual(generation["planned_total_runs"], 176)
+        self.assertEqual(generation["planned_discovery_runs"], 88)
+        self.assertEqual(generation["planned_confirmation_runs"], 88)
+        self.assertEqual(generation["planned_sand_runs"], 144)
+        self.assertEqual(generation["planned_support_controls"], 32)
+        for artifact in (
+            generation["implementation_artifacts"]
+            + generation["protected_artifacts"]
+        ):
+            self.assertEqual(
+                _file_sha256(ROOT / artifact["path"]), artifact["sha256"]
+            )
+
+    def test_confirmation_payload_loader_fails_before_npz_access(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            dataset = Path(temporary)
+            manifest = {
+                "dataset_id": SAND_STUDY_DATASET_ID,
+                "runs": [
+                    {
+                        "run_id": "sealed",
+                        "split": "STUDY_CONFIRMATION",
+                        "file": "must_not_exist.npz",
+                        "file_sha256": "unreachable",
+                    }
+                ],
+            }
+            manifest_path = dataset / "manifest.json"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            (dataset / "manifest.sha256").write_text(
+                f"{_file_sha256(manifest_path)}  manifest.json\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RuntimeError, "SEALED"):
+                load_sand_benign_discovery_payload(dataset, "sealed")
+
     def test_no_exact_overlap_with_protected_historical_metadata(self) -> None:
         historical: set[tuple[object, ...]] = set()
         for record in self.document["protected_objects"]["datasets"]:
@@ -251,6 +327,53 @@ class SandBenignStudyDesignTest(unittest.TestCase):
             self.document["recommended_next_milestone"],
             "SAND_BENIGN_GENERALIZATION_STUDY_GENERATION",
         )
+
+    def test_generated_discovery_labels_are_deterministic(self) -> None:
+        if not DATASET.exists():
+            self.skipTest("study corpus has not been generated yet")
+        manifest = json.loads((DATASET / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["adaptive_backfill_count"], 0)
+        seal = json.loads(
+            (DATASET / "confirmation_seal.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(seal["status"], "SEALED_FOR_STUDY_CONFIRMATION")
+        self.assertFalse(seal["model_inference"])
+        self.assertFalse(seal["normalized_feature_analysis"])
+        self.assertFalse(seal["observability_analysis"])
+        for row in manifest["runs"]:
+            if row["split"] != "STUDY_DISCOVERY":
+                continue
+            arrays = load_sand_benign_discovery_payload(DATASET, row["run_id"])
+            slip = bool(arrays["established_slip_onset"].any())
+            support = bool(arrays["deformable_sink_onset"].any())
+            i1 = bool(arrays["i1_active"].any())
+            if not row["valid"]:
+                expected = "INVALID"
+            elif slip and support:
+                expected = "DUAL_HAZARD"
+            elif slip:
+                expected = "SLIP"
+            elif support:
+                expected = "SUPPORT"
+            elif i1:
+                expected = "I1_ONLY_BENIGN"
+            else:
+                expected = "STRICT_BENIGN"
+            self.assertEqual(row["objective_physical_outcome"], expected)
+            if expected == "STRICT_BENIGN" and "sand_benign" in row["group"]:
+                contact = arrays["target_terrain_contact"].astype(bool)
+                displacement = arrays["support_surface_max_displacement_m"]
+                peak = float(displacement[contact].max())
+                severity = (
+                    "LOW"
+                    if peak < 0.030
+                    else "MEDIUM"
+                    if peak < 0.0525
+                    else "NEAR_HAZARD"
+                    if peak <= 0.070
+                    else "OUTSIDE_FROZEN_BENIGN_SEVERITY_RANGE"
+                )
+                self.assertEqual(row["actual_benign_severity"], severity)
 
 
 if __name__ == "__main__":

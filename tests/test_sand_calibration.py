@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import inspect
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,15 +14,26 @@ import numpy as np
 from fastreflex.dataset.generation import _load_yaml
 from fastreflex.dataset.sand_calibration import (
     _calibration_result_summary,
+    collect_sand_benign_redesigned_study,
     collect_sand_calibration_batch,
     expand_sand_benign_redesign,
+    load_sand_benign_redesigned_discovery_payload,
     validate_sand_benign_redesign,
+    verify_sand_benign_redesigned_dataset,
 )
+from fastreflex.dataset.loader import sha256_file
 
 
 ROOT = Path(__file__).resolve().parents[1]
 REDESIGN = (
     ROOT / "configs/experiment/20260902_sand_benign_generalization_study_redesign.yaml"
+)
+REDESIGNED_DATASET = (
+    ROOT / "data/raw/sand_benign_generalization_redesigned_study_20260902"
+)
+GENERATION_CONFIG = (
+    ROOT
+    / "configs/experiment/20260902_sand_benign_generalization_study_redesigned_generation.yaml"
 )
 
 
@@ -83,6 +96,22 @@ class SandCalibrationTest(unittest.TestCase):
         self.assertTrue(row["valid"])
         self.assertEqual(row["objective_physical_outcome"], "SUPPORT")
 
+    def test_actual_slip_overrides_benign_intent_without_replacement(self) -> None:
+        row = _row("near_hazard_sand_benign")
+        row["slip_event_summary"] = {"first_sample": 150}
+        arrays = _arrays(censor=250, fall=250)
+        _calibration_result_summary(row, arrays, CONTRACT)
+        self.assertTrue(row["valid"])
+        self.assertEqual(row["objective_physical_outcome"], "SLIP")
+        self.assertFalse(row["intent_match"])
+
+    def test_expected_nine_second_trace_is_enforced(self) -> None:
+        row = _row("broad_sand_benign")
+        contract = {**CONTRACT, "expected_samples": 9000}
+        _calibration_result_summary(row, _arrays(), contract)
+        self.assertFalse(row["valid"])
+        self.assertEqual(row["invalid_reason"], "nonfinite_or_malformed")
+
     def test_redesign_expands_to_fresh_balanced_matrix(self) -> None:
         document = _load_yaml(REDESIGN)
         rows = expand_sand_benign_redesign(document)
@@ -103,6 +132,17 @@ class SandCalibrationTest(unittest.TestCase):
             document["design_hashes"]["SAND_BENIGN_GENERALIZATION_STUDY_REDESIGN_SHA"],
         )
 
+    def test_execution_config_freezes_implementation_and_boundaries(self) -> None:
+        generation = _load_yaml(GENERATION_CONFIG)["generation"]
+        self.assertEqual(generation["planned_total_runs"], 176)
+        self.assertEqual(generation["planned_discovery_runs"], 88)
+        self.assertEqual(generation["planned_confirmation_runs"], 88)
+        self.assertEqual(generation["redesign_config_sha256"], sha256_file(REDESIGN))
+        for artifact in generation["implementation_artifacts"]:
+            self.assertEqual(artifact["sha256"], sha256_file(ROOT / artifact["path"]))
+        for artifact in generation["protected_artifacts"]:
+            self.assertEqual(artifact["sha256"], sha256_file(ROOT / artifact["path"]))
+
     def test_calibration_collector_has_no_model_inference(self) -> None:
         source = inspect.getsource(collect_sand_calibration_batch)
         for forbidden in (
@@ -112,6 +152,45 @@ class SandCalibrationTest(unittest.TestCase):
             "onnxruntime.InferenceSession",
         ):
             self.assertNotIn(forbidden, source)
+
+    def test_redesigned_collector_has_no_model_inference(self) -> None:
+        source = inspect.getsource(collect_sand_benign_redesigned_study)
+        for forbidden in (
+            "predict_proba(",
+            "load_model(",
+            "torch.load(",
+            "onnxruntime.InferenceSession",
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def test_redesigned_confirmation_loader_refuses_before_npz(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            dataset = Path(temporary)
+            manifest = {
+                "dataset_id": ("sand_benign_generalization_redesigned_study_20260902"),
+                "runs": [
+                    {
+                        "run_id": "sealed",
+                        "split": "REDESIGNED_CONFIRMATION",
+                        "file": "must_not_exist.npz",
+                        "file_sha256": "unreachable",
+                    }
+                ],
+            }
+            path = dataset / "manifest.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            (dataset / "manifest.sha256").write_text(
+                f"{sha256_file(path)}  manifest.json\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(RuntimeError, "SEALED"):
+                load_sand_benign_redesigned_discovery_payload(dataset, "sealed")
+
+    def test_generated_redesigned_dataset_hashes_are_deterministic(self) -> None:
+        if not REDESIGNED_DATASET.exists():
+            self.skipTest("redesigned corpus has not been generated yet")
+        verification = verify_sand_benign_redesigned_dataset(REDESIGNED_DATASET)
+        self.assertTrue(verification["passed"])
+        self.assertEqual(verification["run_count"], 176)
 
 
 if __name__ == "__main__":

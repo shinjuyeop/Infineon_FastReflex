@@ -1,0 +1,70 @@
+schema_version: 1
+
+experiment:
+  id: SAND_BENIGN_REDESIGNED_DOMAIN_FAILURE_REVIEW
+  milestone: SAND_BENIGN_REDESIGNED_DOMAIN_FAILURE_REVIEW
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  source_commit: ca95a12fc36ab6ce5655c95267e11d10fff78ac9
+  mode: model_blind_physical_failure_review_and_optional_minimal_redesign
+
+review:
+  source_commit: ca95a12fc36ab6ce5655c95267e11d10fff78ac9
+  dataset_id: sand_benign_generalization_redesigned_study_20260902
+  dataset_path: data/raw/sand_benign_generalization_redesigned_study_20260902
+  dataset_freeze_sha: 87956c511684a78780d8bc7c1ac50552779de55b85a739e0221d1fa449f9416a
+  dataset_freeze_file_sha256: c1a51f89d35ff32c880b8572062e8a36ab677c5d929884e68b89d5928a938ddb
+  manifest_sha256: 90970438abb9eced3742d387697cf3f3ff4bd8b905b3554ea01f6766a38e501b
+  physical_audit_sha256: 28c5dec8b6c4ed4bbb5056b50f712a11d784fcf63987b8e1cca24017d3cfa20f
+  confirmation_seal_sha256: 33a2a503ccb548b712c43c485175dd94e0787a7882a9ecb02ba8b7c3b2a76895
+  redesign_config_path: configs/experiment/20260902_sand_benign_generalization_study_redesign.yaml
+  redesign_sha: d853645939002f2460c99fe865ee4cc39c25334a5cb51dc5f489ec36202c05d2
+  generation_gate_sha: 914ac15e564f8218bfc386e3cfbbdeac292a4f66a9c2df5611a6ff7dcf92ec34
+  generation_execution_config_path: configs/experiment/20260902_sand_benign_generalization_study_redesigned_generation.yaml
+  generation_execution_config_sha256: 5bbf800a3fc428c39a07839299f6a1c86696d9c230505609bfbda6567a8ceef9
+  failed_gate_ids:
+    - yield/REDESIGNED_CONFIRMATION/broad_mild
+    - yield/REDESIGNED_CONFIRMATION/concrete/0.25/strict_sand
+    - yield/REDESIGNED_CONFIRMATION/strict_sand
+  old_holdout_guard: 1
+  old_holdout_scientific_open_count: 1
+  old_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  required_post_target_observation_ms: 1000
+  candidate_future_durations_s: [9.5, 10.0, 10.5, 11.0]
+  physical_analysis_only: true
+  pilot_allowed_if_required: true
+  pilot_max_runs: 48
+  pilot_max_batches: 2
+  full_study_regeneration_forbidden: true
+
+protocol_guards:
+  no_model_inference: true
+  no_training: true
+  no_hnm: true
+  no_normalizer_fit: true
+  no_threshold_search: true
+  no_persistence_search: true
+  no_architecture_search: true
+  no_sensor_fusion: true
+  old_holdout_payload_access_forbidden: true
+  current_confirmation_model_analysis_forbidden: true
+  no_current_dataset_relabeling: true
+  no_current_dataset_promotion: true
+  no_adaptive_pilot_replacement: true
+
+counters:
+  v1_inference_runs: 0
+  v2_inference_runs: 0
+  terrain_inference_runs: 0
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  fsr_fusion_experiments: 0
+  old_holdout_payload_reads: 0
+  current_confirmation_model_analysis: 0
+  pilot_simulation_runs: 0
+  full_new_study_generation_runs: 0

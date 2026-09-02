@@ -35,6 +35,10 @@ GENERATION_CONFIG = (
     ROOT
     / "configs/experiment/20260902_sand_benign_generalization_study_redesigned_generation.yaml"
 )
+FAILURE_REVIEW_CONFIG = (
+    ROOT
+    / "configs/experiment/20260902_sand_benign_redesigned_domain_failure_review.yaml"
+)
 
 
 def _row(group: str) -> dict[str, object]:
@@ -191,6 +195,87 @@ class SandCalibrationTest(unittest.TestCase):
         verification = verify_sand_benign_redesigned_dataset(REDESIGNED_DATASET)
         self.assertTrue(verification["passed"])
         self.assertEqual(verification["run_count"], 176)
+
+    def test_failure_review_contract_is_model_blind_and_frozen(self) -> None:
+        review = _load_yaml(FAILURE_REVIEW_CONFIG)
+        self.assertEqual(
+            sha256_file(FAILURE_REVIEW_CONFIG),
+            "ddae06af4167e75b02ad5060a644fc516f99a68d9f9234f27b9d229b258515da",
+        )
+        self.assertEqual(
+            review["review"]["dataset_freeze_sha"],
+            "87956c511684a78780d8bc7c1ac50552779de55b85a739e0221d1fa449f9416a",
+        )
+        self.assertEqual(len(review["review"]["failed_gate_ids"]), 3)
+        self.assertEqual(review["review"]["old_holdout_guard"], 1)
+        for counter in review["counters"].values():
+            self.assertEqual(counter, 0)
+        self.assertTrue(review["protocol_guards"]["no_model_inference"])
+        self.assertTrue(
+            review["protocol_guards"]["old_holdout_payload_access_forbidden"]
+        )
+
+    def test_redesigned_failure_is_fall_censored_not_horizon_censored(self) -> None:
+        if not REDESIGNED_DATASET.exists():
+            self.skipTest("redesigned corpus has not been generated yet")
+        manifest = json.loads(
+            (REDESIGNED_DATASET / "manifest.json").read_text(encoding="utf-8")
+        )
+        invalid = [row for row in manifest["runs"] if not row["valid"]]
+        insufficient = [
+            row
+            for row in invalid
+            if row["invalid_reason"] == "insufficient_post_target_observation"
+        ]
+        pretarget = [
+            row for row in invalid if row["invalid_reason"] == "pretarget_fall"
+        ]
+        self.assertEqual((len(invalid), len(insufficient), len(pretarget)), (23, 20, 3))
+        for row in insufficient:
+            target = row["target_contact_summary"]["first_sample"]
+            fall = row["fall_censor_summary"]["first_fall_sample"]
+            self.assertIsNotNone(target)
+            self.assertIsNotNone(fall)
+            self.assertLess(target, fall)
+            self.assertLess(fall, row["actual_samples"])
+            self.assertEqual(
+                row["fall_censor_summary"]["fall_reasons"],
+                ["nonfoot_surface_contact"],
+            )
+            self.assertIsNone(row["slip_event_summary"]["first_sample"])
+            self.assertIsNone(row["i1_summary"]["first_sample"])
+            self.assertIsNone(row["support_event_summary"]["first_sample"])
+
+        audit = json.loads(
+            (REDESIGNED_DATASET / "physical_audit.json").read_text(encoding="utf-8")
+        )
+        failed = {
+            gate_id
+            for gate_id, result in audit["generation_gates"].items()
+            if not result["passed"]
+        }
+        self.assertEqual(
+            failed,
+            {
+                "yield/REDESIGNED_CONFIRMATION/broad_mild",
+                "yield/REDESIGNED_CONFIRMATION/concrete/0.25/strict_sand",
+                "yield/REDESIGNED_CONFIRMATION/strict_sand",
+            },
+        )
+        freeze = json.loads(
+            (REDESIGNED_DATASET / "dataset_freeze.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            freeze["generation_verdict"],
+            "SAND_BENIGN_GENERALIZATION_STUDY_REDESIGNED_GENERATION_YIELD_INSUFFICIENT",
+        )
+        seal = json.loads(
+            (REDESIGNED_DATASET / "confirmation_seal.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(seal["status"], "SEALED_FOR_REDESIGNED_CONFIRMATION")
+        self.assertFalse(seal["model_inference"])
 
 
 if __name__ == "__main__":

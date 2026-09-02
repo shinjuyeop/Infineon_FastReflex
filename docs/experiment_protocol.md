@@ -19,7 +19,7 @@ Split assignment occurs at run/physical-condition level before simulation. Windo
 
 TRAIN may fit model weights, normalizers and hard negatives. VALIDATION may select declared candidates and the operating point only after HNM is complete. HOLDOUT may be opened once after the candidate freeze; no reselection follows.
 
-The current one-shot HOLDOUT is consumed scientific evidence. Repository consolidation and ordinary verification do not reopen or reinterpret it.
+The Unified one-shot HOLDOUT is consumed scientific evidence. Repository consolidation and ordinary verification do not reopen or reinterpret it. The separate 36-run Generalization HOLDOUT remains sealed at guard count 0 for the exact final Generalization candidate.
 
 ## 3. Unified Hazard training
 
@@ -53,7 +53,15 @@ An alert before the earliest acceptable physical boundary is premature. A later 
 
 Current regression tests cover feature/schema parity, normalized tensor parity, `[20,80]` ordering, frozen probability/onset parity on a VALIDATION run, persistence boundary, physical labels and Terrain independence.
 
-## 5. Terrain training and evaluation
+## 5. Generalization final-candidate and HOLDOUT protocol
+
+The exact `model_v2_anchor_refined_gru20_20260902` ensemble is frozen under the role `final_generalization_candidate`. The role is an alias to the existing normalizer and three checkpoints; it does not duplicate or mutate artifacts. Generalization VALIDATION remains development evidence with historical primary verdict `GENERALIZATION_PRIMARY_GATES_FAIL` because Slip recall is 11/12, below the frozen 95% gate. The separate interpretation is `GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION`; the sole primary failure is a sustained response inside the already-frozen loaded-Ice `[0.030,0.050) m` precursor, not a genuine detector miss.
+
+The future Generalization HOLDOUT operation retains the exact primary metrics, gates, and event windows used on Generalization VALIDATION. Ice-precursor outcomes remain a separately reported secondary diagnostic and cannot rescue or rewrite a primary score. Frozen V1 and final V2 must run on all 36 HOLDOUT runs in one shared authorized pass; the predeclared frozen Terrain candidate may run in that same pass as advisory-only.
+
+Readiness verification may inspect only IDs, counts, split membership, file existence, stored hashes, file sizes, and guard metadata. It cannot deserialize HOLDOUT payloads. The scientific evaluator must atomically claim guard `0 -> 1`, reject an unapproved candidate or nonzero initial guard, and refuse a second open. After opening there is no training, retuning, model selection, metric/relabeling change, family exclusion, or scientific rerun.
+
+## 6. Terrain training and evaluation
 
 Clean touchdown windows are run-disjoint. Normalization uses TRAIN events only. The selected candidate is FSR4, MLP, 50 ms and a three-seed mean-probability ensemble.
 
@@ -61,7 +69,7 @@ At runtime a prediction becomes available at touchdown +50 ms and is held until 
 
 Current regression tests cover FSR4 channel/window parity, normalization/inference shape, exact update timestamp, held state, prediction provenance, protected hashes and the cause-refinement truth table.
 
-## 6. Physical and simulator regression
+## 7. Physical and simulator regression
 
 The consolidation milestone does not change simulator behavior. Tests preserve:
 
@@ -74,7 +82,7 @@ The consolidation milestone does not change simulator behavior. Tests preserve:
 
 Potential scientific or timing bugs discovered during cleanup are not silently fixed. They require a separate declared milestone.
 
-## 7. Protected artifact verification
+## 8. Protected artifact verification
 
 Read-only verification checks:
 
@@ -86,12 +94,12 @@ Read-only verification checks:
 
 Generated checkpoints are never rewritten by verification.
 
-## 8. CLI and historical provenance
+## 9. CLI and historical provenance
 
 `collect`, `train`, and `evaluate` require explicit configs. The current supported evaluation configs verify the two frozen candidates. A historical experiment ID fails with a message directing the user to its recorded source commit. No historical ID falls through to a generic runner.
 
 Dated configs, reports and Git history preserve the research path. This does not imply that every historical config remains runnable from the consolidated current tree.
 
-## 9. Research-to-Deployment handoff
+## 10. Research-to-Deployment handoff
 
 Research completion does not authorize quantization, export, E84 integration, HIL, Recovery or sensor freeze. Those actions require a reviewed deployment milestone and explicit artifact provenance. This repository's supported result is a Float research candidate and behavior contract, not a target-runtime claim.

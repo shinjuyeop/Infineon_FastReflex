@@ -1,0 +1,395 @@
+schema_version: 1
+
+experiment:
+  id: MODEL_V2_FINAL_CANDIDATE_FREEZE_AND_HOLDOUT_READINESS_REVIEW
+  milestone: MODEL_V2_FINAL_CANDIDATE_FREEZE_AND_HOLDOUT_READINESS_REVIEW
+  date: 2026-09-02
+  timezone: Asia/Seoul
+  source_commit: a1c1950b9a55d647d72b509de8e72bd3ee858079
+  purpose: freeze_the_exact_final_simulation_generalization_candidate_and_one_shot_holdout_contract
+  mode: review_only
+
+candidate:
+  id: model_v2_anchor_refined_gru20_20260902
+  development_promotion:
+    path: configs/model/development_candidate.yaml
+    sha256: 1e4931e35e873cd721b412c6a45f66340f7ee9eebc1900d9c4aa3dc9ab3d092f
+  candidate_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json
+    sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f
+  internal_evaluation_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_evaluation_freeze.json
+    sha256: cad3902137b622c3a3d15ecb3d6c3bb31ee9751f3605fb8d43daa6ac81695c07
+  external_evaluation_config:
+    path: configs/experiment/20260902_model_v2_generalization_development_evaluation.yaml
+    sha256: 76aa8d6072bdd5cd521e980f62a5ea6b0ec611cec03a6faca883252fe2503b84
+  external_evaluation_freeze:
+    path: artifacts/runs/20260902_model_v2_generalization_development_evaluation/evaluation_freeze.json
+    sha256: cc559c592f64ed8afd27b039d57ace35d8bbb3efad1cac64e3d10788e0ffa556
+  external_metrics:
+    path: artifacts/runs/20260902_model_v2_generalization_development_evaluation/v2_generalization_validation_metrics.json
+    sha256: 291e40aaa96daddd1267f65ed188f205cde5d79d8782379f9bdcb9a95bc5260f
+  external_run_level:
+    path: artifacts/runs/20260902_model_v2_generalization_development_evaluation/run_level_results.json
+    sha256: 561d7394dcd3645cbaf64a6ec9089d98106738a37145653fd259c48e33f983a4
+  normalizer:
+    path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json
+    sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+  checkpoints:
+    - seed: 20260828
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260828.pt
+      sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9
+    - seed: 20260829
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260829.pt
+      sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39
+    - seed: 20260830
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260830.pt
+      sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd
+  ensemble_membership: [20260828, 20260829, 20260830]
+  architecture:
+    input: pelvis_imu6
+    feature_dimension: 80
+    input_shape: [20, 80]
+    model_family: gru
+    hidden_size: 32
+    layers: 1
+    bidirectional: false
+    parameters: 11010
+    sha256: ae4753699399aa7e4a93639935e085156ef28ed100a77058d7308eb1549aa897
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  threshold: 0.99
+  persistence_ms: 5
+  replay_stride_ms: 1
+  artifact_copy: prohibited
+  mutation: prohibited
+
+baseline_v1:
+  id: unified_hazard_reflex_gru_history20_hnm3
+  freeze_sha256: 91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2
+  normalizer:
+    path: artifacts/runs/20260829_unified_hazard_reflex_system/normalization/gru_history20.json
+    sha256: 610a91c24a594a3cd1701b07549f4f3c4b7f4cb04eb354f9d41378214a6800a9
+  checkpoints:
+    - path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260828.pt
+      sha256: e6bada49beb2b68c2c33bb9a59a1b3a8dd0f556f174cafce12f43efd2d22d588
+    - path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260829.pt
+      sha256: b04877dc08290a34077ae2deb753085d840640ee8da2bd920d010eb2ce8c2506
+    - path: artifacts/runs/20260829_unified_hazard_reflex_system/checkpoints/unified_gru_history20_round3_seed20260830.pt
+      sha256: b6c782bdfb3789ae7af785ec2b02260a8ae54179d7c531f87e27e0e35301a753
+
+terrain_advisory:
+  included_in_future_same_pass: true
+  input: FSR4
+  observation_ms: 50
+  ensemble_membership: [17, 29, 43]
+  held_state: true
+  hazard_gate: false
+  normalizer:
+    path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/normalization.json
+    sha256: 2c551181fbd23080c0e3008be8484bd0ee4139e594041ba6e46ab5b36ffb05de
+  checkpoints:
+    - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_17.pt
+      sha256: 21b0d122b4200a96390b700f741d6b35a4e72226e61d204a420d23e086e1f628
+    - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_29.pt
+      sha256: de6a55d35531dfa96d73e86bb8b5596ead5e41809aba539dd83e32b473cd0d66
+    - path: artifacts/runs/20260828_terrain_rebuild_sensor_ablation/selected_models/seed_43.pt
+      sha256: 465803f40fff371b9de2ca0ecaf7d9d41717d2be6b5cd33fe031d6d9ba237b31
+
+development_evidence:
+  internal:
+    split: V2_VALIDATION
+    hazard: {correct: 59, total: 64, recall: 0.921875}
+    slip: {correct: 30, total: 35, recall: 0.8571428571428571}
+    support: {correct: 30, total: 30, recall: 1.0}
+    confirmed_specificity: {correct: 26, total: 26, specificity: 1.0}
+    premature: {count: 5, total: 64, rate: 0.078125}
+    verdict: MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED
+  external_generalization:
+    split: GENERALIZATION_VALIDATION
+    count: 36
+    v1:
+      hazard: {correct: 13, total: 26, recall: 0.5}
+      slip: {correct: 7, total: 12, recall: 0.5833333333333334}
+      support: {correct: 6, total: 14, recall: 0.42857142857142855}
+      primary_specificity: {correct: 5, total: 10, specificity: 0.5}
+      ice_benign_specificity: {correct: 3, total: 4, specificity: 0.75}
+      premature: {count: 7, total: 26, rate: 0.2692307692307692}
+      slip_p95_latency_ms: 5.2999999999999865
+      support_p95_established_latency_ms: -17.25
+    final_v2:
+      hazard: {correct: 25, total: 26, recall: 0.9615384615384616}
+      slip: {correct: 11, total: 12, recall: 0.9166666666666666}
+      support: {correct: 14, total: 14, recall: 1.0}
+      primary_specificity: {correct: 10, total: 10, specificity: 1.0}
+      ice_benign_specificity: {correct: 4, total: 4, specificity: 1.0}
+      premature: {count: 1, total: 26, rate: 0.038461538461538464}
+      slip_p95_latency_ms: 11
+      support_p95_established_latency_ms: -17
+    primary_gate_status: GENERALIZATION_PRIMARY_GATES_FAIL
+    development_verdict: GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION
+    data_coverage_verdict: DATA_COVERAGE_HYPOTHESIS_SUPPORTED
+    physically_supported_hazard_response: {correct: 26, total: 26}
+    genuine_detection_failures: 0
+  resolved_gaps:
+    delayed_ice: {v1: 3/6, v2: 5/6, status: partial_primary_physically_explained}
+    ice_benign: {v1: 3/4, v2: 4/4, status: resolved}
+    delayed_sand_pre_i1: {v1: 0/4, v2: 4/4, status: resolved}
+    right_sand_support: {v1: 0/4, v2: 4/4, status: resolved}
+    speed_020_slip: {v1: 1/2, v2: 2/2, status: resolved}
+    speed_030_slip: {v1: 1/2, v2: 2/2, status: resolved}
+    speed_sand_benign: {v1: 2/6, v2: 6/6, status: resolved}
+
+known_limitation:
+  primary_metric: slip_hazard_recall
+  validation_result: {correct: 11, total: 12, recall: 0.9166666666666666}
+  frozen_gate_min: 0.95
+  gate_passed: false
+  run_id: ghr_ocd_v_c020
+  family: ONE_CONTACT_DELAYED_ICE_SLIP
+  physical_label: SLIP_HAZARD
+  actual_side: BILATERAL
+  precursor_onset_ms: 2466
+  reflex_onset_ms: 2478
+  established_slip_ms: 2632
+  primary_classification: PREMATURE
+  physical_classification: SUPPORTED_ICE_PRECURSOR_TIMING_CONFLICT
+  sustained_response: true
+  all_three_seeds_high: true
+  benign_release_false_alert: false
+  censor_ambiguity: false
+  genuine_detection_failure: false
+  primary_score_rewritten: false
+
+dataset:
+  id: generalization_hazard_reflex_20260831
+  path: data/raw/generalization_hazard_reflex_20260831
+  manifest:
+    path: data/raw/generalization_hazard_reflex_20260831/manifest.json
+    sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53
+  dataset_freeze:
+    path: artifacts/runs/20260831_generalization_dataset_zero_retrain/dataset_freeze.json
+    sha256: f9e68535fad40e4e0578ff83399fb91fe96bf59717b3d12076bb0436dd992763
+  split_membership_sha256: 929c963dff786d74728e1aad4be2457fe1dc6b4ef667fdddb1e5c01825822787
+  validation:
+    split: GENERALIZATION_VALIDATION
+    count: 36
+    run_ids_canonical_sha256: 2b568dc4ef452307cbb99b027162bf9da5a3d2977d70a36fc32b2de1b901e1a1
+  holdout:
+    split: GENERALIZATION_HOLDOUT
+    count: 36
+    run_ids_canonical_sha256: 6c911c33bc7ea1eb89a58f129d44848989ba4f6aea070f9c15084bdcc2b00c1f
+
+protected_datasets:
+  unified: {id: unified_hazard_reflex_20260829, count: 256, manifest_sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6}
+  model_v2: {id: model_v2_hazard_reflex_20260901, count: 412, manifest_sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25}
+  generalization: {id: generalization_hazard_reflex_20260831, count: 72, manifest_sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53}
+  ice_semantics: {id: ice_near_hazard_semantics_20260901, count: 48, manifest_sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759}
+
+future_primary_contract:
+  implementation: fastreflex.evaluation.hazard.evaluate_hazard_replays
+  metrics:
+    - overall_hazard_recall
+    - slip_hazard_recall
+    - support_hazard_recall
+    - primary_no_hazard_specificity
+    - ice_benign_specificity
+    - system_premature_run_rate
+    - slip_latency_ms
+    - support_precursor_latency_ms
+    - support_established_latency_ms
+  gates:
+    overall_hazard_recall_min: 0.90
+    slip_hazard_recall_min: 0.95
+    support_hazard_recall_min: 0.85
+    primary_no_hazard_specificity_min: 0.95
+    ice_benign_specificity_min: 0.95
+    system_premature_run_rate_max: 0.10
+    slip_p95_latency_ms_max: 40
+    support_p95_established_latency_ms_max: 50
+  event_timing:
+    slip_valid_window_ms: [-30, 40]
+    support_valid_window: [I1, established_support_plus_50_ms]
+    pre_i1_support_alert: premature
+    no_hazard_any_reflex: false_positive
+    first_premature_reflex_cannot_be_rescued: true
+  physical_semantics:
+    hazard: established_slip_OR_established_support
+    slip: {drift_threshold_m: 0.050, persistence_ms: 3, aggregation: any_foot}
+    support: {spread_threshold_m: 0.010, persistence_ms: 20}
+    i1: {loaded_spread_derivative_threshold: 0.0, persistence_ms: 20}
+    actual_outcome_over_design_intent: true
+    terrain_is_hazard_gate: false
+
+future_secondary_contract:
+  implementation: fastreflex.evaluation.hazard.evaluate_ice_precursor_secondary
+  annotation_implementation: fastreflex.dataset.generation.annotate_ice_precursors
+  label: ICE_PRECURSOR_CANDIDATE
+  definition: loaded_exact_ice_drift_in_half_open_interval_0.030_to_0.050_m
+  lower_m_inclusive: 0.030
+  upper_m_exclusive: 0.050
+  future_followup_ms: 1000
+  outcome_categories:
+    - SAME_EPISODE_SLIP
+    - NEXT_EPISODE_SLIP
+    - LATER_SLIP
+    - BENIGN_RELEASE
+    - CENSORED
+  metrics:
+    - future_slip_precursor_episodes
+    - alert_inside_precursor
+    - alert_before_established_slip
+    - benign_release_precursor_alerts
+    - censored_precursor_alerts
+    - same_next_later_slip
+    - precursor_to_reflex_ms
+    - reflex_to_established_slip_ms
+  semantics_verdict: ICE_PHYSICAL_PRECURSOR_SUPPORTED
+  primary_score_replacement: false
+
+future_reporting:
+  families:
+    - ONE_CONTACT_DELAYED_ICE_SLIP
+    - ICE_BENIGN_CONTROL
+    - DELAYED_SAND_SUPPORT_ONSET
+    - RIGHT_SAND_SUPPORT
+    - SPEED_STRATIFIED_HAZARD
+  speed_subtypes: [ICE_SLIP, SAND_SUPPORT, SAND_BENIGN]
+  speeds_mps: [0.20, 0.25, 0.30]
+  sides: [LEFT_ONLY, RIGHT_ONLY, BILATERAL, NONE]
+  sources: [concrete, marble]
+  subgroup_gates: prohibited
+  family_exclusion: prohibited
+  failure_categories:
+    - SUPPORTED_ICE_PRECURSOR_TIMING_CONFLICT
+    - GENUINE_DETECTION_MISS
+    - BENIGN_FALSE_ALERT
+    - PRE_I1_SUPPORT_FALSE_ALERT
+    - LATE_DETECTION
+    - CENSORED_OR_AMBIGUOUS
+    - OTHER
+
+future_verdict_hierarchy:
+  primary:
+    - GENERALIZATION_HOLDOUT_PRIMARY_GATES_PASS
+    - GENERALIZATION_HOLDOUT_PRIMARY_GATES_FAIL
+  scientific:
+    - MODEL_V2_GENERALIZATION_HOLDOUT_SUPPORTED
+    - MODEL_V2_GENERALIZATION_HOLDOUT_SUPPORTED_WITH_ICE_TIMING_TENSION
+    - MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED
+    - MODEL_V2_GENERALIZATION_HOLDOUT_INCONCLUSIVE
+  supported_requires: all_primary_gates_pass
+  supported_with_ice_timing_tension_requires:
+    - primary_failure_is_solely_or_predominantly_Ice_Slip_timing
+    - physically_supported_future_Slip_precursor_response
+    - genuine_Hazard_misses_absent_or_isolated
+    - specificity_strong
+    - Support_strong
+    - no_new_unexplained_failure_mechanism
+  not_supported_if:
+    - material_genuine_detection_misses
+    - material_specificity_failure
+    - material_Support_failure
+    - new_unexplained_speed_side_or_source_failure
+    - failure_not_explained_by_frozen_semantics
+  inconclusive_only_for: integrity_or_insufficient_evidence
+  secondary_cannot_rescue_primary: true
+
+readiness:
+  criteria:
+    - candidate_artifact_integrity
+    - no_leakage
+    - no_material_genuine_external_Hazard_miss
+    - no_broad_specificity_failure
+    - strong_Support_generalization
+    - original_V1_failure_mechanisms_substantially_resolved
+    - remaining_primary_failure_has_frozen_physical_explanation
+    - no_scientifically_justified_intervention_remains
+    - Generalization_HOLDOUT_guard_zero
+  verdicts:
+    - HOLDOUT_READY
+    - HOLDOUT_NOT_READY_GENUINE_MODEL_FAILURE
+    - HOLDOUT_NOT_READY_PROTOCOL_GAP
+    - HOLDOUT_NOT_READY_INTEGRITY_FAILURE
+    - HOLDOUT_READINESS_INCONCLUSIVE
+  final_candidate_role_if_ready: final_generalization_candidate
+  status_before_review: pending
+
+holdout:
+  dataset_id: generalization_hazard_reflex_20260831
+  split: GENERALIZATION_HOLDOUT
+  count: 36
+  guard_before: 0
+  authorized_now: false
+  no_access_this_milestone: true
+  waveform_opened: false
+  Hazard_inference: false
+  Terrain_inference: false
+  visualization: false
+  future_guard_transition: 0_to_1_exactly_once
+  partial_adaptive_access: prohibited
+  repeated_access: prohibited
+
+future_comparison:
+  same_authorized_pass: true
+  frozen_models: [baseline_v1, final_generalization_candidate]
+  Terrain_advisory_in_same_pass: true
+  V1_result_cannot_alter_V2: true
+  Terrain_cannot_gate_Hazard: true
+
+future_execution:
+  milestone: MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION
+  config_path: configs/experiment/20260902_model_v2_generalization_holdout_one_shot_evaluation.yaml
+  command: PYTHONPATH=src python scripts/fastreflex.py evaluate --config configs/experiment/20260902_model_v2_generalization_holdout_one_shot_evaluation.yaml
+  guard_record_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  operation: entire_36_run_split_in_one_scientific_operation
+  final_candidate_record: configs/model/final_generalization_candidate.yaml
+  readiness_freeze: artifacts/runs/20260902_model_v2_final_candidate_holdout_readiness_review/readiness_review_freeze.json
+  create_future_config_only_in_next_milestone: true
+  execute_now: false
+
+post_open_rules:
+  no_training: true
+  no_retuning: true
+  no_model_selection: true
+  no_threshold_change: true
+  no_persistence_change: true
+  no_architecture_change: true
+  no_seed_change: true
+  no_checkpoint_change: true
+  no_metric_change: true
+  no_relabeling: true
+  no_family_exclusion: true
+  no_scientific_rerun: true
+
+sealed_evidence:
+  Generalization_VALIDATION_reused_from_frozen_evidence: true
+  Generalization_VALIDATION_new_inference: false
+  Generalization_HOLDOUT_waveform_opened: false
+  Generalization_HOLDOUT_Hazard_inference: false
+  Generalization_HOLDOUT_Terrain_inference: false
+  Generalization_HOLDOUT_visualization: false
+  Generalization_HOLDOUT_guard_count: 0
+  Unified_HOLDOUT_waveform_reopened: false
+  Unified_HOLDOUT_new_inference: false
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  seed_searches: 0
+  new_simulation_runs: 0
+
+artifacts:
+  path: artifacts/runs/20260902_model_v2_final_candidate_holdout_readiness_review
+  readiness_freeze: readiness_review_freeze.json
+  deterministic_json: true
+  contain_holdout_waveforms: false
+
+no_training: true
+no_generation: true
+no_holdout_open: true
+no_new_inference: true

@@ -1,0 +1,151 @@
+schema_version: 1
+
+finalization:
+  role: final_generalization_candidate
+  status: FINAL_GENERALIZATION_CANDIDATE_FROZEN
+  date: 2026-09-02
+  timezone: Asia/Seoul
+  source_commit: a1c1950b9a55d647d72b509de8e72bd3ee858079
+  readiness_verdict: HOLDOUT_READY
+  scope: exact_candidate_frozen_for_one_shot_simulation_generalization_HOLDOUT
+  holdout_supported: false
+  real_robot_supported: false
+  production_ready: false
+  safety_certified: false
+  final_sensor_architecture: false
+  e84_supported: false
+
+readiness_review:
+  config:
+    path: configs/experiment/20260902_model_v2_final_candidate_holdout_readiness_review.yaml
+    sha256: 0206dd12078ffa191cc6424a35cdead889c9614a1ecb38a9a830a1d464368ec8
+  review_status: MODEL_V2_FINAL_CANDIDATE_HOLDOUT_READINESS_REVIEW_COMPLETE
+  no_new_candidate_inference: true
+  no_holdout_access: true
+
+source_candidate:
+  role: development_candidate
+  record:
+    path: configs/model/development_candidate.yaml
+    sha256: 1e4931e35e873cd721b412c6a45f66340f7ee9eebc1900d9c4aa3dc9ab3d092f
+  candidate_id: model_v2_anchor_refined_gru20_20260902
+  candidate_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json
+    sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f
+  internal_evaluation_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_evaluation_freeze.json
+    sha256: cad3902137b622c3a3d15ecb3d6c3bb31ee9751f3605fb8d43daa6ac81695c07
+  artifacts_duplicated: false
+  weights_changed: false
+
+normalizer:
+  path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json
+  sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+
+checkpoints:
+  - seed: 20260828
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260828.pt
+    sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9
+  - seed: 20260829
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260829.pt
+    sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39
+  - seed: 20260830
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260830.pt
+    sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd
+
+architecture:
+  input: pelvis_imu6
+  feature_dimension: 80
+  input_shape: [20, 80]
+  model_family: gru
+  hidden_size: 32
+  layers: 1
+  bidirectional: false
+  parameters: 11010
+  sha256: ae4753699399aa7e4a93639935e085156ef28ed100a77058d7308eb1549aa897
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+
+runtime:
+  ensemble_membership: [20260828, 20260829, 20260830]
+  threshold: 0.99
+  persistence_ms: 5
+  replay_stride_ms: 1
+
+known_development_results:
+  internal_v2_validation:
+    evaluation_freeze_sha256: cad3902137b622c3a3d15ecb3d6c3bb31ee9751f3605fb8d43daa6ac81695c07
+    hazard: 59/64
+    slip: 30/35
+    support: 30/30
+    confirmed_specificity: 26/26
+    verdict: MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED
+  external_generalization_validation:
+    evaluation_freeze:
+      path: artifacts/runs/20260902_model_v2_generalization_development_evaluation/evaluation_freeze.json
+      sha256: cc559c592f64ed8afd27b039d57ace35d8bbb3efad1cac64e3d10788e0ffa556
+    metrics:
+      path: artifacts/runs/20260902_model_v2_generalization_development_evaluation/v2_generalization_validation_metrics.json
+      sha256: 291e40aaa96daddd1267f65ed188f205cde5d79d8782379f9bdcb9a95bc5260f
+    run_level:
+      path: artifacts/runs/20260902_model_v2_generalization_development_evaluation/run_level_results.json
+      sha256: 561d7394dcd3645cbaf64a6ec9089d98106738a37145653fd259c48e33f983a4
+    hazard: 25/26
+    slip: 11/12
+    support: 14/14
+    primary_specificity: 10/10
+    ice_benign_specificity: 4/4
+    premature: 1/26
+    primary_gate_status: GENERALIZATION_PRIMARY_GATES_FAIL
+    development_verdict: GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION
+    data_coverage_verdict: DATA_COVERAGE_HYPOTHESIS_SUPPORTED
+
+known_limitation:
+  statement: Generalization_VALIDATION_primary_Slip_recall_11_of_12_is_below_the_frozen_95_percent_gate
+  primary_metric: slip_hazard_recall
+  result: {correct: 11, total: 12, recall: 0.9166666666666666}
+  gate_min: 0.95
+  gate_passed: false
+  sole_failure_run: ghr_ocd_v_c020
+  primary_classification: PREMATURE
+  physical_classification: SUPPORTED_ICE_PRECURSOR_TIMING_CONFLICT
+  genuine_detection_failure: false
+  primary_score_rewritten: false
+
+evaluation_contracts:
+  primary:
+    source:
+      path: configs/experiment/20260902_model_v2_final_candidate_holdout_readiness_review.yaml
+      section: future_primary_contract
+    canonical_sha256: feabfc4519e8ec28e59710810b6e587b7a8be1a128ecf57a028d32710c1b246e
+    unchanged: true
+  secondary:
+    source:
+      path: configs/experiment/20260902_model_v2_final_candidate_holdout_readiness_review.yaml
+      section: future_secondary_contract
+    canonical_sha256: 085d6f73156a5618767284faa2ccdcd29d3645694f56155431159d533b77130a
+    frozen_ice_precursor_semantics: true
+    can_replace_primary_score: false
+  verdict_hierarchy:
+    canonical_sha256: e86fb11f457734c41cd7b9c66a827a22b587f7a1f95aa91130931f7586c8cba5
+  post_open_rules:
+    canonical_sha256: 4baabe28158f7319177a9d5501e2be31eabad110706e2e32811638dfa657175a
+
+holdout:
+  dataset_id: generalization_hazard_reflex_20260831
+  split: GENERALIZATION_HOLDOUT
+  count: 36
+  run_ids_canonical_sha256: 6c911c33bc7ea1eb89a58f129d44848989ba4f6aea070f9c15084bdcc2b00c1f
+  guard_before: 0
+  authorized_now: false
+  waveform_opened: false
+  Hazard_inference: false
+  Terrain_inference: false
+  next_milestone: MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION
+  future_guard_transition: 0_to_1_exactly_once
+  second_scientific_open: prohibited
+
+no_new_weights: true
+no_checkpoint_write: true
+no_normalizer_write: true
+no_architecture_mutation: true
+no_deployment_export: true

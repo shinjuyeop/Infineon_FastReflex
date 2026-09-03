@@ -176,7 +176,10 @@ def test_future_complete_design_is_fresh_balanced_and_not_generated() -> None:
     assert audit["scenario_signature_sha256"] == (
         "0944705e3cb18ff78f4edf68573fbf56477ae9fc7cf7576a2894145549feb4be"
     )
-    assert not (ROOT / document["dataset_plan"]["dataset_path"]).exists()
+    dataset_path = ROOT / document["dataset_plan"]["dataset_path"]
+    manifest = json.loads((dataset_path / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["dataset_id"] == document["dataset_plan"]["dataset_id"]
+    assert manifest["run_count"] == 198
 
 
 def test_review_readiness_hashes_and_boundaries_are_deterministic() -> None:

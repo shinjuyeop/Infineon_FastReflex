@@ -40,6 +40,12 @@ FACTOR_CONDITIONED_RECALIBRATED_GENERATION_ID = (
 FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID = (
     "sand_factor_conditioned_development_recalibrated_20260903"
 )
+FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_GENERATION_ID = (
+    "SAND_FACTOR_CONDITIONED_DEVELOPMENT_SUPPORT_RECALIBRATED_GENERATION"
+)
+FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_DATASET_ID = (
+    "sand_factor_conditioned_development_support_recalibrated_20260903"
+)
 
 
 def _factor_conditioned_eligible(row: Mapping[str, Any]) -> bool:
@@ -1133,6 +1139,10 @@ def _factor_conditioned_recalibrated_audit(
     """Evaluate every pre-frozen recalibrated physical-generation gate."""
     rows = list(manifest["runs"])
     gates = design["generation_gates"]
+    support_recalibrated = (
+        design["dataset_plan"]["dataset_id"]
+        == FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_DATASET_ID
+    )
     checks: dict[str, dict[str, Any]] = {}
 
     def add(
@@ -1217,8 +1227,12 @@ def _factor_conditioned_recalibrated_audit(
     pilot_references = [
         path
         for path in historical["exact_by_reference"]
-        if "sand_factor_conditioned_physical_domain_calibration" in path
-        or "sand_factor_conditioned_concrete_025_calibration" in path
+        if (
+            "sand_factor_conditioned_delayed_support_calibration" in path
+            if support_recalibrated
+            else "sand_factor_conditioned_physical_domain_calibration" in path
+            or "sand_factor_conditioned_concrete_025_calibration" in path
+        )
     ]
     pilot_exact = sum(
         int(historical["exact_by_reference"][path]) for path in pilot_references
@@ -1226,20 +1240,58 @@ def _factor_conditioned_recalibrated_audit(
     pilot_near = sum(
         int(historical["near_by_reference"][path]) for path in pilot_references
     )
+    pilot_exact_expected = int(gates["integrity"].get("pilot_exact_overlap", 0))
+    pilot_near_expected = int(
+        gates["integrity"].get("pilot_forbidden_near_overlap", 0)
+    )
     add(
         "integrity/pilot_exact_overlap",
         pilot_exact,
-        "0",
-        pilot_exact == 0,
+        str(pilot_exact_expected),
+        pilot_exact == pilot_exact_expected,
         "pre_simulation_freeze.json",
     )
     add(
         "integrity/pilot_forbidden_near_overlap",
         pilot_near,
-        "0",
-        pilot_near == 0,
+        str(pilot_near_expected),
+        pilot_near == pilot_near_expected,
         "pre_simulation_freeze.json",
     )
+    failed_exact = 0
+    failed_near = 0
+    if "failed_198_exact_overlap" in gates["integrity"]:
+        failed_references = [
+            path
+            for path in historical["exact_by_reference"]
+            if path.endswith(
+                "sand_factor_conditioned_development_recalibrated_20260903/manifest.json"
+            )
+        ]
+        failed_exact = sum(
+            int(historical["exact_by_reference"][path])
+            for path in failed_references
+        )
+        failed_near = sum(
+            int(historical["near_by_reference"][path])
+            for path in failed_references
+        )
+        for name, actual, gate_key in (
+            ("failed_198_exact_overlap", failed_exact, "failed_198_exact_overlap"),
+            (
+                "failed_198_forbidden_near_overlap",
+                failed_near,
+                "failed_198_forbidden_near_overlap",
+            ),
+        ):
+            expected = int(gates["integrity"][gate_key])
+            add(
+                f"integrity/{name}",
+                actual,
+                str(expected),
+                actual == expected,
+                "pre_simulation_freeze.json",
+            )
     for name, audit_key, gate_key in (
         (
             "cross_split_exact_overlap",
@@ -1307,6 +1359,22 @@ def _factor_conditioned_recalibrated_audit(
         <= int(gates["contamination"]["designed_sand_Slip_plus_dual_max"]),
         "manifest.json",
     )
+    delayed_rows = [row for row in rows if row["group"] == "delayed_support_control"]
+    delayed_hazards = [
+        row
+        for row in delayed_rows
+        if row["objective_physical_outcome"] in {"SLIP", "DUAL_HAZARD"}
+    ]
+    delayed_contamination_key = "delayed_support_Slip_plus_dual_max"
+    if delayed_contamination_key in gates["contamination"]:
+        maximum = int(gates["contamination"][delayed_contamination_key])
+        add(
+            "contamination/delayed_support_slip_plus_dual",
+            len(delayed_hazards),
+            f"<={maximum}",
+            len(delayed_hazards) <= maximum,
+            "manifest.json",
+        )
 
     split_outcomes: dict[str, Any] = {}
     sand_source_speed: dict[str, Any] = {}
@@ -1337,14 +1405,31 @@ def _factor_conditioned_recalibrated_audit(
                 "manifest.json",
             )
         split_sand_hazards = [row for row in sand_hazards if row["split"] == split]
-        contamination_max = int(gates["contamination"][f"{split}_max"])
-        add(
-            f"contamination/{split}/designed_sand_slip_plus_dual",
-            len(split_sand_hazards),
-            f"<={contamination_max}",
-            len(split_sand_hazards) <= contamination_max,
-            "manifest.json",
-        )
+        sand_contamination_key = f"{split}_max"
+        if sand_contamination_key in gates["contamination"]:
+            contamination_max = int(
+                gates["contamination"][sand_contamination_key]
+            )
+            add(
+                f"contamination/{split}/designed_sand_slip_plus_dual",
+                len(split_sand_hazards),
+                f"<={contamination_max}",
+                len(split_sand_hazards) <= contamination_max,
+                "manifest.json",
+            )
+        delayed_split_key = f"{split}_delayed_support_Slip_plus_dual_max"
+        if delayed_split_key in gates["contamination"]:
+            delayed_split_hazards = [
+                row for row in delayed_hazards if row["split"] == split
+            ]
+            contamination_max = int(gates["contamination"][delayed_split_key])
+            add(
+                f"contamination/{split}/delayed_support_slip_plus_dual",
+                len(delayed_split_hazards),
+                f"<={contamination_max}",
+                len(delayed_split_hazards) <= contamination_max,
+                "manifest.json",
+            )
 
         strict_mild = [
             row
@@ -1559,15 +1644,48 @@ def _factor_conditioned_recalibrated_audit(
             }
         )
 
-    verdict = (
-        "SAND_FACTOR_CONDITIONED_DEVELOPMENT_RECALIBRATED_GENERATION_READY"
-        if all(value["passed"] for value in checks.values())
-        else "SAND_FACTOR_CONDITIONED_DEVELOPMENT_RECALIBRATED_GENERATION_INSUFFICIENT"
-    )
-    return {
+    all_gates_passed = all(value["passed"] for value in checks.values())
+    if support_recalibrated:
+        verdict = (
+            "SAND_FACTOR_CONDITIONED_DEVELOPMENT_SUPPORT_RECALIBRATED_GENERATION_READY"
+            if all_gates_passed
+            else "SAND_FACTOR_CONDITIONED_DEVELOPMENT_SUPPORT_RECALIBRATED_GENERATION_INSUFFICIENT"
+        )
+    else:
+        verdict = (
+            "SAND_FACTOR_CONDITIONED_DEVELOPMENT_RECALIBRATED_GENERATION_READY"
+            if all_gates_passed
+            else "SAND_FACTOR_CONDITIONED_DEVELOPMENT_RECALIBRATED_GENERATION_INSUFFICIENT"
+        )
+    physical_signature_summary: dict[str, Any] = {
+        "scenario_unique": matrix_audit["unique_scenario_signatures"],
+        "scenario_total": len(rows),
+        "all_physical_unique": len(set(all_physical_hashes)),
+        "all_physical_total": len(rows),
+        "valid_physical_unique": len(set(valid_physical_hashes)),
+        "valid_physical_total": len(eligible_rows),
+        "exact_physical_duplicate_count": len(rows) - len(set(all_physical_hashes)),
+        "valid_uniqueness_fraction": unique_fraction,
+        "physical_near_pair_count": None,
+        "physical_near_pair_interpretation": (
+            "NOT_DEFINED_BY_FROZEN_PROTOCOL_NO_POST_HOC_CRITERION_ADDED"
+        ),
+    }
+    if support_recalibrated:
+        run_ids_by_signature: dict[str, list[str]] = {}
+        for row, signature in zip(rows, all_physical_hashes, strict=True):
+            run_ids_by_signature.setdefault(signature, []).append(str(row["run_id"]))
+        physical_signature_summary["exact_physical_duplicate_pairs"] = [
+            [left, right]
+            for run_ids in run_ids_by_signature.values()
+            for left_index, left in enumerate(run_ids)
+            for right in run_ids[left_index + 1 :]
+        ]
+
+    audit = {
         "schema_version": 1,
         "generation_verdict": verdict,
-        "all_gates_passed": all(value["passed"] for value in checks.values()),
+        "all_gates_passed": all_gates_passed,
         "gate_count": len(checks),
         "gate_pass_count": sum(value["passed"] for value in checks.values()),
         "gate_fail_count": sum(not value["passed"] for value in checks.values()),
@@ -1581,20 +1699,7 @@ def _factor_conditioned_recalibrated_audit(
         "concrete_025_exception_coverage": concrete_025_coverage,
         "support_controls": support_controls,
         "invalid_details": invalid_details,
-        "physical_signatures": {
-            "scenario_unique": matrix_audit["unique_scenario_signatures"],
-            "scenario_total": len(rows),
-            "all_physical_unique": len(set(all_physical_hashes)),
-            "all_physical_total": len(rows),
-            "valid_physical_unique": len(set(valid_physical_hashes)),
-            "valid_physical_total": len(eligible_rows),
-            "exact_physical_duplicate_count": len(rows) - len(set(all_physical_hashes)),
-            "valid_uniqueness_fraction": unique_fraction,
-            "physical_near_pair_count": None,
-            "physical_near_pair_interpretation": (
-                "NOT_DEFINED_BY_FROZEN_PROTOCOL_NO_POST_HOC_CRITERION_ADDED"
-            ),
-        },
+        "physical_signatures": physical_signature_summary,
         "historical_contamination": historical,
         "cross_split_exact_overlap": matrix_audit["cross_split_exact_overlap"],
         "cross_split_forbidden_near_overlap": matrix_audit[
@@ -1608,6 +1713,19 @@ def _factor_conditioned_recalibrated_audit(
         "factor_validation_training_use": 0,
         "factor_validation_hnm": 0,
     }
+    if support_recalibrated:
+        pilot_run_id_reuse = sum(
+            int(historical["run_id_reuse_by_reference"][path])
+            for path in pilot_references
+        )
+        audit.update(
+            {
+                "failed_198_exact_overlap": failed_exact,
+                "failed_198_forbidden_near_overlap": failed_near,
+                "pilot_run_id_reuse": pilot_run_id_reuse,
+            }
+        )
+    return audit
 
 
 def load_factor_conditioned_manifest(dataset_path: Path) -> Mapping[str, Any]:
@@ -1620,6 +1738,7 @@ def load_factor_conditioned_manifest(dataset_path: Path) -> Mapping[str, Any]:
     if manifest.get("dataset_id") not in {
         FACTOR_CONDITIONED_DATASET_ID,
         FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID,
+        FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_DATASET_ID,
     }:
         raise ValueError("unexpected factor-conditioned dataset identity")
     return manifest
@@ -1945,12 +2064,22 @@ def collect_factor_conditioned_recalibrated_dataset(
     *,
     progress: Callable[[str], None] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
-    """Generate and freeze the exact recalibrated 198-run physical corpus."""
+    """Generate and freeze an exact frozen recalibrated physical corpus."""
     execution = _load_yaml(execution_config_path)
-    if execution["experiment"]["id"] != FACTOR_CONDITIONED_RECALIBRATED_GENERATION_ID:
+    experiment_id = str(execution["experiment"]["id"])
+    dataset_ids = {
+        FACTOR_CONDITIONED_RECALIBRATED_GENERATION_ID: (
+            FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID
+        ),
+        FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_GENERATION_ID: (
+            FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_DATASET_ID
+        ),
+    }
+    if experiment_id not in dataset_ids:
         raise ValueError(
             "unsupported recalibrated factor-conditioned generation config"
         )
+    dataset_id = dataset_ids[experiment_id]
     generation = execution["generation"]
     redesign_path = root / str(generation["redesign_config_path"])
     if sha256_file(redesign_path) != str(generation["redesign_config_sha256"]):
@@ -1971,16 +2100,38 @@ def collect_factor_conditioned_recalibrated_dataset(
     readiness_path = root / str(generation["readiness_artifact_path"])
     if sha256_file(readiness_path) != str(generation["readiness_artifact_sha256"]):
         raise RuntimeError("factor-conditioned redesign readiness artifact changed")
-    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
-    if (
-        readiness.get("verdict") != "FACTOR_CONDITIONED_PHYSICAL_DOMAIN_REDESIGN_READY"
-        or readiness.get("redesign_config_sha256")
-        != str(generation["redesign_config_sha256"])
-        or readiness.get("redesign_audit", {}).get("scenario_matrix_sha256")
-        != matrix_audit["scenario_matrix_sha256"]
-        or readiness.get("full_redesigned_generation_runs") != 0
-        or readiness.get("model_inference_runs") != 0
-    ):
+    if readiness_path.suffix == ".yaml":
+        readiness = _load_yaml(readiness_path)
+        future = readiness.get("future_complete_corpus", {})
+        counters = readiness.get("counters", {})
+        readiness_valid = (
+            readiness.get("decision", {}).get("verdict")
+            == "DELAYED_SUPPORT_PHYSICAL_RECALIBRATION_READY"
+            and future.get("design", {}).get("sha256")
+            == str(generation["redesign_config_sha256"])
+            and future.get("scenario_matrix_sha256")
+            == matrix_audit["scenario_matrix_sha256"]
+            and future.get("scenario_signature_sha256")
+            == matrix_audit["scenario_signature_sha256"]
+            and future.get("dataset_id") == dataset_id
+            and future.get("generated_now") is False
+            and counters.get("future_complete_corpus_simulations") == 0
+            and counters.get("V1_inference") == 0
+            and counters.get("V2_inference") == 0
+        )
+    else:
+        readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+        readiness_valid = (
+            readiness.get("verdict")
+            == "FACTOR_CONDITIONED_PHYSICAL_DOMAIN_REDESIGN_READY"
+            and readiness.get("redesign_config_sha256")
+            == str(generation["redesign_config_sha256"])
+            and readiness.get("redesign_audit", {}).get("scenario_matrix_sha256")
+            == matrix_audit["scenario_matrix_sha256"]
+            and readiness.get("full_redesigned_generation_runs") == 0
+            and readiness.get("model_inference_runs") == 0
+        )
+    if not readiness_valid:
         raise RuntimeError("factor-conditioned readiness state changed")
 
     specifications = expand_factor_conditioned_redesign(design)
@@ -2000,7 +2151,7 @@ def collect_factor_conditioned_recalibrated_dataset(
         "delayed_support_control": int(generation["planned_delayed_support_runs"]),
     }
     if (
-        str(generation["dataset_id"]) != FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID
+        str(generation["dataset_id"]) != dataset_id
         or expected_counts != declared_counts
     ):
         raise RuntimeError("recalibrated factor-conditioned identity/counts changed")
@@ -2067,7 +2218,7 @@ def collect_factor_conditioned_recalibrated_dataset(
     pre_simulation_freeze = {
         "schema_version": 1,
         "status": "FROZEN_BEFORE_FIRST_SIMULATION",
-        "dataset_id": FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID,
+        "dataset_id": dataset_id,
         "source_commit": str(generation["source_commit"]),
         "execution_config_path": str(execution_config_path.relative_to(root)),
         "execution_config_sha256": config_sha,
@@ -2086,6 +2237,10 @@ def collect_factor_conditioned_recalibrated_dataset(
         "replacement": False,
         "rerun": False,
     }
+    if "environment_provenance" in generation:
+        pre_simulation_freeze["environment_provenance"] = dict(
+            generation["environment_provenance"]
+        )
     pre_simulation_path = partial_path / "pre_simulation_freeze.json"
     _write_json(pre_simulation_path, pre_simulation_freeze)
 
@@ -2113,7 +2268,7 @@ def collect_factor_conditioned_recalibrated_dataset(
 
         manifest = {
             "schema_version": 1,
-            "dataset_id": FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID,
+            "dataset_id": dataset_id,
             "created_at": str(generation["generation_start"]),
             "generation_source_commit": str(generation["source_commit"]),
             "redesign_config_path": str(generation["redesign_config_path"]),
@@ -2169,7 +2324,7 @@ def collect_factor_conditioned_recalibrated_dataset(
         )
         validation_seal = {
             "schema_version": 1,
-            "dataset_id": FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID,
+            "dataset_id": dataset_id,
             "split": "FACTOR_VALIDATION",
             "status": validation_status,
             "generated": True,
@@ -2207,7 +2362,7 @@ def collect_factor_conditioned_recalibrated_dataset(
         ]
         freeze = {
             "schema_version": 1,
-            "dataset_id": FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID,
+            "dataset_id": dataset_id,
             "generation_source_commit": str(generation["source_commit"]),
             "redesign_config_sha256": str(generation["redesign_config_sha256"]),
             "intervention_config_sha256": config_sha,
@@ -2260,7 +2415,7 @@ def collect_factor_conditioned_recalibrated_dataset(
         raise
 
     summary = {
-        "dataset_id": FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID,
+        "dataset_id": dataset_id,
         "output_path": str(output_path),
         "planned_runs": len(specifications),
         "attempted_runs": attempted,

@@ -102,7 +102,7 @@ Dated configs, reports and Git history preserve the research path. This does not
 
 ## 10. Research-to-Deployment handoff
 
-Research completion does not authorize quantization, export, E84 integration, HIL, Recovery or sensor freeze. Those actions require a reviewed deployment milestone and explicit artifact provenance. This repository's supported result is a Float research candidate and behavior contract, not a target-runtime claim.
+Research completion does not authorize quantization, export, E84 integration, HIL, Recovery or sensor freeze. Those actions require a reviewed deployment milestone and explicit artifact provenance. For the frozen non-final V2 engineering reference, deployment Float comparison uses one independent batch-1 `[1,20,80]` invocation per endpoint. Continuous parity follows the reviewed layer-specific contract in the handoff while tensor shape/dtype, `>=0.99`, five-sample persistence, state transitions, and final decisions remain exact. The historical batch-121 golden is preserved but is not the canonical deployment execution. This repository's supported result is a Float research candidate and behavior contract, not a target-runtime claim.
 
 ## 11. Redesigned Sand generalization protocol
 

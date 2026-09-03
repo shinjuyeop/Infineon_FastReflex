@@ -17,9 +17,9 @@ def test_reviewed_deployment_reference_release_is_intact() -> None:
     assert result == {
         "release_id": "model_v2_anchor_refined_gru20_20260902",
         "release_manifest_sha256": (
-            "9cbd42c95e42e90ef05f4a2ba77306a18dc3cbfa4e814c6e8432e29281a2b642"
+            "6451b732db9c73bc84f017385339c9a93e1ce35ca69de3dc1542748acf0569ed"
         ),
-        "files_verified": 14,
+        "files_verified": 16,
         "status": "PASS",
     }
 
@@ -40,6 +40,51 @@ def test_golden_evidence_is_non_protected_and_exercises_decision() -> None:
         assert chain["member_hazard_probability"].shape == (3, 121)
         assert chain["reflex_required"].any()
         assert (~chain["reflex_required"]).any()
+
+
+def test_deployment_float_contract_is_batch_one_and_evidence_based() -> None:
+    contract = json.loads((RELEASE / "float_numerical_contract.json").read_text())
+    assert contract["verdict"] == "FLOAT_EXPORT_NUMERICAL_CONTRACT_RESOLVED"
+    assert contract["protected_holdout_access"] is False
+    assert contract["canonical_execution"]["input_shape"] == [1, 20, 80]
+    assert contract["canonical_execution"]["batch_size"] == 1
+    assert contract["canonical_execution"]["one_causal_endpoint_per_invocation"]
+    logit_tolerance = contract["continuous_parity"]["member_logits"]
+    assert logit_tolerance["absolute"] == 4e-6
+    assert logit_tolerance["relative"] == 0.0
+    assert "batch-size changes" in logit_tolerance["rationale"]
+    evidence = contract["variability_evidence"]
+    assert evidence["batch_one_repeated_exact"] is True
+    assert (
+        max(
+            value["member_logits_max_absolute"]
+            for value in evidence["batch_size_sweep"].values()
+        )
+        == 2.9802322387695312e-6
+    )
+    sensitivity = contract["threshold_sensitivity"]
+    assert sensitivity["minimum_absolute_margin"] == 0.0009300009409586307
+    assert sensitivity["margin_to_permitted_error_ratio"] > 400.0
+
+    with np.load(
+        RELEASE / "golden_outputs/runtime_chain.npz", allow_pickle=False
+    ) as historical, np.load(
+        RELEASE / "golden_outputs/deployment_runtime_chain.npz",
+        allow_pickle=False,
+    ) as deployment:
+        assert deployment["member_logits"].shape == (3, 121, 2)
+        assert not np.array_equal(
+            historical["member_logits"], deployment["member_logits"]
+        )
+        np.testing.assert_allclose(
+            historical["member_logits"],
+            deployment["member_logits"],
+            atol=4e-6,
+            rtol=0.0,
+        )
+        np.testing.assert_array_equal(
+            historical["reflex_required"], deployment["reflex_required"]
+        )
 
 
 def test_decision_probe_freezes_inclusive_threshold_and_persistence() -> None:

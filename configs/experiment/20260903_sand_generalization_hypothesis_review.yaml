@@ -1,0 +1,159 @@
+schema_version: 1
+
+experiment:
+  id: SAND_GENERALIZATION_HYPOTHESIS_REVIEW
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  starting_commit: ce8070930988872566c90121fc5e88d8c23fc4a8
+  review_only: true
+  new_simulation: false
+  model_inference: false
+  metric_recomputation_from_payload: false
+  training_or_tuning: false
+
+historical_status:
+  Discovery_verdict: DOMAIN_DIVERSITY_GAP_SUPPORTED
+  Confirmation_verdict: DOMAIN_DIVERSITY_GAP_NOT_CONFIRMED
+  Confirmation_validity: SAND_BENIGN_GENERALIZATION_STUDY_CONFIRMATION_ANALYSIS_VALID
+  final_model_verdict: MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED
+  simulation_status: SIMULATION_GENERALIZATION_EVIDENCE_NOT_SUPPORTED
+  support_status: SUPPORT_SIMULATION_GENERALIZATION_SUPPORTED
+  rewrite_prohibited: true
+
+evidence_boundary:
+  allowed:
+    - frozen_Discovery_analysis_artifacts
+    - frozen_Confirmation_analysis_artifacts
+    - saved_run_level_results
+    - persisted_predeclared_factor_summaries
+    - previously_authorized_development_summaries
+  prohibited:
+    - Discovery_payload_open_or_model_rerun
+    - Confirmation_payload_open_or_model_rerun
+    - historical_HOLDOUT_payload_access
+    - raw_feature_reconstruction
+    - metric_or_scaler_refit
+    - anchor_or_feature_schema_change
+    - arbitrary_factor_search
+    - H2_or_H3_retroactive_selection
+  unavailable_value_marker: NOT_AVAILABLE_FROM_FROZEN_ANALYSIS_ARTIFACT
+
+discovery_evidence:
+  artifact_path: artifacts/runs/20260903_sand_benign_generalization_study_mild_recalibrated_discovery_analysis
+  config:
+    path: configs/experiment/20260903_sand_benign_generalization_study_mild_recalibrated_discovery_analysis.yaml
+    sha256: e7b4f2f53ac102ca822ad0d00c0b23650d7ed792ded75fcf5d7f371805f2556f
+  report:
+    path: reports/20260903_sand_benign_generalization_study_mild_recalibrated_discovery_analysis.md
+    sha256: 5a3de344a727efc1d8d4aed87332323e15968b24ddde612bba3c3621f9a62a4f
+  files:
+    pelvis_analysis.json: ee82865cd8171cc9d337f94f09d5d0242ce1aef92fe9a4064bb384a52e9be6ad
+    fsr_contact_analysis.json: 1fa3f98ef2319b052795f0e6ab30188d7b3ea9fa7cb7256ba67727080d034374
+    privileged_oracle_analysis.json: 02a2bcab898533bc93cf3c00a3d80158682554acaa443e903ec7251434f2dd53
+    v2_discovery_replay.json: c6595d174c73f05d569e6d8d64650493481ecb1346b0713ab580b97446e2164e
+    factor_localization.json: 86fbe59e89ed2e4ae7053bebbfd9bd262d88864c8e6ebb2b88f18a551551b0b2
+    discovery_hypothesis_decision.json: f650d829e471dd9bb047e7235ef65e822d041acb1040caf429b9006bc22bbb48
+    discovery_interpretation.json: 8461e1ad6b31bb7715b7d0e91c81ea3c6d3547a7c3c4dc0c1d96437e339a66a5
+  semantic_interpretation_sha256: 7c045cd98bb221a0f41911a9662b430548393be90ef192e3194bd619cc3f2ae5
+  canonical_evidence_input_sha256: 255078ce8e8ee975adeae725b2f77ec2adf750561ca1e83ee6b5738ed35f9c55
+
+confirmation_evidence:
+  artifact_path: artifacts/runs/20260903_sand_benign_generalization_study_mild_recalibrated_confirmation_analysis
+  config:
+    path: configs/experiment/20260903_sand_benign_generalization_study_mild_recalibrated_confirmation_analysis.yaml
+    sha256: 29883f802c0247a21337015037962d1f49c6077244798c86980fc85f9bdd4625
+  report:
+    path: reports/20260903_sand_benign_generalization_study_mild_recalibrated_confirmation_analysis.md
+    sha256: bc13646ab16bf613e9010eb3f62f3ddd7f9b71bf7b0ab45e7d934c8090060d9a
+  files:
+    discovery_scalers.json: 62935047a67b0ab44265299b5e4bbfb3e012c80347ae96a557ab70a07d65ae38
+    pelvis_confirmation_analysis.json: d17f6666cb69c151454134e97a8f5b00a9e5aefccbb7e3ff72d430182a950238
+    fsr_contact_confirmation_analysis.json: 4df38a71bf5d42f1b23f9a257f459b137e8e0a911c8330ab75af3a9a62b5561c
+    privileged_oracle_confirmation_analysis.json: 9c30c6a4636ed5352c592a6ee236c35feed7af51679dbe732ed621f4d18036d0
+    v2_confirmation_replay.json: 7485d8dbab6d2ef011513593b0de39469c5d396292587e37386ac5be84afeec1
+    confirmation_factor_localization.json: 0c7f57612900dfde1565e62de3702a2fb3bfff129ffef8875d515f0a3c0ff02b
+    discovery_confirmation_replication.json: d40dbcb258e3f5a6e13603153a299eba1128e67c6247a38e9e5ec0d8d1ed973e
+    confirmation_decision.json: 247463fc8af007548676bae1e94256d325130ff078b888b88d1e1ddcd563713c
+    confirmation_interpretation.json: 94f03d0dd9bce0d64f3c7a8d85cafc29a3e927762863459a25fb6a9575ca3354
+    confirmation_access_guard.json: 5e2995cc2a1829c2c78cc0b49bab1d3192823aead0c3b7d126f9793427984238
+  semantic_interpretation_sha256: 7dc0e2696548446065a35f2466cc3efd9afc35748a60030cd154fef1c95b88b6
+  canonical_evidence_input_sha256: 33d80c80d6517bff9fea1ab2fd57782d1ac686d45fd2bbf6bac595c23409e59b
+
+review_method:
+  centroid_decomposition:
+    use_persisted_centroid_distance: true
+    use_persisted_global_within_group_rms: true
+    use_persisted_within_class_pairwise_quantiles_as_spread_context: true
+    recompute_class_RMS_from_vectors: false
+  local_geometry:
+    metrics: [balanced_1nn, balanced_5nn, local_mixing, radius_inclusion]
+  predeclared_factors:
+    - transition_topology
+    - actual_entry_phase
+    - source
+    - speed
+    - actual_severity
+    - entry_timing_stratum
+    - exposure_stratum
+    - start_stratum
+    - width_stratum
+  interpretations_allowed:
+    - CONFIRMATION_REPRESENTATION_DISTRIBUTION_SHIFT
+    - CENTROID_METRIC_SENSITIVE_TO_WITHIN_CLASS_HETEROGENEITY
+    - FACTOR_CONDITIONED_REPRESENTATION_HETEROGENEITY
+  no_historical_verdict_rewrite: true
+
+candidate_next_hypotheses:
+  options:
+    - FACTOR_CONDITIONED_DATA_DOMAIN_HYPOTHESIS
+    - MODEL_BOUNDARY_GENERALIZATION_HYPOTHESIS
+    - PELVIS_REPRESENTATION_HETEROGENEITY_HYPOTHESIS
+    - SAND_GENERALIZATION_HYPOTHESIS_UNRESOLVED
+  maximum_primary_selection: 1
+  selection_is_future_study_hypothesis_not_Confirmation_result: true
+  new_independent_evidence_required: true
+
+deployment_parallelization:
+  reference_candidate: model_v2_anchor_refined_gru20_20260902
+  candidate_record:
+    path: configs/model/final_generalization_candidate.yaml
+    sha256: 52644d3efb0e756002bd43a7f94aea0a16a65eb2ff014c72548f2b3b138b7bc2
+  candidate_freeze_sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f
+  architecture_sha256: ae4753699399aa7e4a93639935e085156ef28ed100a77058d7308eb1549aa897
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  reference_only_not_final_supported_model: true
+  research_weights_must_not_change: true
+  deployment_repo_mutation_now: false
+
+historical_holdout:
+  guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  guard_sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154
+  guard: 1
+  scientific_opens: 1
+  payload_reads_now: 0
+  inference_now: 0
+
+outputs:
+  report: reports/20260903_sand_generalization_hypothesis_review.md
+  artifact_path: artifacts/runs/20260903_sand_generalization_hypothesis_review
+  deterministic_artifacts:
+    - representation_geometry_review.json
+    - localization_replication_review.json
+    - metric_robustness_review.json
+    - next_hypothesis_decision.json
+    - hypothesis_review.json
+
+counters:
+  new_simulations: 0
+  V1_inference: 0
+  new_V2_Discovery_inference: 0
+  new_V2_Confirmation_inference: 0
+  Terrain_inference: 0
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  HNM_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  old_HOLDOUT_reads: 0

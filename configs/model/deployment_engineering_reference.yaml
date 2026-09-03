@@ -54,10 +54,15 @@ runtime:
   replay_stride_samples: 1
   ensemble_membership: [20260828, 20260829, 20260830]
   ensemble: arithmetic_mean_of_member_hazard_softmax_probabilities
+  gru_hidden_state: zero_initialized_for_each_window_no_cross_window_carry
+  member_softmax_compute_dtype: float32
+  member_probability_storage_dtype: float64
+  ensemble_mean_dtype: float64
   threshold: 0.99
   threshold_comparison: greater_than_or_equal
   persistence_samples: 5
   persistence: consecutive_samples_reset_to_zero_on_failure
+  output_hold: asserted_while_current_streak_is_at_least_five_and_deasserted_immediately_on_failure
   hazard_class_index: 1
   feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
 

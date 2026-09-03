@@ -96,6 +96,14 @@ float_numerical_contract:
       absolute: 1.0e-6
       relative: 1.0e-6
 
+int8_calibration:
+  training_config:
+    path: configs/experiment/20260902_model_v2_anchor_refined_training.yaml
+    sha256: 2da935d96c80452d69108ac14aa8a4df8edae297672cf25fd1945eb4deb64dbe
+  temporal_endpoints_per_run: 5
+  expected_run_count: 442
+  expected_window_count: 2597
+
 scientific_status:
   internal_validation:
     hazard: {correct: 59, total: 64}

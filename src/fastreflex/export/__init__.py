@@ -7,6 +7,7 @@ import json
 import shutil
 import subprocess
 import zipfile
+from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -14,6 +15,7 @@ import numpy as np
 import torch
 import yaml
 
+from fastreflex.dataset.hazard import slip_event_sample, support_event_sample
 from fastreflex.dataset.loader import sha256_file
 from fastreflex.evaluation.hazard import (
     load_hazard_normalizer,
@@ -30,11 +32,14 @@ from fastreflex.features import (
 )
 from fastreflex.models.baselines import parameter_count
 from fastreflex.models.checkpoint import load_checkpoint
+from fastreflex.training.hazard import prepare_model_v2_training_data
 
 
 DEFAULT_CONFIG = Path("configs/model/deployment_engineering_reference.yaml")
 REQUIRED_RELEASE_FILES = frozenset(
     {
+        "calibration_inputs/int8_representative.npz",
+        "calibration_manifest.json",
         "golden_inputs/decision_probe.npz",
         "golden_inputs/runtime_chain.npz",
         "golden_manifest.json",
@@ -100,6 +105,188 @@ def _checked_source(root: Path, record: Mapping[str, object]) -> Path:
     if actual != str(record["sha256"]):
         raise ValueError(f"frozen artifact checksum changed: {path}")
     return path
+
+
+def _int8_calibration(
+    root: Path,
+    document: Mapping[str, object],
+    normalizer_source: Path,
+) -> tuple[dict[str, np.ndarray], dict[str, object]]:
+    """Build reviewed representative windows from the candidate's exact TRAIN."""
+    settings = document.get("int8_calibration")
+    if not isinstance(settings, Mapping):
+        raise ValueError("INT8 calibration config is missing")
+    training_config = _checked_source(root, settings["training_config"])
+    training_document = yaml.safe_load(training_config.read_text(encoding="utf-8"))
+    data = prepare_model_v2_training_data(root, training_document)
+    if len(data.runs) != int(settings["expected_run_count"]):
+        raise ValueError("INT8 calibration effective TRAIN run count changed")
+
+    normalizer = load_hazard_normalizer(normalizer_source)
+    temporal_count = int(settings["temporal_endpoints_per_run"])
+    if temporal_count != 5:
+        raise ValueError("reviewed calibration temporal selection changed")
+
+    source_documents = {
+        "unified_hazard_reflex_20260829": json.loads(
+            (
+                root
+                / str(training_document["effective_train"]["unified"]["path"])
+                / "manifest.json"
+            ).read_text(encoding="utf-8")
+        ),
+        "model_v2_hazard_reflex_20260901": data.v2_manifest,
+    }
+    source_rows = {
+        dataset_id: {str(row["run_id"]): row for row in manifest["runs"]}
+        for dataset_id, manifest in source_documents.items()
+    }
+
+    windows: list[np.ndarray] = []
+    run_indices: list[int] = []
+    dataset_indices: list[int] = []
+    endpoints: list[int] = []
+    records: list[dict[str, object]] = []
+    tag_counts: Counter[str] = Counter()
+    dataset_ids = tuple(sorted(source_documents))
+    dataset_to_index = {value: index for index, value in enumerate(dataset_ids)}
+    offsets = np.arange(19, -1, -1, dtype=np.int64)
+
+    for run_index, run_id in enumerate(sorted(data.runs)):
+        run = data.runs[run_id]
+        dataset_id = str(data.annotations[run_id].dataset_id)
+        row = source_rows[dataset_id][run_id]
+        split = str(row["split"])
+        expected_split = (
+            "train"
+            if dataset_id == "unified_hazard_reflex_20260829"
+            else "V2_TRAIN"
+        )
+        if split != expected_split or row.get("valid", True) is not True:
+            raise ValueError(f"non-TRAIN calibration source selected: {run_id}")
+
+        stop = int(run.censor_sample)
+        if stop <= 19:
+            raise ValueError(f"calibration run is shorter than one window: {run_id}")
+        selected: dict[int, set[str]] = {}
+        temporal = np.linspace(19, stop - 1, temporal_count, dtype=np.int64)
+        for endpoint in temporal:
+            selected.setdefault(int(endpoint), set()).add("uniform_runtime")
+        anchors = (
+            ("physical_precursor", data.precursor_samples[run_id]),
+            ("physical_slip", slip_event_sample(run)),
+            ("physical_support", support_event_sample(run)),
+        )
+        for tag, endpoint in anchors:
+            if endpoint is not None and 19 <= int(endpoint) < stop:
+                selected.setdefault(int(endpoint), set()).add(tag)
+
+        normalized = normalizer.transform(
+            extract_hazard_features(run.features["PELVIS_IMU6"])
+        )
+        selected_records: list[dict[str, object]] = []
+        for endpoint, tags in sorted(selected.items()):
+            window = normalized[endpoint - offsets].astype(np.float32, copy=False)
+            if window.shape != (20, 80) or not np.all(np.isfinite(window)):
+                raise ValueError(f"invalid calibration window: {run_id}/{endpoint}")
+            windows.append(window)
+            run_indices.append(run_index)
+            dataset_indices.append(dataset_to_index[dataset_id])
+            endpoints.append(endpoint)
+            for tag in tags:
+                tag_counts[tag] += 1
+            selected_records.append(
+                {"endpoint_sample": endpoint, "selection_tags": sorted(tags)}
+            )
+        records.append(
+            {
+                "dataset_id": dataset_id,
+                "run_id": run_id,
+                "source_split": split,
+                "source_file": str(row["file"]),
+                "source_file_sha256": str(row["file_sha256"]),
+                "censor_sample_exclusive": stop,
+                "windows": selected_records,
+            }
+        )
+
+    model_windows = np.stack(windows).astype(np.float32, copy=False)
+    expected_windows = int(settings["expected_window_count"])
+    if model_windows.shape != (expected_windows, 20, 80):
+        raise ValueError("INT8 calibration window count or shape changed")
+    arrays = {
+        "dataset_index": np.asarray(dataset_indices, dtype=np.uint8),
+        "endpoint_sample": np.asarray(endpoints, dtype=np.int64),
+        "model_windows": model_windows,
+        "run_index": np.asarray(run_indices, dtype=np.int64),
+    }
+    manifest: dict[str, object] = {
+        "schema_version": 1,
+        "purpose": "formal_int8_representative_calibration_only",
+        "scientific_evidence": False,
+        "protected_holdout_access": False,
+        "candidate_id": str(document["release"]["id"]),
+        "training_config": {
+            "path": str(settings["training_config"]["path"]),
+            "sha256": str(settings["training_config"]["sha256"]),
+        },
+        "source_splits": [
+            {
+                "dataset_id": "unified_hazard_reflex_20260829",
+                "manifest_sha256": str(
+                    training_document["effective_train"]["unified"][
+                        "manifest_sha256"
+                    ]
+                ),
+                "split": "train",
+                "run_count": 152,
+            },
+            {
+                "dataset_id": "model_v2_hazard_reflex_20260901",
+                "manifest_sha256": str(
+                    training_document["v2_dataset"]["manifest_sha256"]
+                ),
+                "split": "V2_TRAIN",
+                "run_count": 290,
+            },
+        ],
+        "effective_train_run_ids_sha256": str(
+            training_document["effective_train"]["effective_run_ids_sha256"]
+        ),
+        "selection": {
+            "strategy": (
+                "five_evenly_spaced_runtime_valid_endpoints_per_run_plus_valid_"
+                "physical_precursor_slip_and_support_anchors_deduplicated"
+            ),
+            "model_output_used": False,
+            "quantization_result_used": False,
+            "run_count": len(records),
+            "window_count": len(model_windows),
+            "tag_counts": dict(sorted(tag_counts.items())),
+        },
+        "representation": {
+            "array": "model_windows",
+            "shape": list(model_windows.shape),
+            "dtype": str(model_windows.dtype),
+            "feature_schema_sha256": str(
+                document["runtime"]["feature_schema_sha256"]
+            ),
+            "normalizer_sha256": str(document["candidate"]["normalizer"]["sha256"]),
+            "window_order": "oldest_to_current",
+            "input_transform": "frozen_causal_80d_then_frozen_zscore",
+            "value_minimum": float(np.min(model_windows)),
+            "value_maximum": float(np.max(model_windows)),
+            "absolute_value_percentiles": {
+                str(percentile): float(
+                    np.percentile(np.abs(model_windows), percentile)
+                )
+                for percentile in (50, 90, 95, 99, 99.5, 99.9, 100)
+            },
+        },
+        "excluded": list(training_document["effective_train"]["excluded"]),
+        "runs": records,
+    }
+    return arrays, manifest
 
 
 def _consecutive_counts(passes: np.ndarray) -> np.ndarray:
@@ -341,6 +528,9 @@ def export_reference_release(
     _checked_source(root, candidate["freeze"])
     _checked_source(root, candidate["evaluation_freeze"])
     normalizer_source = _checked_source(root, candidate["normalizer"])
+    calibration_arrays, calibration_manifest = _int8_calibration(
+        root, document, normalizer_source
+    )
     for source in document["scientific_status"]["metrics_sources"]:
         _checked_source(root, source)
 
@@ -849,6 +1039,17 @@ def export_reference_release(
         },
     )
     _write_json(destination / "float_numerical_contract.json", float_contract)
+    _write_deterministic_npz(
+        destination / "calibration_inputs/int8_representative.npz",
+        calibration_arrays,
+    )
+    calibration_path = destination / "calibration_inputs/int8_representative.npz"
+    calibration_manifest["artifact"] = {
+        "path": "calibration_inputs/int8_representative.npz",
+        "sha256": sha256_file(calibration_path),
+        "bytes": calibration_path.stat().st_size,
+    }
+    _write_json(destination / "calibration_manifest.json", calibration_manifest)
 
     files = {
         str(path.relative_to(destination)): sha256_file(path)
@@ -923,6 +1124,33 @@ def verify_release(release_path: Path) -> dict[str, object]:
         or exact.get("reflex_onset") != "exact"
     ):
         raise ValueError("deployment Float numerical contract changed")
+    calibration = json.loads(
+        (root / "calibration_manifest.json").read_text(encoding="utf-8")
+    )
+    artifact = calibration.get("artifact", {})
+    if (
+        calibration.get("purpose")
+        != "formal_int8_representative_calibration_only"
+        or calibration.get("protected_holdout_access") is not False
+        or calibration.get("scientific_evidence") is not False
+        or calibration.get("selection", {}).get("run_count") != 442
+        or calibration.get("selection", {}).get("window_count") != 2597
+        or calibration.get("selection", {}).get("model_output_used") is not False
+        or calibration.get("selection", {}).get("quantization_result_used") is not False
+        or artifact.get("path") != "calibration_inputs/int8_representative.npz"
+        or sha256_file(root / str(artifact.get("path"))) != artifact.get("sha256")
+        or {row.get("split") for row in calibration.get("source_splits", [])}
+        != {"train", "V2_TRAIN"}
+    ):
+        raise ValueError("INT8 calibration handoff contract changed")
+    with np.load(root / str(artifact["path"]), allow_pickle=False) as payload:
+        if (
+            set(payload.files)
+            != {"dataset_index", "endpoint_sample", "model_windows", "run_index"}
+            or payload["model_windows"].shape != (2597, 20, 80)
+            or payload["model_windows"].dtype != np.float32
+        ):
+            raise ValueError("INT8 calibration payload changed")
     return {
         "release_id": manifest["release_id"],
         "release_manifest_sha256": sha256_file(manifest_path),

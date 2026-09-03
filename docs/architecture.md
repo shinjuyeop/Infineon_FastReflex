@@ -144,7 +144,9 @@ The ordinary simulation viewer copies physics state into a render-only model. Vi
 
 ## 7. Research-to-Deployment boundary
 
-This repository ends at reviewed Float research artifacts and their contracts. Quantization, Vela, E84 firmware integration, HIL, target latency and Recovery belong to the deployment repository. No deployment activity is implied by the supported research verdict.
+This repository ends at reviewed Float research artifacts and their contracts. The exact frozen V2 engineering reference is exported at `artifacts/releases/model_v2_anchor_refined_gru20_20260902`. The canonical `export` command verifies every source checksum, copies only the three selected Round-3 checkpoints and normalizer, and derives layered golden outputs from one non-protected `V2_VALIDATION` slice. It never trains, selects, tunes, opens Generalization HOLDOUT, or overwrites an existing release.
+
+The bundle labels the candidate `DEPLOYMENT_ENGINEERING_REFERENCE_MODEL` and preserves `MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED` plus `SIMULATION_GENERALIZATION_EVIDENCE_NOT_SUPPORTED`. Quantization, Vela, E84 firmware integration, HIL, target latency and Recovery belong to the deployment repository. The handoff does not imply a supported research, real-robot, production, or safety release.
 
 ## 8. Historical research summary
 

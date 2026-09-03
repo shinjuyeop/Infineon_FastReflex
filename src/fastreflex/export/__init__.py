@@ -17,7 +17,6 @@ import yaml
 from fastreflex.dataset.loader import sha256_file
 from fastreflex.evaluation.hazard import (
     load_hazard_normalizer,
-    predict_hazard_window_members,
     sustained_reflex,
 )
 from fastreflex.features import (
@@ -340,10 +339,21 @@ def export_reference_release(
     )
     tensor = torch.from_numpy(windows)
     with torch.no_grad():
+        # PyTorch may prepare an internal GRU weight layout on the first CPU
+        # call. Warm it without retaining state, then freeze logits and
+        # probabilities from the same stable call.
+        for model in models:
+            model(tensor)
+        logits = [model(tensor) for model in models]
         member_logits = np.stack(
-            [model(tensor).cpu().numpy() for model in models]
+            [value.cpu().numpy() for value in logits]
         ).astype(np.float32, copy=False)
-    member_probabilities = predict_hazard_window_members(models, windows)
+        member_probabilities = np.stack(
+            [
+                torch.softmax(value, dim=1)[:, 1].cpu().numpy()
+                for value in logits
+            ]
+        ).astype(np.float64)
     ensemble = np.mean(member_probabilities, axis=0)
     threshold_crossing = ensemble >= float(runtime["threshold"])
     reflex_required, reflex_onset = sustained_reflex(

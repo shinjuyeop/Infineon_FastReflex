@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
@@ -14,8 +15,11 @@ from fastreflex.dataset.loader import sha256_file
 from fastreflex.dataset.sand_mild_calibration import (
     MILD_RECALIBRATED_SPLITS,
     build_mild_physical_ledger,
+    collect_mild_recalibrated_study,
     expand_mild_recalibrated_redesign,
+    load_mild_recalibrated_discovery_payload,
     validate_mild_recalibrated_redesign,
+    verify_mild_recalibrated_dataset,
 )
 
 
@@ -25,6 +29,10 @@ MASTER = CONFIG_DIR / "20260903_sand_benign_mild_domain_calibration_redesign.yam
 REDESIGN = (
     CONFIG_DIR
     / "20260903_sand_benign_generalization_study_mild_recalibrated_redesign.yaml"
+)
+GENERATION_CONFIG = (
+    CONFIG_DIR
+    / "20260903_sand_benign_generalization_study_mild_recalibrated_generation.yaml"
 )
 CURRENT = ROOT / "data/raw/sand_benign_generalization_redesigned_study_20260902"
 FUTURE = ROOT / "data/raw/sand_benign_generalization_mild_recalibrated_study_20260903"
@@ -96,7 +104,9 @@ class SandMildCalibrationTest(unittest.TestCase):
             self.assertEqual(manifest["replacement_run_count"], 0)
             self.assertTrue(manifest["model_blind"])
             self.assertEqual(manifest["model_inference_runs"], 0)
-            self.assertTrue(all(not row["model_outputs_present"] for row in manifest["runs"]))
+            self.assertTrue(
+                all(not row["model_outputs_present"] for row in manifest["runs"])
+            )
             outcomes = Counter(
                 row["objective_physical_outcome"] for row in manifest["runs"]
             )
@@ -126,8 +136,7 @@ class SandMildCalibrationTest(unittest.TestCase):
             self.skipTest("mild calibration pilots are local Gitignored artifacts")
         manifest = json.loads((dataset / "manifest.json").read_text(encoding="utf-8"))
         cells = Counter(
-            (row["source_terrain"], float(row["speed_mps"]))
-            for row in manifest["runs"]
+            (row["source_terrain"], float(row["speed_mps"])) for row in manifest["runs"]
         )
         self.assertEqual(set(cells.values()), {4})
         self.assertEqual(len(cells), 6)
@@ -140,25 +149,34 @@ class SandMildCalibrationTest(unittest.TestCase):
 
     def test_physical_ledgers_reproduce_current_and_pilot_results(self) -> None:
         pilot_paths = [
-            ROOT
-            / f"data/raw/sand_benign_mild_domain_calibration_pilot_{name}_20260903"
+            ROOT / f"data/raw/sand_benign_mild_domain_calibration_pilot_{name}_20260903"
             for name in PILOTS
         ]
         if not CURRENT.exists() or not all(path.exists() for path in pilot_paths):
             self.skipTest("physical corpora are local Gitignored artifacts")
         current = build_mild_physical_ledger(CURRENT)
-        pilots = [row for path in pilot_paths for row in build_mild_physical_ledger(path)]
+        pilots = [
+            row for path in pilot_paths for row in build_mild_physical_ledger(path)
+        ]
         current_outcomes = Counter(row["objective_physical_outcome"] for row in current)
         pilot_outcomes = Counter(row["objective_physical_outcome"] for row in pilots)
         self.assertEqual((len(current), current_outcomes["STRICT_BENIGN"]), (96, 80))
         self.assertEqual((len(pilots), pilot_outcomes["STRICT_BENIGN"]), (72, 61))
-        current_invalid = [row for row in current if row["objective_physical_outcome"] == "INVALID"]
-        pilot_invalid = [row for row in pilots if row["objective_physical_outcome"] == "INVALID"]
+        current_invalid = [
+            row for row in current if row["objective_physical_outcome"] == "INVALID"
+        ]
+        pilot_invalid = [
+            row for row in pilots if row["objective_physical_outcome"] == "INVALID"
+        ]
         self.assertEqual(len(current_invalid), 16)
         self.assertEqual(len(pilot_invalid), 11)
         self.assertEqual(
             Counter(row["fall_relation"] for row in current_invalid),
-            {"PRE_TARGET": 2, "DURING_TARGET_CONTACT": 10, "AFTER_LAST_TARGET_CONTACT": 4},
+            {
+                "PRE_TARGET": 2,
+                "DURING_TARGET_CONTACT": 10,
+                "AFTER_LAST_TARGET_CONTACT": 4,
+            },
         )
         self.assertEqual(
             Counter(row["fall_relation"] for row in pilot_invalid),
@@ -228,10 +246,11 @@ class SandMildCalibrationTest(unittest.TestCase):
             audit["redesign_sha256"],
             "09c2e1a22d47ba115dc2ef3db0251a7dd836096ffe2b9e370fbe9d1677416356",
         )
-        self.assertFalse(FUTURE.exists())
 
     def test_model_boundary_and_consumed_holdout_guard(self) -> None:
-        source = inspect.getsource(build_mild_physical_ledger)
+        source = inspect.getsource(build_mild_physical_ledger) + inspect.getsource(
+            collect_mild_recalibrated_study
+        )
         for forbidden in (
             "predict_proba(",
             "load_model(",
@@ -243,6 +262,200 @@ class SandMildCalibrationTest(unittest.TestCase):
         self.assertEqual(guard["guard_after"], 1)
         self.assertEqual(guard["scientific_open_count"], 1)
         self.assertTrue(guard["second_scientific_open_forbidden"])
+
+    def test_generation_execution_config_freezes_all_inputs(self) -> None:
+        execution = _load_yaml(GENERATION_CONFIG)
+        generation = execution["generation"]
+        self.assertEqual(
+            sha256_file(GENERATION_CONFIG),
+            "151c89523a27fb92dd46cbc3dc3f60193c1916fb16503bce903e44fe6006add3",
+        )
+        self.assertEqual(generation["planned_total_runs"], 176)
+        self.assertEqual(generation["planned_discovery_runs"], 88)
+        self.assertEqual(generation["planned_confirmation_runs"], 88)
+        self.assertEqual(generation["planned_broad_mild_runs"], 96)
+        self.assertEqual(generation["planned_boundary_moderate_runs"], 48)
+        self.assertEqual(generation["planned_ordinary_support_runs"], 24)
+        self.assertEqual(generation["planned_delayed_support_runs"], 8)
+        self.assertEqual(generation["redesign_config_sha256"], sha256_file(REDESIGN))
+        for category in ("implementation_artifacts", "protected_artifacts"):
+            for artifact in generation[category]:
+                self.assertEqual(
+                    artifact["sha256"], sha256_file(ROOT / artifact["path"])
+                )
+        guards = execution["protocol_guards"]
+        for key in (
+            "historical_dataset_reuse",
+            "previous_sand_study_reuse",
+            "calibration_pilot_reuse",
+            "adaptive_backfill",
+            "adaptive_replacement",
+        ):
+            self.assertFalse(guards[key])
+
+    def test_confirmation_loader_refuses_before_npz_access(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            dataset = Path(temporary)
+            manifest = {
+                "dataset_id": (
+                    "sand_benign_generalization_mild_recalibrated_study_20260903"
+                ),
+                "runs": [
+                    {
+                        "run_id": "sealed",
+                        "split": "MILD_RECALIBRATED_CONFIRMATION",
+                        "file": "must_not_exist.npz",
+                        "file_sha256": "unreachable",
+                    }
+                ],
+            }
+            path = dataset / "manifest.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            (dataset / "manifest.sha256").write_text(
+                f"{sha256_file(path)}  manifest.json\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(RuntimeError, "SEALED"):
+                load_mild_recalibrated_discovery_payload(dataset, "sealed")
+
+    def test_generated_dataset_freeze_when_present(self) -> None:
+        if not FUTURE.exists():
+            self.skipTest("mild-recalibrated corpus has not been generated yet")
+        verification = verify_mild_recalibrated_dataset(FUTURE)
+        self.assertTrue(verification["passed"])
+        self.assertEqual(verification["run_count"], 176)
+
+        manifest = json.loads((FUTURE / "manifest.json").read_text(encoding="utf-8"))
+        audit = json.loads((FUTURE / "physical_audit.json").read_text(encoding="utf-8"))
+        freeze = json.loads(
+            (FUTURE / "dataset_freeze.json").read_text(encoding="utf-8")
+        )
+        seal = json.loads(
+            (FUTURE / "confirmation_seal.json").read_text(encoding="utf-8")
+        )
+        prefreeze = json.loads(
+            (FUTURE / "pre_simulation_freeze.json").read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(
+            manifest["split_counts"], dict.fromkeys(MILD_RECALIBRATED_SPLITS, 88)
+        )
+        self.assertEqual(manifest["valid_count"], 169)
+        self.assertEqual(manifest["invalid_count"], 7)
+        self.assertEqual(manifest["adaptive_backfill_count"], 0)
+        self.assertEqual(manifest["replacement_run_count"], 0)
+        self.assertEqual(manifest["rerun_count"], 0)
+        self.assertEqual(manifest["model_inference_runs"], 0)
+        self.assertEqual(manifest["old_holdout_payload_reads"], 0)
+        self.assertEqual(manifest["model_output_fields"], [])
+        self.assertTrue(
+            all(not row["model_outputs_present"] for row in manifest["runs"])
+        )
+
+        self.assertEqual(
+            audit["overall_outcomes"],
+            {
+                "STRICT_BENIGN": 134,
+                "SUPPORT": 32,
+                "SLIP": 3,
+                "DUAL_HAZARD": 0,
+                "INVALID": 7,
+            },
+        )
+        self.assertEqual(audit["objective_valid"], 169)
+        self.assertEqual(audit["objective_invalid"], 7)
+        for split in MILD_RECALIBRATED_SPLITS:
+            self.assertEqual(
+                sum(
+                    cell["strict_benign_mild"] for cell in audit["mild"][split].values()
+                ),
+                48,
+            )
+            self.assertTrue(
+                all(
+                    cell["strict_benign_mild"] == 8
+                    for cell in audit["mild"][split].values()
+                )
+            )
+            moderate = audit["moderate_boundary"][split]
+            expected_moderate = 21 if split.endswith("DISCOVERY") else 17
+            self.assertEqual(
+                sum(cell["strict_boundary_moderate"] for cell in moderate.values()),
+                expected_moderate,
+            )
+            self.assertTrue(
+                all(cell["strict_boundary_moderate"] >= 1 for cell in moderate.values())
+            )
+            self.assertEqual(
+                audit["support_controls"][split]["ordinary"]["qualified_support"], 12
+            )
+            self.assertEqual(
+                audit["support_controls"][split]["delayed"]["qualified_support"], 4
+            )
+            self.assertEqual(
+                audit["phase_diversity"][split]["cells_with_both_principal_phases"], 5
+            )
+            self.assertEqual(
+                audit["phase_diversity"][split]["cells_with_usable_phase"], 6
+            )
+            self.assertTrue(
+                audit["phase_diversity"][split][
+                    "concrete_0.25_predeclared_exception_used"
+                ]
+            )
+            self.assertEqual(audit["entry_timing"]["by_split"][split]["span"], 590)
+
+        self.assertEqual(audit["invalidity"]["pretarget_fall"], 1)
+        self.assertEqual(audit["invalidity"]["posttarget_or_censor"], 6)
+        self.assertEqual(audit["invalidity"]["other"], 0)
+        signatures = audit["physical_signatures"]
+        self.assertEqual(
+            (signatures["unique_count"], signatures["valid_count"]), (167, 169)
+        )
+        self.assertEqual(signatures["exact_duplicates"], 2)
+        self.assertEqual(signatures["near_duplicate_count"], 64)
+        self.assertEqual(signatures["cross_split_near_duplicate_count"], 37)
+        self.assertEqual(audit["historical_contamination"]["exact_total"], 0)
+        self.assertEqual(audit["historical_contamination"]["run_id_reuse_total"], 0)
+        self.assertEqual(manifest["matrix_audit"]["cross_split_exact_overlap"], 0)
+        self.assertEqual(
+            manifest["matrix_audit"]["cross_split_parameter_near_duplicates"], 0
+        )
+        self.assertEqual(len(audit["generation_gates"]), 70)
+        self.assertTrue(
+            all(gate["passed"] for gate in audit["generation_gates"].values())
+        )
+        self.assertEqual(
+            audit["generation_verdict"],
+            "SAND_BENIGN_GENERALIZATION_STUDY_MILD_RECALIBRATED_GENERATION_READY",
+        )
+
+        self.assertEqual(
+            prefreeze["execution_config_sha256"],
+            "151c89523a27fb92dd46cbc3dc3f60193c1916fb16503bce903e44fe6006add3",
+        )
+        self.assertEqual(prefreeze["status"], "FROZEN_BEFORE_FIRST_SIMULATION")
+        self.assertEqual(
+            freeze["MILD_RECALIBRATED_STUDY_MANIFEST_SHA"],
+            "f19ec527cb9faac0d8f3a385a1a63e8a951ced7f275c7cfc3dd459cc42f375d1",
+        )
+        self.assertEqual(
+            freeze["MILD_RECALIBRATED_DATASET_FREEZE_SHA"],
+            "706d939c03bf31df0fb39d1043e99dbbb05922664e207425c8c96ab7c93ee675",
+        )
+        self.assertEqual(
+            verification["dataset_freeze_file_sha256"],
+            "dafcf8f42b2cc701358d6b55f40727ec234ce975ae992e7c3811b8640c5805b6",
+        )
+        self.assertEqual(seal["status"], "SEALED_FOR_MILD_RECALIBRATED_CONFIRMATION")
+        self.assertTrue(seal["objective_physical_audit_only"])
+        for forbidden in (
+            "model_inference",
+            "normalized_80d_analysis",
+            "observability_analysis",
+            "hypothesis_selection",
+            "visualization",
+        ):
+            self.assertFalse(seal[forbidden])
 
 
 if __name__ == "__main__":

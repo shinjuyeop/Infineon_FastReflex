@@ -1,0 +1,109 @@
+schema_version: 1
+
+experiment:
+  id: SAND_BENIGN_GENERALIZATION_STUDY_MILD_RECALIBRATED_GENERATION
+  milestone: SAND_BENIGN_GENERALIZATION_STUDY_MILD_RECALIBRATED_GENERATION
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  source_commit: c9a8bd7fe56b8228c9b7829c5ee4bc6981b10762
+  mode: exact_frozen_generation_and_model_blind_physical_audit
+
+generation:
+  source_commit: c9a8bd7fe56b8228c9b7829c5ee4bc6981b10762
+  generation_start: "2026-09-03T11:56:55+09:00"
+  redesign_config_path: configs/experiment/20260903_sand_benign_generalization_study_mild_recalibrated_redesign.yaml
+  redesign_config_sha256: 1301d64391b423eb50b2ac4188058e1ac0cd988dce477323f87891b946aeaeb5
+  redesign_sha256: 09c2e1a22d47ba115dc2ef3db0251a7dd836096ffe2b9e370fbe9d1677416356
+  redesign_hashes:
+    MILD_RECALIBRATED_PARAMETER_DOMAIN_SHA: 16b79593193fa5925cbbc2fa73dfef3764e655b4911f4b0b5dae7f2c3add0b74
+    MILD_RECALIBRATED_SCENARIO_MATRIX_SHA: 24a4833c869a25df10cff387d9e58d02ca8079eca04ce1f611c0cf54347976ca
+    MILD_RECALIBRATED_SPLIT_PLAN_SHA: 656f807d1a8bc11df6529826cb25a99d7243a32d129704f61f02f9402b102104
+    MILD_RECALIBRATED_PHYSICAL_LABEL_CONTRACT_SHA: 030e85c6561b3fb9b757a2beb82e15f583264cbfe203b016b0070f82888bb39c
+    MILD_RECALIBRATED_GENERATION_GATE_SHA: 914ac15e564f8218bfc386e3cfbbdeac292a4f66a9c2df5611a6ff7dcf92ec34
+    MILD_RECALIBRATED_DIVERSITY_METRIC_SHA: f9fbfa697d33aae328848ee3ef3bfe420e63a3e1a8da54c35b975ffa47942e15
+    MILD_RECALIBRATED_CONFIRMATION_PROTOCOL_SHA: f423ef4996173b9562c4f382849ea1b2ce9c212c10fbd5f324309ee7b6610cad
+  expanded_scenario_matrix_sha256: 54843d27ea8155d51823ec713e90f029415e2c7dda6de2f427a928f9ac3a33e6
+  expected_scenario_signature_sha256: be6d6f0d6bb312617784bad31b55cedfd686bb32aaebd37235efe7a24345fad1
+  expected_split_sha256:
+    MILD_RECALIBRATED_DISCOVERY: 1c211c38ee2bd7f9e9a44e0f81ec6a0dd110a8e14809c12777c043d33928f93f
+    MILD_RECALIBRATED_CONFIRMATION: 3bfbb050db3ebadcc363d1c6e51013dc349dbac4e0594c183a55245ea38c2e80
+  dataset_id: sand_benign_generalization_mild_recalibrated_study_20260903
+  dataset_path: data/raw/sand_benign_generalization_mild_recalibrated_study_20260903
+  planned_total_runs: 176
+  planned_discovery_runs: 88
+  planned_confirmation_runs: 88
+  planned_broad_mild_runs: 96
+  planned_boundary_moderate_runs: 48
+  planned_ordinary_support_runs: 24
+  planned_delayed_support_runs: 8
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  simulator_config_path: configs/simulator/g1.yaml
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  label_execution:
+    precontact_phase_lookback_ms: 20
+    benign_post_target_followup_ms: 1000
+    support_post_event_followup_ms: 1000
+    expected_samples: 9000
+  implementation_artifacts:
+    - {path: src/fastreflex/dataset/sand_mild_calibration.py, sha256: 92fbc8c79997a93b88e740afcec43214aedc248aca1fafaae6425b87b6987fd0}
+    - {path: src/fastreflex/dataset/sand_calibration.py, sha256: f52dab56e8abda499f4b0cb462f9d3d4554522287762947ee2c877658ff9f756}
+    - {path: src/fastreflex/dataset/generation.py, sha256: 435ffa6b29b7559e11efb13bb743c16491f41dcc06916e903771e947d5f70bdc}
+    - {path: src/fastreflex/simulation/g1.py, sha256: d41308b6801aa648284ea05b22ce0c304fd97078cf47f6cd56b1f3b0d715bee2}
+    - {path: src/fastreflex/simulation/stability.py, sha256: 16de6f9fedc62b9fe50d2651f49192acc1ad255c30408356eca0c947330b398e}
+    - {path: src/fastreflex/simulation/hazards.py, sha256: 97d26ff789eea5ba2c4e0a6bba57108fd5ffab59ec8bbd373fe028fba97391a7}
+    - {path: src/fastreflex/simulation/terrain.py, sha256: 70816edeed3377b940cfaf2a4de089158343b03068604003329b44e50b58ed43}
+    - {path: scripts/fastreflex.py, sha256: 47dd5652959460821627d0914f95095a9dd374c094f275b9e2f8e349aea85269}
+  protected_artifacts:
+    - {path: reports/20260903_sand_benign_generalization_study_mild_recalibrated_redesign.md, sha256: 4e6f7abd164852331f0ad332e64107d1f76977b3572c513ab40fc4f56de9f7be}
+    - {path: data/raw/sand_benign_generalization_redesigned_study_20260902/dataset_freeze.json, sha256: c1a51f89d35ff32c880b8572062e8a36ab677c5d929884e68b89d5928a938ddb}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_a_20260903/dataset_freeze.json, sha256: 8ce1db535e63fc54ad1965be402eb307af14bd949e5955ae3d4e9394a437ea38}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_b_20260903/dataset_freeze.json, sha256: 1ba468831c90ea669252c5bc560aa153e13ca18892220603b9f9fbd58c5964e7}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_c_20260903/dataset_freeze.json, sha256: 85f5c063ab441b5770e63dda244c1500c4dde600bb8e02345557f7e5b93da148}
+    - {path: configs/model/final_generalization_candidate.yaml, sha256: 52644d3efb0e756002bd43a7f94aea0a16a65eb2ff014c72548f2b3b138b7bc2}
+    - {path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json, sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f}
+    - {path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json, sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a}
+    - {path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260828.pt, sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9}
+    - {path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260829.pt, sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39}
+    - {path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260830.pt, sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd}
+    - {path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json, sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154}
+    - {path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/evaluation_freeze.json, sha256: 90bb7be07c1c6eda651b11f56811f4fedaace4b8baffd5545a4841a734117cd6}
+    - {path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/evaluation_result.json, sha256: 2948449fb818335ec2e03ac0b90c34280714bac53570e05f3e67ae1c9bd839da}
+  consumed_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+
+protocol_guards:
+  no_model_inference: true
+  no_training: true
+  no_hnm: true
+  no_normalizer_fit: true
+  no_threshold_search: true
+  no_persistence_search: true
+  no_architecture_search: true
+  old_holdout_access_forbidden: true
+  historical_dataset_reuse: false
+  previous_sand_study_reuse: false
+  calibration_pilot_reuse: false
+  adaptive_backfill: false
+  adaptive_replacement: false
+  confirmation_model_analysis_forbidden: true
+  no_protocol_mutation_after_generation_start: true
+  no_outcome_driven_regeneration: true
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  v1_inference_runs: 0
+  v2_inference_runs: 0
+  terrain_inference_runs: 0
+  fsr_fusion_experiments: 0
+  old_holdout_payload_reads: 0
+  old_holdout_inference: 0
+  old_holdout_feature_reconstruction: 0
+  old_holdout_visualization: 0
+  confirmation_model_analysis: 0
+  new_full_study_simulation_runs: 176

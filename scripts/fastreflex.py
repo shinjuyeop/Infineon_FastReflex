@@ -169,8 +169,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="verified policy override; canonical frozen path is used by default",
     )
 
-    subparsers.add_parser(
-        "export", help="reserved for the later reviewed Research-to-Deployment release"
+    export = subparsers.add_parser(
+        "export", help="package the reviewed frozen Float deployment reference"
+    )
+    export.add_argument(
+        "--config",
+        type=Path,
+        default=REPOSITORY_ROOT
+        / "configs/model/deployment_engineering_reference.yaml",
+    )
+    export.add_argument(
+        "--output",
+        type=Path,
+        help="override the config output path (must not already exist)",
     )
     return parser
 
@@ -486,9 +497,15 @@ def main() -> int:
         if args.command == "visualize":
             return _visualize(args)
         if args.command == "export":
-            parser.error(
-                "export is reserved for the later reviewed E84 deployment milestone"
+            from fastreflex.export import export_reference_release
+
+            path = export_reference_release(
+                REPOSITORY_ROOT, args.config, args.output
             )
+            from fastreflex.export import verify_release
+
+            print(json.dumps(verify_release(path), indent=2, sort_keys=True))
+            return 0
     except (ValueError, RuntimeError) as exc:
         parser.error(str(exc))
     raise AssertionError("unreachable command")

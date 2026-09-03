@@ -1,0 +1,115 @@
+schema_version: 1
+
+release:
+  id: model_v2_anchor_refined_gru20_20260902
+  role: DEPLOYMENT_ENGINEERING_REFERENCE_MODEL
+  status: NON_RELEASE_ENGINEERING_REFERENCE
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  source_repository: https://github.com/shinjuyeop/Infineon_FastReflex
+  candidate_source_commit: 9bef402e900523e4b5477bf47cd91c0adddf9b2a
+  candidate_record_commit: 8a4970cad8778e100751d4f6a8ae4f15b5eb4c03
+  scientific_verdict_commit: 7fdb61940a6fc60edbd0b2ad5e0726b5eb07d3b6
+  output_path: artifacts/releases/model_v2_anchor_refined_gru20_20260902
+
+candidate:
+  freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json
+    sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f
+  evaluation_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_evaluation_freeze.json
+    sha256: cad3902137b622c3a3d15ecb3d6c3bb31ee9751f3605fb8d43daa6ac81695c07
+  normalizer:
+    path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json
+    sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+  checkpoints:
+    - seed: 20260828
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260828.pt
+      sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9
+    - seed: 20260829
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260829.pt
+      sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39
+    - seed: 20260830
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260830.pt
+      sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd
+
+architecture:
+  model_family: gru
+  input_size: 80
+  hidden_size: 32
+  layers: 1
+  bidirectional: false
+  dropout: 0.0
+  classifier: linear_32_to_2
+  parameters: 11010
+  input_shape: [20, 80]
+  input_dtype: float32
+  member_output_shape: [2]
+  member_output_dtype: float32
+  architecture_sha256: ae4753699399aa7e4a93639935e085156ef28ed100a77058d7308eb1549aa897
+
+runtime:
+  sample_rate_hz: 1000
+  history_samples: 20
+  replay_stride_samples: 1
+  ensemble_membership: [20260828, 20260829, 20260830]
+  ensemble: arithmetic_mean_of_member_hazard_softmax_probabilities
+  threshold: 0.99
+  threshold_comparison: greater_than_or_equal
+  persistence_samples: 5
+  persistence: consecutive_samples_reset_to_zero_on_failure
+  hazard_class_index: 1
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+
+golden:
+  source_dataset_id: model_v2_hazard_reflex_20260901
+  source_dataset_manifest_sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25
+  source_run_id: m2v2_dss_v_c_0250_s10
+  source_split: V2_VALIDATION
+  source_path: data/raw/model_v2_hazard_reflex_20260901/m2v2_dss_v_c_0250_s10.npz
+  source_file_sha256: 54bf650db12a7ce1ecea2085864bccdd02ecc9d920922d2216cd61650bb84bd3
+  slice_start_sample: 2950
+  slice_stop_sample_exclusive: 3090
+  scientific_evidence: false
+  purpose: runtime_chain_parity_only
+
+scientific_status:
+  internal_validation:
+    hazard: {correct: 59, total: 64}
+    slip: {correct: 30, total: 35}
+    support: {correct: 30, total: 30}
+    confirmed_no_hazard: {correct: 26, total: 26}
+    premature: {count: 5, total: 64}
+    verdict: MODEL_V2_INTERNAL_VALIDATION_NOT_SUPPORTED
+  generalization_validation:
+    hazard: {correct: 25, total: 26}
+    slip: {correct: 11, total: 12}
+    support: {correct: 14, total: 14}
+    primary_no_hazard: {correct: 10, total: 10}
+    premature: {count: 1, total: 26}
+    primary_gate_status: GENERALIZATION_PRIMARY_GATES_FAIL
+  generalization_holdout:
+    hazard: {correct: 25, total: 28}
+    slip: {correct: 11, total: 14}
+    support: {correct: 14, total: 14}
+    primary_no_hazard: {correct: 5, total: 8}
+    premature: {count: 2, total: 28}
+    primary_gate_status: GENERALIZATION_HOLDOUT_PRIMARY_GATES_FAIL
+    verdict: MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED
+    simulation_status: SIMULATION_GENERALIZATION_EVIDENCE_NOT_SUPPORTED
+  release_model: false
+  real_robot_supported: false
+  safety_certified: false
+  final_sensor_architecture: false
+  quantization_authorized_by_this_handoff: false
+  metrics_sources:
+    - path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_evaluation_freeze.json
+      sha256: cad3902137b622c3a3d15ecb3d6c3bb31ee9751f3605fb8d43daa6ac81695c07
+    - path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/evaluation_result.json
+      sha256: 2948449fb818335ec2e03ac0b90c34280714bac53570e05f3e67ae1c9bd839da
+    - path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/primary_metrics.json
+      sha256: a0e4b9436c559df6f6966debdfa17b1e22ca494299db9b9ec742650f354e8615
+    - path: reports/20260902_model_v2_generalization_holdout_one_shot_evaluation.md
+      sha256: 2f37ebdaad97c1d5c9f18082223a2281cd0a365e3cae8cd97a1b1688a2a3d7b3
+    - path: reports/20260902_model_v2_holdout_failure_interpretation.md
+      sha256: dfcacc050e89d2a2cc5b12cc53b3f11ea9f633a0aeb09d3aad2ea36027adc80e

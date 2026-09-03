@@ -134,7 +134,10 @@ def test_redesign_is_fresh_balanced_and_frozen() -> None:
     assert audit["scenario_signature_sha256"] == (
         "0085a9568c3b30870739792a4cf552699e2dcf4ef45f4f00c3dd4780945e86bf"
     )
-    assert not (ROOT / document["dataset_plan"]["dataset_path"]).exists()
+    dataset = ROOT / document["dataset_plan"]["dataset_path"]
+    assert dataset.exists()
+    manifest = json.loads((dataset / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["dataset_id"] == document["dataset_plan"]["dataset_id"]
 
 
 def test_redesign_preserves_factor_manifolds_without_claiming_independence() -> None:

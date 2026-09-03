@@ -37,6 +37,9 @@ MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_ID = (
 SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID = (
     "SAND_FACTOR_CONDITIONED_DATA_INTERVENTION"
 )
+SAND_FACTOR_CONDITIONED_RECALIBRATED_GENERATION_ID = (
+    "SAND_FACTOR_CONDITIONED_DEVELOPMENT_RECALIBRATED_GENERATION"
+)
 SUPPORTED_EXPERIMENT_IDS = frozenset(
     (
         HAZARD_EXPERIMENT_ID,
@@ -49,6 +52,7 @@ SUPPORTED_EXPERIMENT_IDS = frozenset(
         MODEL_V2_FINAL_CANDIDATE_HOLDOUT_READINESS_REVIEW_ID,
         MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_ID,
         SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID,
+        SAND_FACTOR_CONDITIONED_RECALIBRATED_GENERATION_ID,
     )
 )
 HISTORICAL_MESSAGE = (
@@ -179,8 +183,7 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument(
         "--config",
         type=Path,
-        default=REPOSITORY_ROOT
-        / "configs/model/deployment_engineering_reference.yaml",
+        default=REPOSITORY_ROOT / "configs/model/deployment_engineering_reference.yaml",
     )
     export.add_argument(
         "--output",
@@ -299,6 +302,25 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         )
 
         output_path, summary = collect_factor_conditioned_dataset(
+            REPOSITORY_ROOT,
+            args.config.resolve(),
+            policy.resolve(),
+            progress=lambda message: print(message, file=sys.stderr, flush=True),
+        )
+        print(
+            json.dumps(
+                {"output_path": str(output_path), **summary},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+    if experiment_id == SAND_FACTOR_CONDITIONED_RECALIBRATED_GENERATION_ID:
+        from fastreflex.dataset.sand_factor_conditioned import (
+            collect_factor_conditioned_recalibrated_dataset,
+        )
+
+        output_path, summary = collect_factor_conditioned_recalibrated_dataset(
             REPOSITORY_ROOT,
             args.config.resolve(),
             policy.resolve(),
@@ -438,9 +460,7 @@ def _evaluate(args: argparse.Namespace) -> int:
     elif experiment_id == MODEL_V2_TRAINING_ID:
         from fastreflex.evaluation.hazard import verify_model_v2_training_result
 
-        result = verify_model_v2_training_result(
-            REPOSITORY_ROOT, args.config.resolve()
-        )
+        result = verify_model_v2_training_result(REPOSITORY_ROOT, args.config.resolve())
     else:
         from fastreflex.evaluation.terrain import verify_supported_terrain_candidate
 
@@ -543,9 +563,7 @@ def main() -> int:
         if args.command == "export":
             from fastreflex.export import export_reference_release
 
-            path = export_reference_release(
-                REPOSITORY_ROOT, args.config, args.output
-            )
+            path = export_reference_release(REPOSITORY_ROOT, args.config, args.output)
             from fastreflex.export import verify_release
 
             print(json.dumps(verify_release(path), indent=2, sort_keys=True))

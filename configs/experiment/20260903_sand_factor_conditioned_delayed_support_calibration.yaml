@@ -1,0 +1,135 @@
+schema_version: 1
+
+experiment:
+  id: SAND_BENIGN_DOMAIN_CONTROL_CALIBRATION
+  milestone_id: SAND_FACTOR_CONDITIONED_DELAYED_SUPPORT_PHYSICAL_REVIEW_PILOT_BATCH_1
+  purpose: establish_a_fresh_speed_conditioned_delayed_support_strip_away_from_real_slip
+
+calibration:
+  batch_index: 1
+  exact_question: can_speed_conditioned_fresh_geometry_retain_left_only_delayed_support_semantics_with_at_least_21_of_24_correct_controls_and_at_most_two_slip_contaminated_controls
+  adaptation_basis: frozen_failed_and_historical_model_blind_physical_metadata_only
+  frozen_before_first_simulation: true
+  deterministic_seed: null
+  planned_run_count: 24
+  dataset_id: sand_factor_conditioned_delayed_support_calibration_20260903
+  dataset_path: data/raw/sand_factor_conditioned_delayed_support_calibration_20260903
+  created_at: "2026-09-03T17:39:23+09:00"
+  source_commit: 481f07ebba8905c07fe95f83075b53e106edb909
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  simulator_config_path: configs/simulator/g1.yaml
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  consumed_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  consumed_holdout_guard_sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  duration_s: 9.0
+  model_inference: forbidden
+  within_batch_adaptation: forbidden
+  replacement_or_backfill: forbidden
+  retain_all_outcomes: true
+  label_contract:
+    precontact_phase_lookback_ms: 20
+    benign_post_target_followup_ms: 1000
+    support_post_event_followup_ms: 1000
+    expected_samples: 9000
+  frozen_gates:
+    complete_execution: 24
+    correct_delayed_support_total_min: 21
+    correct_delayed_support_each_source_speed_cell_min: 3
+    dual_plus_slip_max: 2
+    dual_plus_slip_each_source_speed_cell_max: 1
+    invalid_max: 2
+    expected_side: LEFT_ONLY
+    clean_target_touchdowns_before_i1_min: 2
+    post_support_observation_ms_min: 1000
+    historical_exact_overlap: 0
+    historical_forbidden_near_overlap: 0
+    model_outputs: 0
+    replacement_or_backfill: 0
+  deterministic_factor_rule:
+    stable: correct_support_rate_gte_0.75_and_dual_plus_slip_lte_1_per_cell
+    marginal: correct_support_rate_gte_0.50_or_single_borderline_slip
+    unstable: correct_support_rate_lt_0.50_or_repeated_dual_or_slip
+    robust_slip_margin_m_gte: 0.005
+    borderline_slip_margin_m_lt: 0.005
+    canonical_slip_threshold_m: 0.050
+  near_signature_policy:
+    patch_start_difference_m_exclusive: 0.002
+    patch_width_difference_m_exclusive: 0.004
+  parameter_range:
+    source_terrain: [concrete, marble]
+    speed_mps: [0.20, 0.25, 0.30]
+    support_side: [LEFT_ONLY]
+    support_side_exception: staged_lateral_deformable_has_no_evidenced_right_delayed_semantics
+    sink_severity: [moderate]
+    topology: [transition_left]
+    support_pattern: [staged_lateral_deformable]
+    patch_start_x_m: [0.318, 0.360]
+    patch_width_m: [0.773, 0.833]
+    patch_exit_x_m: [1.091, 1.169]
+  historical_manifests:
+    - {path: data/raw/unified_hazard_reflex_20260829/manifest.json, sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6}
+    - {path: data/raw/model_v2_hazard_reflex_20260901/manifest.json, sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25}
+    - {path: data/raw/generalization_hazard_reflex_20260831/manifest.json, sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53}
+    - {path: data/raw/ice_near_hazard_semantics_20260901/manifest.json, sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759}
+    - {path: data/raw/sand_benign_generalization_study_20260902/manifest.json, sha256: 70a619e35dba72478b298fb5082c68c07bc577e7536ba48b2ce9a52665f9834f}
+    - {path: data/raw/sand_benign_phase_geometry_calibration_20260902/manifest.json, sha256: a30f96943593c2322dde1898060919eab3ec9929167e358743335f1a809c4d77}
+    - {path: data/raw/sand_benign_severity_calibration_20260902/manifest.json, sha256: ab481ddaa38f6fb84c9d3a7d0f0ac2a148463b4aa3eb341b4f8c3a29e9a37415}
+    - {path: data/raw/sand_benign_domain_control_calibration_20260902/manifest.json, sha256: 28274d1bad4f3bc42dd55b6cd4772feed6b6dde9ce48c536d775a640f12fba4a}
+    - {path: data/raw/sand_benign_generalization_redesigned_study_20260902/manifest.json, sha256: 90970438abb9eced3742d387697cf3f3ff4bd8b905b3554ea01f6766a38e501b}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_a_20260903/manifest.json, sha256: 1f5f7fe0e83a55a7e4be8240c3ff4ab2282e00194d6151c3ac909ac1a697c14f}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_b_20260903/manifest.json, sha256: b57603925da065f01657d65bacaf93d9bebd0859e319c32f9973ce7c22c6335a}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_c_20260903/manifest.json, sha256: 90bb0ce2cd9fb2e52f57bc45ad247a64e1217d477e4b098d016fe3393d1dcb50}
+    - {path: data/raw/sand_benign_generalization_mild_recalibrated_study_20260903/manifest.json, sha256: f19ec527cb9faac0d8f3a385a1a63e8a951ced7f275c7cfc3dd459cc42f375d1}
+    - {path: data/raw/sand_factor_conditioned_development_20260903/manifest.json, sha256: d4ec98b5c2bec6c9009b5da958195935c46dd57489c8f0f15e08258ae84d6998}
+    - {path: data/raw/sand_factor_conditioned_physical_domain_calibration_20260903/manifest.json, sha256: 0017716c3a779e96b4ce2d0df569ce47fbfe892ab84c3daeb5025d4c857812bd}
+    - {path: data/raw/sand_factor_conditioned_concrete_025_calibration_20260903/manifest.json, sha256: 78377d3a3be41714e2852d7d043afd5ed04538da0a43ae4178ed92d96f033753}
+    - {path: data/raw/sand_factor_conditioned_development_recalibrated_20260903/manifest.json, sha256: 776c2a22c8963d5ddcdad49d2f36c109a21af4dfa1c0b5d2a924112b1fb6b19c}
+  scenarios:
+    - {run_id: sfcdsc_b1_c_020_01, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.20, designed_side: LEFT, patch_start_x_m: 0.318, patch_width_m: 0.817, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_020_02, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.20, designed_side: LEFT, patch_start_x_m: 0.322, patch_width_m: 0.825, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_020_03, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.20, designed_side: LEFT, patch_start_x_m: 0.330, patch_width_m: 0.829, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_020_04, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.20, designed_side: LEFT, patch_start_x_m: 0.334, patch_width_m: 0.833, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_025_01, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, designed_side: LEFT, patch_start_x_m: 0.318, patch_width_m: 0.806, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_025_02, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, designed_side: LEFT, patch_start_x_m: 0.324, patch_width_m: 0.790, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_025_03, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, designed_side: LEFT, patch_start_x_m: 0.340, patch_width_m: 0.793, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_025_04, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, designed_side: LEFT, patch_start_x_m: 0.360, patch_width_m: 0.809, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_030_01, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.30, designed_side: LEFT, patch_start_x_m: 0.318, patch_width_m: 0.773, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_030_02, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.30, designed_side: LEFT, patch_start_x_m: 0.322, patch_width_m: 0.777, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_030_03, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.30, designed_side: LEFT, patch_start_x_m: 0.330, patch_width_m: 0.789, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_c_030_04, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: concrete, target_terrain: sand, speed_mps: 0.30, designed_side: LEFT, patch_start_x_m: 0.342, patch_width_m: 0.797, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_020_01, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.20, designed_side: LEFT, patch_start_x_m: 0.318, patch_width_m: 0.817, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_020_02, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.20, designed_side: LEFT, patch_start_x_m: 0.322, patch_width_m: 0.825, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_020_03, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.20, designed_side: LEFT, patch_start_x_m: 0.330, patch_width_m: 0.829, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_020_04, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.20, designed_side: LEFT, patch_start_x_m: 0.334, patch_width_m: 0.833, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_025_01, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, designed_side: LEFT, patch_start_x_m: 0.318, patch_width_m: 0.806, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_025_02, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, designed_side: LEFT, patch_start_x_m: 0.324, patch_width_m: 0.790, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_025_03, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, designed_side: LEFT, patch_start_x_m: 0.340, patch_width_m: 0.793, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_025_04, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, designed_side: LEFT, patch_start_x_m: 0.360, patch_width_m: 0.809, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_030_01, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.30, designed_side: LEFT, patch_start_x_m: 0.318, patch_width_m: 0.773, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_030_02, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.30, designed_side: LEFT, patch_start_x_m: 0.322, patch_width_m: 0.777, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_030_03, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.30, designed_side: LEFT, patch_start_x_m: 0.330, patch_width_m: 0.789, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+    - {run_id: sfcdsc_b1_m_030_04, group: delayed_support_control, scenario_family: delayed_support_physical_calibration, factor_manifold_intent: CONTROL, source_terrain: marble, target_terrain: sand, speed_mps: 0.30, designed_side: LEFT, patch_start_x_m: 0.342, patch_width_m: 0.797, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: moderate, severity_intent: SUPPORT_CONTROL, support_pattern: staged_lateral_deformable}
+
+boundaries:
+  maximum_pilot_runs: 48
+  maximum_pilot_batches: 2
+  full_dataset_generation: 0
+  V1_inference: 0
+  V2_inference: 0
+  Terrain_inference: 0
+  Hazard_probability_calculation: 0
+  model_80d_analysis: 0
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  HNM_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  sensor_fusion_experiments: 0
+  old_HOLDOUT_payload_reads: 0
+  failed_corpus_backfill: 0
+  failed_corpus_rerun: 0

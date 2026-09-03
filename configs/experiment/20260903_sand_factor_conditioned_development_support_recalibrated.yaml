@@ -1,0 +1,298 @@
+schema_version: 1
+
+experiment:
+  id: SAND_FACTOR_CONDITIONED_PHYSICAL_DOMAIN_REDESIGN
+  milestone: SAND_FACTOR_CONDITIONED_DELAYED_SUPPORT_PHYSICAL_REVIEW
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  source_scientific_commit: 481f07ebba8905c07fe95f83075b53e106edb909
+  model_blind: true
+  full_generation_now: prohibited
+
+dataset_plan:
+  dataset_id: sand_factor_conditioned_development_support_recalibrated_20260903
+  dataset_path: data/raw/sand_factor_conditioned_development_support_recalibrated_20260903
+  planned_total: 198
+  replacement: prohibited
+  backfill: prohibited
+  rerun: prohibited
+  reuse_failed_or_pilot_runs: prohibited
+  freeze_both_splits_before_generation: true
+
+physical_provenance:
+  failed_corpus:
+    path: data/raw/sand_factor_conditioned_development_recalibrated_20260903/manifest.json
+    sha256: 776c2a22c8963d5ddcdad49d2f36c109a21af4dfa1c0b5d2a924112b1fb6b19c
+    training_use: prohibited
+  delayed_support_pilot:
+    config_path: configs/experiment/20260903_sand_factor_conditioned_delayed_support_calibration.yaml
+    config_sha256: 5288e9fd011b6db03624f814b2164058ecc31126e6a9cc723db2e0dac134250d
+    manifest_path: data/raw/sand_factor_conditioned_delayed_support_calibration_20260903/manifest.json
+    manifest_sha256: 6c69a4aaecdb5e09b095976109a7a88b50802a45de7aaf02e29ef04257468850
+    result: {correct_support: 23, dual: 0, slip_only: 0, invalid: 1, total: 24, correct_support_rate: 0.9583333333333334}
+    training_use: prohibited
+  pilot_batch_2: not_required
+
+parameter_domain:
+  source_terrain: [concrete, marble]
+  speed_mps: [0.20, 0.25, 0.30]
+  target_terrain: sand
+  mild:
+    decision: preserve_successful_recalibrated_domain_conceptually_with_fresh_signatures
+    mechanics: {sink_severity: mild, support_pattern: balanced_deformable}
+    transition_left:
+      joint_envelope: {patch_start_x_m: [0.325, 0.356], patch_width_m: [0.777, 0.809], patch_exit_x_m: [1.121, 1.147]}
+      source_speed_cells: all_except_concrete_0.25
+    transition_right:
+      joint_envelope: {patch_start_x_m: [0.324, 0.344], patch_width_m: [0.779, 0.794], patch_exit_x_m: [1.113, 1.125]}
+      source_speed_cells: all_except_concrete_0.25
+    concrete_0.25_transition_left:
+      joint_envelope: {patch_start_x_m: [0.336, 0.352], patch_width_m: [0.765, 0.789], patch_exit_x_m: [1.101, 1.137]}
+      excluded_failure_corner: {patch_start_x_m_min: 0.354, patch_exit_x_m_min: 1.143}
+    concrete_0.25_transition_right: prohibited_by_prior_physical_calibration
+  moderate:
+    decision: KEEP_MODERATE_REDUCED
+    planned_absolute_count: 36
+    topology: transition_left_diagnostic_only
+  ordinary_support:
+    semantics: unchanged_lateral_deformable_actual_SUPPORT_and_side_match
+    planned_absolute_count: 36
+  delayed_support:
+    semantics: unchanged_staged_lateral_deformable_two_clean_touchdowns_LEFT_ONLY
+    simulator_policy_specific: true
+    source_speed_applicability: [concrete_0.20, concrete_0.25, concrete_0.30, marble_0.20, marble_0.25, marble_0.30]
+    support_side: LEFT_ONLY
+    support_side_rationale: canonical_staged_lateral_deformable_transition_left_has_only_evidenced_left_delayed_semantics
+    topology: transition_left
+    sink_severity: moderate
+    support_pattern: staged_lateral_deformable
+    future_joint_envelope: {patch_start_x_m: [0.324, 0.332], patch_width_m: [0.825, 0.833], patch_exit_x_m: [1.153, 1.165]}
+    excluded_corner: {patch_start_x_m_max: 0.318, patch_exit_x_m_max: 1.135, reason: target_following_fall_before_i1_or_support_in_pilot}
+    expected_precontact_phase: RIGHT_SINGLE_SUPPORT
+    pilot_entry_time_ms: [1220, 1810]
+    pilot_i1_time_ms: [2421, 3609]
+    pilot_support_establishment_ms: [3050, 3663]
+    support_parameters:
+      entry_medial_reference: {travel_m: 0.004, stiffness_n_per_m: 50000, damping_ns_per_m: 1000}
+      exit_lateral_moderate: {travel_m: 0.040, stiffness_n_per_m: 7000, damping_ns_per_m: 374}
+    observation_horizon_ms: 9000
+    post_support_observation_min_ms: 1000
+    expected_physical_yield: {pilot_point_estimate: 0.9583333333333334, future_gate_min: 0.8888888888888888}
+    known_exclusions:
+      - short_0.20_geometry_with_late_real_slip
+      - late_0.20_entry_with_phase_contact_disruption_or_fall
+      - late_0.30_concrete_geometry_near_real_slip
+      - any_right_delayed_support_claim_without_separate_physical_semantics_evidence
+  phase:
+    measure: exact_loaded_contact_phase_20ms_before_first_censor_valid_target_contact
+    topology_phase_coupling: {transition_left: RIGHT_SINGLE_SUPPORT, transition_right: LEFT_SINGLE_SUPPORT}
+    independent_phase_manipulation_claimed: false
+
+scenario_matrix:
+  run_id_prefix: sfcsr
+  expansion_order: split_then_source_speed_then_mild_moderate_ordinary_delayed
+  source_speed_cells:
+    - {source_terrain: concrete, speed_mps: 0.20}
+    - {source_terrain: concrete, speed_mps: 0.25}
+    - {source_terrain: concrete, speed_mps: 0.30}
+    - {source_terrain: marble, speed_mps: 0.20}
+    - {source_terrain: marble, speed_mps: 0.25}
+    - {source_terrain: marble, speed_mps: 0.30}
+  profiles:
+    FACTOR_TRAIN:
+      mild_standard:
+        - {id: l01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.332, patch_width_m: 0.792}
+        - {id: l02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.334, patch_width_m: 0.787}
+        - {id: l03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.336, patch_width_m: 0.802}
+        - {id: l04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.340, patch_width_m: 0.805}
+        - {id: l05, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.344, patch_width_m: 0.798}
+        - {id: l06, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.348, patch_width_m: 0.789}
+        - {id: r01, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.338, patch_width_m: 0.779}
+        - {id: r02, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.340, patch_width_m: 0.783}
+        - {id: r03, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.340, patch_width_m: 0.784}
+        - {id: r04, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.340, patch_width_m: 0.785}
+        - {id: r05, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.341, patch_width_m: 0.783}
+        - {id: r06, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.341, patch_width_m: 0.784}
+      mild_concrete_025_left:
+        - {id: l01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.769}
+        - {id: l02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.777}
+        - {id: l03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.785}
+        - {id: l04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.789}
+        - {id: l05, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.347, patch_width_m: 0.765}
+        - {id: l06, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.347, patch_width_m: 0.773}
+        - {id: l07, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.347, patch_width_m: 0.785}
+        - {id: l08, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.348, patch_width_m: 0.765}
+        - {id: l09, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.348, patch_width_m: 0.773}
+        - {id: l10, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.348, patch_width_m: 0.785}
+        - {id: l11, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.349, patch_width_m: 0.765}
+        - {id: l12, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.349, patch_width_m: 0.773}
+      moderate_standard:
+        - {id: m01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.326, patch_width_m: 0.803}
+        - {id: m02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.332, patch_width_m: 0.787}
+        - {id: m03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.340, patch_width_m: 0.794}
+        - {id: m04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.782}
+      moderate_concrete_025_left:
+        - {id: m01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.328, patch_width_m: 0.846}
+        - {id: m02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.332, patch_width_m: 0.854}
+        - {id: m03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.336, patch_width_m: 0.862}
+        - {id: m04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.340, patch_width_m: 0.850}
+      ordinary_support:
+        - {id: ol01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.713}
+        - {id: ol02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.337, patch_width_m: 0.723}
+        - {id: or01, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.331, patch_width_m: 0.715}
+        - {id: or02, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.339, patch_width_m: 0.725}
+      delayed_support:
+        - {id: d01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.324, patch_width_m: 0.829}
+        - {id: d02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.332, patch_width_m: 0.833}
+    FACTOR_VALIDATION:
+      mild_standard:
+        - {id: l01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.350, patch_width_m: 0.777}
+        - {id: l02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.352, patch_width_m: 0.793}
+        - {id: l03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.354, patch_width_m: 0.789}
+        - {id: r01, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.332, patch_width_m: 0.785}
+        - {id: r02, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.336, patch_width_m: 0.783}
+        - {id: r03, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.337, patch_width_m: 0.787}
+      mild_concrete_025_left:
+        - {id: l01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.352, patch_width_m: 0.765}
+        - {id: l02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.352, patch_width_m: 0.768}
+        - {id: l03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.352, patch_width_m: 0.771}
+        - {id: l04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.352, patch_width_m: 0.774}
+        - {id: l05, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.352, patch_width_m: 0.777}
+        - {id: l06, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.352, patch_width_m: 0.779}
+      moderate_standard:
+        - {id: m01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.350, patch_width_m: 0.779}
+        - {id: m02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.354, patch_width_m: 0.789}
+      moderate_concrete_025_left:
+        - {id: m01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.344, patch_width_m: 0.845}
+        - {id: m02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.854}
+      ordinary_support:
+        - {id: ol01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.349, patch_width_m: 0.745}
+        - {id: or01, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.351, patch_width_m: 0.737}
+      delayed_support:
+        - {id: d01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.328, patch_width_m: 0.825}
+  counts:
+    FACTOR_TRAIN: {sand_benign_mild: 72, sand_benign_moderate: 24, ordinary_support_control: 24, delayed_support_control: 12, mild_per_source_speed: 12, total: 132}
+    FACTOR_VALIDATION: {sand_benign_mild: 36, sand_benign_moderate: 12, ordinary_support_control: 12, delayed_support_control: 6, mild_per_source_speed: 6, total: 66}
+    aggregate: {sand_benign_mild: 108, sand_benign_moderate: 36, ordinary_support_control: 36, delayed_support_control: 18}
+    total: 198
+
+split_plan:
+  FACTOR_TRAIN: {planned: 132, future_model_training: allowed_only_after_all_physical_generation_gates_pass}
+  FACTOR_VALIDATION: {planned: 66, optimizer_monitor: prohibited, HNM: prohibited, future_model_access: only_after_candidate_freeze}
+  exact_overlap: 0
+  forbidden_near_overlap: 0
+  split_move: prohibited
+
+physical_label_contract:
+  authority: censor_aware_actual_physical_oracle_never_design_intent
+  strict_benign: [target_contact_before_censor, no_established_Slip, no_I1, no_established_Support, finite_complete_trace, at_least_1000ms_after_last_target_contact]
+  mild: [strict_benign, actual_displacement_below_0.030m]
+  moderate: [strict_benign, configured_moderate_mechanics, actual_displacement_0.030_to_0.0525m]
+  ordinary_support: [target_contact_before_censor, I1_not_after_established_Support, no_Slip, expected_side, at_least_1000ms_after_Support]
+  delayed_support: [two_clean_target_touchdowns_before_I1, I1_not_after_established_Support, no_Slip, LEFT_ONLY, at_least_1000ms_after_Support]
+  Slip_or_dual: retain_provenance_exclude_from_benign_or_support_membership
+  invalid: retain_provenance_exclude_from_training_and_validation
+  observation_duration_ms: 1000
+
+generation_gates:
+  complete_execution: 198
+  overall_objective_valid_min: 180
+  fall_censor: {pretarget_fall_max: 3, target_following_fall_censor_max: 8}
+  contamination:
+    designed_sand_Slip_plus_dual_max: 6
+    delayed_support_Slip_plus_dual_max: 2
+    FACTOR_TRAIN_delayed_support_Slip_plus_dual_max: 1
+    FACTOR_VALIDATION_delayed_support_Slip_plus_dual_max: 1
+  FACTOR_TRAIN:
+    strict_sand_min: 91
+    mild_min: 68
+    moderate_min: 22
+    ordinary_support_min: 22
+    delayed_support_min: 11
+    strict_sand_per_source_speed_min: 14
+    mild_adverse_manifold_min: 39
+    mild_comparison_manifold_min: 28
+  FACTOR_VALIDATION:
+    strict_sand_min: 44
+    mild_min: 34
+    moderate_min: 10
+    ordinary_support_min: 11
+    delayed_support_min: 5
+    strict_sand_per_source_speed_min: 7
+    mild_adverse_manifold_min: 19
+    mild_comparison_manifold_min: 14
+  integrity:
+    physical_signature_uniqueness_fraction_min: 0.80
+    historical_exact_overlap: 0
+    historical_forbidden_near_overlap: 0
+    pilot_exact_overlap: 0
+    pilot_forbidden_near_overlap: 0
+    failed_198_exact_overlap: 0
+    failed_198_forbidden_near_overlap: 0
+    cross_split_exact_overlap: 0
+    cross_split_forbidden_near_overlap: 0
+    run_id_reuse: 0
+    model_outputs: 0
+    adaptive_backfill: 0
+    replacement: 0
+    rerun: 0
+  failure_action: stop_before_training_and_report_physical_domain_failure
+
+anti_contamination:
+  near_signature_policy: {patch_start_difference_m_exclusive: 0.002, patch_width_difference_m_exclusive: 0.004}
+  historical_manifests:
+    - {path: data/raw/unified_hazard_reflex_20260829/manifest.json, sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6}
+    - {path: data/raw/model_v2_hazard_reflex_20260901/manifest.json, sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25}
+    - {path: data/raw/generalization_hazard_reflex_20260831/manifest.json, sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53}
+    - {path: data/raw/ice_near_hazard_semantics_20260901/manifest.json, sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759}
+    - {path: data/raw/sand_benign_generalization_study_20260902/manifest.json, sha256: 70a619e35dba72478b298fb5082c68c07bc577e7536ba48b2ce9a52665f9834f}
+    - {path: data/raw/sand_benign_phase_geometry_calibration_20260902/manifest.json, sha256: a30f96943593c2322dde1898060919eab3ec9929167e358743335f1a809c4d77}
+    - {path: data/raw/sand_benign_severity_calibration_20260902/manifest.json, sha256: ab481ddaa38f6fb84c9d3a7d0f0ac2a148463b4aa3eb341b4f8c3a29e9a37415}
+    - {path: data/raw/sand_benign_domain_control_calibration_20260902/manifest.json, sha256: 28274d1bad4f3bc42dd55b6cd4772feed6b6dde9ce48c536d775a640f12fba4a}
+    - {path: data/raw/sand_benign_generalization_redesigned_study_20260902/manifest.json, sha256: 90970438abb9eced3742d387697cf3f3ff4bd8b905b3554ea01f6766a38e501b}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_a_20260903/manifest.json, sha256: 1f5f7fe0e83a55a7e4be8240c3ff4ab2282e00194d6151c3ac909ac1a697c14f}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_b_20260903/manifest.json, sha256: b57603925da065f01657d65bacaf93d9bebd0859e319c32f9973ce7c22c6335a}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_c_20260903/manifest.json, sha256: 90bb0ce2cd9fb2e52f57bc45ad247a64e1217d477e4b098d016fe3393d1dcb50}
+    - {path: data/raw/sand_benign_generalization_mild_recalibrated_study_20260903/manifest.json, sha256: f19ec527cb9faac0d8f3a385a1a63e8a951ced7f275c7cfc3dd459cc42f375d1}
+    - {path: data/raw/sand_factor_conditioned_development_20260903/manifest.json, sha256: d4ec98b5c2bec6c9009b5da958195935c46dd57489c8f0f15e08258ae84d6998}
+    - {path: data/raw/sand_factor_conditioned_physical_domain_calibration_20260903/manifest.json, sha256: 0017716c3a779e96b4ce2d0df569ce47fbfe892ab84c3daeb5025d4c857812bd}
+    - {path: data/raw/sand_factor_conditioned_concrete_025_calibration_20260903/manifest.json, sha256: 78377d3a3be41714e2852d7d043afd5ed04538da0a43ae4178ed92d96f033753}
+    - {path: data/raw/sand_factor_conditioned_development_recalibrated_20260903/manifest.json, sha256: 776c2a22c8963d5ddcdad49d2f36c109a21af4dfa1c0b5d2a924112b1fb6b19c}
+    - {path: data/raw/sand_factor_conditioned_delayed_support_calibration_20260903/manifest.json, sha256: 6c69a4aaecdb5e09b095976109a7a88b50802a45de7aaf02e29ef04257468850}
+  failed_dataset_training_use: 0
+  pilot_training_use: 0
+  historical_holdout_use: 0
+
+design_freeze:
+  component_hashes:
+    RECALIBRATED_PARAMETER_DOMAIN_SHA: db9d4450ca8b485465e379f0e4546cabc336f73b00cdcbc7074457a78b4ea595
+    RECALIBRATED_SCENARIO_MATRIX_SHA: ccd28b4231a3a8bab9c9fb5fa98aa8d15cbee5711c72af21b7e9ce035727b3e6
+    RECALIBRATED_SPLIT_PLAN_SHA: a104be1c13030cc0fa8f3c915b7d86ecf01bbfae7fbd18574af02fb835a9b8ad
+    RECALIBRATED_PHYSICAL_LABEL_CONTRACT_SHA: 57ed709b014990148adf5dfeecaf0d3beb52dfbbfe742f0967dcd8bdd99ad7aa
+    RECALIBRATED_GENERATION_GATES_SHA: b368336018d298900128b054ebec5ebb5702fd936b3a069b4f3e2f15f6d24cf4
+    RECALIBRATED_ANTI_CONTAMINATION_SHA: 566905974a536c9c2de305fccb2ab0d382c998ca5ae621d9f04bc3843296956a
+  scenario_matrix_sha256: 6ed2c0c23ae036fd0bc8f523b3f254429cb1c835507d9859dadcbf82af6bd8b2
+  scenario_signature_sha256: 0944705e3cb18ff78f4edf68573fbf56477ae9fc7cf7576a2894145549feb4be
+  split_sha256:
+    FACTOR_TRAIN: 5283046afaffbe4dd41947bc7db792e30d9c71dec13322d30bd9e0801c035a31
+    FACTOR_VALIDATION: f81a9acb0b1947d4da0a5c09211c7a96050cdc86d0b5873bf885b8209fe8c901
+
+boundaries:
+  full_dataset_generation: 0
+  training: 0
+  V1_inference: 0
+  V2_inference: 0
+  Terrain_inference: 0
+  Hazard_probability_calculation: 0
+  model_80d_analysis: 0
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  HNM_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  sensor_fusion_experiments: 0
+  old_HOLDOUT_payload_reads: 0
+  failed_corpus_backfill: 0
+  failed_corpus_rerun: 0

@@ -1,0 +1,154 @@
+schema_version: 1
+
+experiment:
+  id: SAND_FACTOR_CONDITIONED_DELAYED_SUPPORT_PHYSICAL_REVIEW
+  milestone: SAND_FACTOR_CONDITIONED_DELAYED_SUPPORT_PHYSICAL_REVIEW
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  expected_starting_scientific_head: 481f07ebba8905c07fe95f83075b53e106edb909
+  mode: saved_evidence_first_then_single_frozen_model_blind_pilot_batch
+
+scientific_boundary:
+  physical_study_only: true
+  model_blind: true
+  training: prohibited
+  failed_corpus_repair_backfill_rerun: prohibited
+  future_complete_corpus_generation: prohibited
+  consumed_holdout_payload_access: prohibited
+  support_semantics_change: prohibited
+  sand_domain_recalibration: prohibited
+
+frozen_inputs:
+  previous_generation_report: {path: reports/20260903_sand_factor_conditioned_development_recalibrated_generation.md, sha256: 1fef03667608885b0ca652ddf72402b3e5a7e408e2fbe611ced06f9c0560d079}
+  previous_generation_config: {path: configs/experiment/20260903_sand_factor_conditioned_development_recalibrated_generation.yaml, sha256: bd2f75f6882ae9e5573d9854ed67628f9c9750d35b24419363fe1c88f345e889}
+  previous_redesign_config: {path: configs/experiment/20260903_sand_factor_conditioned_physical_domain_redesign.yaml, sha256: dcb1417eb1771b7e02652ab4979024fa145dbe156ff333416e485cd29679e449}
+  previous_failure_audit_report: {path: reports/20260903_data_intervention_failure_audit.md, sha256: cfbfd0fb7fe2b4943c025db194cfabb44fa806aac63c24518c61f1cf1c23f420}
+  mild_recalibrated_report: {path: reports/20260903_sand_benign_generalization_study_mild_recalibrated_generation.md, sha256: dbe94cb02f1520867620d9ef40361f567523f1fe058a0262ab39b60c2650a5e5}
+  latest_failed_manifest: {path: data/raw/sand_factor_conditioned_development_recalibrated_20260903/manifest.json, sha256: 776c2a22c8963d5ddcdad49d2f36c109a21af4dfa1c0b5d2a924112b1fb6b19c}
+  latest_physical_audit: {path: data/raw/sand_factor_conditioned_development_recalibrated_20260903/physical_audit.json, sha256: 64bcf9311946e96da2ed39714a0a1ffb3d6aa765548542cdd2edf3bf413229f8}
+  latest_dataset_freeze: {path: data/raw/sand_factor_conditioned_development_recalibrated_20260903/dataset_freeze.json, sha256: 7b8ade8aff7dbb9321e1ac7a4474a892b7f58b15ed03f3093b819f3bae551cce}
+  previous_stable_delayed_support_manifest: {path: data/raw/sand_benign_generalization_mild_recalibrated_study_20260903/manifest.json, sha256: f19ec527cb9faac0d8f3a385a1a63e8a951ced7f275c7cfc3dd459cc42f375d1}
+
+saved_evidence_review:
+  records_reviewed: 18
+  outcome_counts: {correct_support: 12, dual_support_plus_slip: 5, observation_invalid: 1, other: 0}
+  train: {planned: 12, correct_support: 9, dual: 3, invalid: 0, yield: 0.75}
+  validation: {planned: 6, correct_support: 3, dual: 2, invalid: 1, yield: 0.50}
+  deterministic_factor_rule:
+    stable: correct_support_rate_gte_0.75_and_dual_plus_slip_lte_1_per_cell
+    marginal: correct_support_rate_gte_0.50_or_single_borderline_slip
+    unstable: correct_support_rate_lt_0.50_or_repeated_dual_or_slip
+    canonical_slip_threshold_m: 0.050
+    robust_slip_margin_m_gte: 0.005
+    borderline_slip_margin_m_lt: 0.005
+  physical_localization: MULTIFACTOR_PHYSICAL_INSTABILITY
+  dominant_interaction: speed_conditioned_geometry_and_contact_sequence_proximity_to_real_slip
+  not_supported_as_primary_cause: [support_side, changed_support_parameters, sand_domain_coupling, generator_bug, nominal_horizon_shortage]
+  pilot_decision: DELAYED_SUPPORT_CALIBRATION_REQUIRED
+
+six_miss_ledger:
+  - {run_id: sfcr_t_dsp_c_020_01, failure_class: DUAL_SUPPORT_PLUS_SLIP, support_ms: 3661, slip_ms: 6928, gap_ms: 3267, order: SUPPORT_FIRST, support_side: LEFT_ONLY, slip_side: LEFT_ONLY, slip_margin_m: 0.00639112368226051, slip_robustness: ROBUST, factor_localization: concrete_0.20_short_geometry_late_slip}
+  - {run_id: sfcr_t_dsp_c_020_02, failure_class: DUAL_SUPPORT_PLUS_SLIP, support_ms: 3661, slip_ms: 7126, gap_ms: 3465, order: SUPPORT_FIRST, support_side: LEFT_ONLY, slip_side: RIGHT_ONLY, slip_margin_m: 0.00542152300477028, slip_robustness: ROBUST, factor_localization: concrete_0.20_short_geometry_late_slip}
+  - {run_id: sfcr_t_dsp_m_020_01, failure_class: DUAL_SUPPORT_PLUS_SLIP, support_ms: 3662, slip_ms: 6923, gap_ms: 3261, order: SUPPORT_FIRST, support_side: LEFT_ONLY, slip_side: LEFT_ONLY, slip_margin_m: 0.00208692401647568, slip_robustness: BORDERLINE, factor_localization: marble_0.20_short_geometry_late_slip}
+  - {run_id: sfcr_v_dsp_c_020_01, failure_class: OBSERVATION_INVALID, support_ms: 4262, slip_ms: null, gap_ms: null, order: SUPPORT_ONLY_THEN_FALL, support_side: LEFT_ONLY, slip_side: NONE, slip_margin_m: null, slip_robustness: NONE, factor_localization: concrete_0.20_late_geometry_target_following_fall_censor}
+  - {run_id: sfcr_v_dsp_c_030_01, failure_class: DUAL_SUPPORT_PLUS_SLIP, support_ms: 3106, slip_ms: 3924, gap_ms: 818, order: SUPPORT_FIRST, support_side: LEFT_ONLY, slip_side: LEFT_ONLY, slip_margin_m: 0.00351598113775253, slip_robustness: BORDERLINE, factor_localization: concrete_0.30_late_geometry}
+  - {run_id: sfcr_v_dsp_m_020_01, failure_class: DUAL_SUPPORT_PLUS_SLIP, support_ms: 4259, slip_ms: 2113, gap_ms: -2146, order: SLIP_FIRST, support_side: LEFT_ONLY, slip_side: LEFT_ONLY, slip_margin_m: 0.01988769024610519, slip_robustness: ROBUST, factor_localization: marble_0.20_late_geometry_double_support_contact_sequence}
+
+observation_invalid_interpretation:
+  run_id: sfcr_v_dsp_c_020_01
+  category: LATER_PHYSICAL_FALL_CENSOR
+  nominal_horizon_ms: 9000
+  support_ms: 4262
+  physical_fall_and_censor_ms: 5118
+  post_support_observation_ms: 856
+  required_post_support_observation_ms: 1000
+  nominal_horizon_remaining_without_fall_ms: 4738
+  duration_change_recommended: false
+
+pilot:
+  decision: DELAYED_SUPPORT_CALIBRATION_REQUIRED
+  batch_count: 1
+  batch_2: NOT_REQUIRED
+  config: {path: configs/experiment/20260903_sand_factor_conditioned_delayed_support_calibration.yaml, sha256: 5288e9fd011b6db03624f814b2164058ecc31126e6a9cc723db2e0dac134250d}
+  manifest: {path: data/raw/sand_factor_conditioned_delayed_support_calibration_20260903/manifest.json, sha256: 6c69a4aaecdb5e09b095976109a7a88b50802a45de7aaf02e29ef04257468850}
+  dataset_freeze: {path: data/raw/sand_factor_conditioned_delayed_support_calibration_20260903/dataset_freeze.json, sha256: 05e84b1f256fb48b7fa05016ddaaab50c9979a3aa2b154c668f9bf57c1c92920, semantic_sha256: 73951095979f1cd00669cfb34eb2f2dfd4ad5829fda100b34e69d66f6e096f4f}
+  scenario_matrix_sha256: facb110351ba9e7750c2d63db0229cb1218a577c87461326e3f24dd9e8d8b3d4
+  scenario_signature_sha256: d8c75a44e50492dcb701740c08424bd8312e8fc7ed2990d560ba283d9ab1a23f
+  result: {planned: 24, completed: 24, correct_support: 23, dual: 0, slip_only: 0, invalid: 1, yield: 0.9583333333333334}
+  per_source_speed_correct: {concrete_0.20: 3, concrete_0.25: 4, concrete_0.30: 4, marble_0.20: 4, marble_0.25: 4, marble_0.30: 4}
+  gates: {complete_execution: PASS, correct_support_total_min_21: PASS, each_source_speed_min_3_of_4: PASS, dual_plus_slip_max_2: PASS, invalid_max_2: PASS, historical_exact_overlap_0: PASS, historical_forbidden_near_overlap_0: PASS, model_outputs_0: PASS, replacement_backfill_0: PASS}
+
+stable_delayed_support_envelope:
+  scope: simulator_and_frozen_policy_specific_not_a_real_world_threshold
+  source_speed_cells: [concrete_0.20, concrete_0.25, concrete_0.30, marble_0.20, marble_0.25, marble_0.30]
+  side: LEFT_ONLY
+  topology: transition_left
+  support_pattern: staged_lateral_deformable
+  sink_severity: moderate
+  future_patch_start_x_m: [0.324, 0.332]
+  future_patch_width_m: [0.825, 0.833]
+  future_patch_exit_x_m: [1.153, 1.165]
+  entry_time_ms: [1220, 1810]
+  i1_time_ms: [2421, 3609]
+  support_establishment_ms: [3050, 3663]
+  expected_precontact_phase: RIGHT_SINGLE_SUPPORT
+  entry_medial_reference: {travel_m: 0.004, stiffness_n_per_m: 50000, damping_ns_per_m: 1000}
+  exit_lateral_moderate: {travel_m: 0.040, stiffness_n_per_m: 7000, damping_ns_per_m: 374}
+  observation_horizon_ms: 9000
+  post_support_observation_min_ms: 1000
+  expected_yield: {pilot_point_estimate: 0.9583333333333334, future_gate_min: 0.8888888888888888}
+  excluded_pilot_point: {source: concrete, speed_mps: 0.20, patch_start_x_m: 0.318, patch_width_m: 0.817, patch_exit_x_m: 1.135, cause: target_following_fall_before_i1_or_support}
+
+future_complete_corpus:
+  design: {path: configs/experiment/20260903_sand_factor_conditioned_development_support_recalibrated.yaml, sha256: b1f09effbb90313ef8c883db8e0ef376c5f4eb8e83ec66d8ed5fe52ca95ef775}
+  dataset_id: sand_factor_conditioned_development_support_recalibrated_20260903
+  counts: {FACTOR_TRAIN: 132, FACTOR_VALIDATION: 66, sand_benign_mild: 108, sand_benign_moderate: 36, ordinary_support_control: 36, delayed_support_control: 18, total: 198}
+  scenario_matrix_sha256: 6ed2c0c23ae036fd0bc8f523b3f254429cb1c835507d9859dadcbf82af6bd8b2
+  scenario_signature_sha256: 0944705e3cb18ff78f4edf68573fbf56477ae9fc7cf7576a2894145549feb4be
+  historical_exact_overlap: 0
+  historical_forbidden_near_overlap: 0
+  failed_198_exact_and_forbidden_near_overlap: 0
+  pilot_exact_and_forbidden_near_overlap: 0
+  cross_split_exact_and_forbidden_near_overlap: 0
+  generated_now: false
+
+decision:
+  verdict: DELAYED_SUPPORT_PHYSICAL_RECALIBRATION_READY
+  next_milestone: SAND_FACTOR_CONDITIONED_DEVELOPMENT_SUPPORT_RECALIBRATED_GENERATION
+  start_next_milestone_now: false
+
+historical_scientific_status:
+  MODEL_V2_GENERALIZATION_HOLDOUT: NOT_SUPPORTED
+  SIMULATION_GENERALIZATION_EVIDENCE: NOT_SUPPORTED
+  SUPPORT_SIMULATION_GENERALIZATION: SUPPORTED
+  FACTOR_CONDITIONED_DATA_DOMAIN_HYPOTHESIS: NOT_YET_MODEL_TESTED
+
+counters:
+  saved_delayed_support_records_reviewed: 18
+  new_pilot_simulations: 24
+  pilot_batches: 1
+  future_complete_corpus_simulations: 0
+  V1_inference: 0
+  V2_inference: 0
+  Terrain_inference: 0
+  Hazard_probability_calculation: 0
+  model_80d_analysis: 0
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  HNM_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  sensor_fusion_experiments: 0
+  old_HOLDOUT_payload_reads: 0
+  old_HOLDOUT_feature_reconstruction: 0
+  old_HOLDOUT_inference: 0
+  old_HOLDOUT_visualization: 0
+  failed_corpus_backfill: 0
+  failed_corpus_rerun: 0
+
+review_freeze:
+  saved_evidence_sha256: b92f2fa07dc98e9a3bf417cc637e1af715f275c0c590fc556e5b77b843a7e2ae
+  pilot_readiness_sha256: 501ade6bdd6dc66a35714786f7457209d0a27abd5cef4aa60d7ff095a6a36221
+  future_design_readiness_sha256: 55844373171e31787d2bd0e60e8e409dbc9e358d3da01d2e6fc7bd2a626f140f

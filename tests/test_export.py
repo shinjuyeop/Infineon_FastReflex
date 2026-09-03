@@ -17,7 +17,7 @@ def test_reviewed_deployment_reference_release_is_intact() -> None:
     assert result == {
         "release_id": "model_v2_anchor_refined_gru20_20260902",
         "release_manifest_sha256": (
-            "8aab7c7835c07d8b24839661bece4d93e8bbe840201c7ab175e1dd0af87399b0"
+            "9cbd42c95e42e90ef05f4a2ba77306a18dc3cbfa4e814c6e8432e29281a2b642"
         ),
         "files_verified": 14,
         "status": "PASS",

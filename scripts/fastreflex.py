@@ -34,6 +34,9 @@ MODEL_V2_FINAL_CANDIDATE_HOLDOUT_READINESS_REVIEW_ID = (
 MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_ID = (
     "MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION"
 )
+SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID = (
+    "SAND_FACTOR_CONDITIONED_DATA_INTERVENTION"
+)
 SUPPORTED_EXPERIMENT_IDS = frozenset(
     (
         HAZARD_EXPERIMENT_ID,
@@ -45,6 +48,7 @@ SUPPORTED_EXPERIMENT_IDS = frozenset(
         MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_ID,
         MODEL_V2_FINAL_CANDIDATE_HOLDOUT_READINESS_REVIEW_ID,
         MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_ID,
+        SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID,
     )
 )
 HISTORICAL_MESSAGE = (
@@ -289,6 +293,25 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             )
         )
         return 0
+    if experiment_id == SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID:
+        from fastreflex.dataset.sand_factor_conditioned import (
+            collect_factor_conditioned_dataset,
+        )
+
+        output_path, summary = collect_factor_conditioned_dataset(
+            REPOSITORY_ROOT,
+            args.config.resolve(),
+            policy.resolve(),
+            progress=lambda message: print(message, file=sys.stderr, flush=True),
+        )
+        print(
+            json.dumps(
+                {"output_path": str(output_path), **summary},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
     from fastreflex.dataset.terrain import collect_terrain_dataset
 
     output_path, summary = collect_terrain_dataset(args.config, policy)
@@ -302,6 +325,19 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
 def _train(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     experiment_id = _require_supported(args.config)
+    if experiment_id == SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID:
+        from fastreflex.training.hazard import (
+            run_factor_conditioned_data_intervention,
+        )
+
+        result = run_factor_conditioned_data_intervention(
+            REPOSITORY_ROOT,
+            args.config.resolve(),
+            dry_run=bool(args.dry_run),
+            progress=lambda message: print(message, file=sys.stderr, flush=True),
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
     if experiment_id == MODEL_V2_ANCHOR_REFINED_TRAINING_ID:
         from fastreflex.training.hazard import run_model_v2_anchor_refined_training
 
@@ -346,7 +382,15 @@ def _train(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
 def _evaluate(args: argparse.Namespace) -> int:
     experiment_id = _require_supported(args.config)
-    if experiment_id == HAZARD_EXPERIMENT_ID:
+    if experiment_id == SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID:
+        from fastreflex.training.hazard import (
+            verify_factor_conditioned_intervention_result,
+        )
+
+        result = verify_factor_conditioned_intervention_result(
+            REPOSITORY_ROOT, args.config.resolve()
+        )
+    elif experiment_id == HAZARD_EXPERIMENT_ID:
         from fastreflex.dataset.hazard import load_yaml
         from fastreflex.evaluation.hazard import verify_supported_candidate
 

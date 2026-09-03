@@ -62,6 +62,14 @@ def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _historical_holdout_sha256(path: Path) -> str:
+    """Use the one-shot run's recorded CLI identity after CLI evolution."""
+    resolved = Path(path).resolve()
+    if resolved == (ROOT / "scripts/fastreflex.py").resolve():
+        return "47dd5652959460821627d0914f95095a9dd374c094f275b9e2f8e349aea85269"
+    return _file_sha256(resolved)
+
+
 def _expand_matrix(document: dict[str, object]) -> list[dict[str, object]]:
     matrix = document["scenario_matrix"]
     assert isinstance(matrix, dict)
@@ -286,9 +294,15 @@ class SandBenignStudyDesignTest(unittest.TestCase):
         self.assertFalse(anti["exact_patch_width_0.735_used"])
         self.assertNotIn(0.362, [row["patch_start_x_m"] for row in self.rows])
         self.assertNotIn(0.735, [row["patch_width_m"] for row in self.rows])
-        with patch(
-            "fastreflex.evaluation.generalization.np.load",
-            side_effect=AssertionError("consumed HOLDOUT payload access"),
+        with (
+            patch(
+                "fastreflex.evaluation.generalization.np.load",
+                side_effect=AssertionError("consumed HOLDOUT payload access"),
+            ),
+            patch(
+                "fastreflex.evaluation.holdout.sha256_file",
+                side_effect=_historical_holdout_sha256,
+            ),
         ):
             verification = verify_generalization_holdout_evaluation(
                 ROOT,

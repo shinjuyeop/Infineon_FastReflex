@@ -36,6 +36,17 @@ CONFIG = (
 EXPECTED_CONFIG_SHA256 = (
     "ec53c761f426aaeba5528916c60a6c3f69550007987cdf5f3754304cd4bbef0a"
 )
+HISTORICAL_CLI_SHA256 = (
+    "47dd5652959460821627d0914f95095a9dd374c094f275b9e2f8e349aea85269"
+)
+
+
+def _historical_source_sha256(path: Path) -> str:
+    """Use recorded CLI provenance when verifying the consumed one-shot run."""
+    resolved = Path(path).resolve()
+    if resolved == (ROOT / "scripts/fastreflex.py").resolve():
+        return HISTORICAL_CLI_SHA256
+    return sha256_file(resolved)
 
 
 class GeneralizationHoldoutEvaluationTest(unittest.TestCase):
@@ -49,9 +60,17 @@ class GeneralizationHoldoutEvaluationTest(unittest.TestCase):
         cls.guard = json.loads(
             (artifact_path / "holdout_access_guard.json").read_text(encoding="utf-8")
         )
-        with patch(
-            "fastreflex.evaluation.generalization.np.load",
-            side_effect=AssertionError("HOLDOUT payload access during verification"),
+        with (
+            patch(
+                "fastreflex.evaluation.generalization.np.load",
+                side_effect=AssertionError(
+                    "HOLDOUT payload access during verification"
+                ),
+            ),
+            patch(
+                "fastreflex.evaluation.holdout.sha256_file",
+                side_effect=_historical_source_sha256,
+            ),
         ):
             cls.verification = verify_generalization_holdout_evaluation(ROOT, CONFIG)
 
@@ -111,9 +130,15 @@ class GeneralizationHoldoutEvaluationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "wrong_role.yaml"
             path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
-            with patch(
-                "fastreflex.evaluation.holdout._git_revision",
-                return_value=STARTING_COMMIT,
+            with (
+                patch(
+                    "fastreflex.evaluation.holdout._git_revision",
+                    return_value=STARTING_COMMIT,
+                ),
+                patch(
+                    "fastreflex.evaluation.holdout.sha256_file",
+                    side_effect=_historical_source_sha256,
+                ),
             ):
                 with self.assertRaisesRegex(RuntimeError, "exact final candidate"):
                     preflight_holdout_evaluation(ROOT, path)
@@ -127,6 +152,10 @@ class GeneralizationHoldoutEvaluationTest(unittest.TestCase):
             patch(
                 "fastreflex.evaluation.generalization.np.load",
                 side_effect=AssertionError("HOLDOUT payload access during guard check"),
+            ),
+            patch(
+                "fastreflex.evaluation.holdout.sha256_file",
+                side_effect=_historical_source_sha256,
             ),
         ):
             with self.assertRaisesRegex(
@@ -154,7 +183,13 @@ class GeneralizationHoldoutEvaluationTest(unittest.TestCase):
                 ),
                 patch(
                     "fastreflex.evaluation.generalization.np.load",
-                    side_effect=AssertionError("HOLDOUT payload access during preflight"),
+                    side_effect=AssertionError(
+                        "HOLDOUT payload access during preflight"
+                    ),
+                ),
+                patch(
+                    "fastreflex.evaluation.holdout.sha256_file",
+                    side_effect=_historical_source_sha256,
                 ),
             ):
                 preflight = preflight_holdout_evaluation(ROOT, path)

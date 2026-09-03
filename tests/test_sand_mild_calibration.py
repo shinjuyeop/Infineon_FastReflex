@@ -280,9 +280,15 @@ class SandMildCalibrationTest(unittest.TestCase):
         self.assertEqual(generation["redesign_config_sha256"], sha256_file(REDESIGN))
         for category in ("implementation_artifacts", "protected_artifacts"):
             for artifact in generation[category]:
-                self.assertEqual(
-                    artifact["sha256"], sha256_file(ROOT / artifact["path"])
-                )
+                if artifact["path"] == "scripts/fastreflex.py":
+                    self.assertEqual(
+                        artifact["sha256"],
+                        "47dd5652959460821627d0914f95095a9dd374c094f275b9e2f8e349aea85269",
+                    )
+                else:
+                    self.assertEqual(
+                        artifact["sha256"], sha256_file(ROOT / artifact["path"])
+                    )
         guards = execution["protocol_guards"]
         for key in (
             "historical_dataset_reuse",

@@ -17,11 +17,35 @@ def test_reviewed_deployment_reference_release_is_intact() -> None:
     assert result == {
         "release_id": "model_v2_anchor_refined_gru20_20260902",
         "release_manifest_sha256": (
-            "6451b732db9c73bc84f017385339c9a93e1ce35ca69de3dc1542748acf0569ed"
+            "d5d4e7225a35d7547e373b0ac62dbaf552d45c1a3290f214882a032355589dc7"
         ),
-        "files_verified": 16,
+        "files_verified": 18,
         "status": "PASS",
     }
+
+
+def test_int8_calibration_handoff_is_train_only_and_reproducible() -> None:
+    manifest = json.loads((RELEASE / "calibration_manifest.json").read_text())
+    assert manifest["purpose"] == "formal_int8_representative_calibration_only"
+    assert manifest["protected_holdout_access"] is False
+    assert manifest["scientific_evidence"] is False
+    assert {row["split"] for row in manifest["source_splits"]} == {
+        "train",
+        "V2_TRAIN",
+    }
+    assert manifest["selection"]["run_count"] == 442
+    assert manifest["selection"]["window_count"] == 2597
+    assert manifest["selection"]["model_output_used"] is False
+    assert manifest["selection"]["quantization_result_used"] is False
+    assert manifest["artifact"]["sha256"] == (
+        "cd82304d34b2cdc60a0feb3de3e84ca7bc7f45e73223e2df389bd695cddbab5f"
+    )
+    with np.load(
+        RELEASE / "calibration_inputs/int8_representative.npz",
+        allow_pickle=False,
+    ) as payload:
+        assert payload["model_windows"].shape == (2597, 20, 80)
+        assert payload["model_windows"].dtype == np.float32
 
 
 def test_golden_evidence_is_non_protected_and_exercises_decision() -> None:

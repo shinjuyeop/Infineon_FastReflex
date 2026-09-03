@@ -1,0 +1,102 @@
+schema_version: 1
+
+experiment:
+  id: SAND_BENIGN_PHASE_GEOMETRY_CALIBRATION
+  milestone_id: DATA_INTERVENTION_FAILURE_AUDIT_PILOT_BATCH_1
+  purpose: establish_a_fresh_exit_preserving_factor_conditioned_mild_sand_strip
+
+calibration:
+  batch_index: 1
+  exact_question: does_an_exit_preserving_later_start_narrower_width_strip_provide_fresh_stable_mild_coverage_for_all_required_cells_and_both_manifolds
+  master_contract_path: configs/experiment/20260903_data_intervention_failure_audit.yaml
+  master_contract_sha256: 9354701bb3c2d5b2710ca8c9ec2708f6bdf956027210ba715b2ca2dfe2380381
+  adaptation_basis: failed_factor_conditioned_manifest_and_saved_model_blind_historical_physical_metadata_only
+  frozen_before_first_simulation: true
+  deterministic_seed: null
+  planned_run_count: 24
+  dataset_id: sand_factor_conditioned_physical_domain_calibration_20260903
+  dataset_path: data/raw/sand_factor_conditioned_physical_domain_calibration_20260903
+  created_at: "2026-09-03T19:10:00+09:00"
+  source_commit: cb1b83371c3ff8be26b44e85fb709f6449c7e1f7
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  simulator_config_path: configs/simulator/g1.yaml
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  consumed_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  duration_s: 9.0
+  model_inference: forbidden
+  within_batch_adaptation: forbidden
+  replacement_or_backfill: forbidden
+  retain_all_outcomes: true
+  label_contract:
+    precontact_phase_lookback_ms: 20
+    benign_post_target_followup_ms: 1000
+    support_post_event_followup_ms: 1000
+    expected_samples: 9000
+  frozen_gates:
+    complete_execution: 24
+    strict_benign_total_min: 18
+    strict_benign_each_source_speed_cell_min: 3
+    strict_benign_adverse_manifold_min: 10
+    strict_benign_comparison_manifold_min: 7
+    pretarget_fall_max: 2
+    post_target_fall_censor_max: 4
+    Slip_plus_dual_max: 2
+    historical_exact_overlap: 0
+    historical_forbidden_near_overlap: 0
+    model_outputs: 0
+    replacement_or_backfill: 0
+  near_signature_policy:
+    patch_start_difference_m_exclusive: 0.002
+    patch_width_difference_m_exclusive: 0.004
+  parameter_range:
+    source_terrain: [concrete, marble]
+    speed_mps: [0.20, 0.25, 0.30]
+    sink_severity: [mild]
+    patch_start_x_m: [0.334, 0.356]
+    patch_exit_x_m: [1.113, 1.147]
+    patch_width_m: [0.777, 0.791]
+    topology: [transition_left, transition_right]
+    concrete_0.25_topology: [transition_left]
+  historical_manifests:
+    - {path: data/raw/unified_hazard_reflex_20260829/manifest.json, sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6}
+    - {path: data/raw/model_v2_hazard_reflex_20260901/manifest.json, sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25}
+    - {path: data/raw/generalization_hazard_reflex_20260831/manifest.json, sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53}
+    - {path: data/raw/ice_near_hazard_semantics_20260901/manifest.json, sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759}
+    - {path: data/raw/sand_benign_generalization_study_20260902/manifest.json, sha256: 70a619e35dba72478b298fb5082c68c07bc577e7536ba48b2ce9a52665f9834f}
+    - {path: data/raw/sand_benign_phase_geometry_calibration_20260902/manifest.json, sha256: a30f96943593c2322dde1898060919eab3ec9929167e358743335f1a809c4d77}
+    - {path: data/raw/sand_benign_severity_calibration_20260902/manifest.json, sha256: ab481ddaa38f6fb84c9d3a7d0f0ac2a148463b4aa3eb341b4f8c3a29e9a37415}
+    - {path: data/raw/sand_benign_domain_control_calibration_20260902/manifest.json, sha256: 28274d1bad4f3bc42dd55b6cd4772feed6b6dde9ce48c536d775a640f12fba4a}
+    - {path: data/raw/sand_benign_generalization_redesigned_study_20260902/manifest.json, sha256: 90970438abb9eced3742d387697cf3f3ff4bd8b905b3554ea01f6766a38e501b}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_a_20260903/manifest.json, sha256: 1f5f7fe0e83a55a7e4be8240c3ff4ab2282e00194d6151c3ac909ac1a697c14f}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_b_20260903/manifest.json, sha256: b57603925da065f01657d65bacaf93d9bebd0859e319c32f9973ce7c22c6335a}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_c_20260903/manifest.json, sha256: 90bb0ce2cd9fb2e52f57bc45ad247a64e1217d477e4b098d016fe3393d1dcb50}
+    - {path: data/raw/sand_benign_generalization_mild_recalibrated_study_20260903/manifest.json, sha256: f19ec527cb9faac0d8f3a385a1a63e8a951ced7f275c7cfc3dd459cc42f375d1}
+    - {path: data/raw/sand_factor_conditioned_development_20260903/manifest.json, sha256: d4ec98b5c2bec6c9009b5da958195935c46dd57489c8f0f15e08258ae84d6998}
+  scenarios:
+    - {run_id: sfcpc_b1_la_c_020, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.20, patch_start_x_m: 0.344, patch_width_m: 0.777, patch_end_x_m: 1.121, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_lb_c_020, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.20, patch_start_x_m: 0.356, patch_width_m: 0.791, patch_end_x_m: 1.147, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_ra_c_020, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: COMPARISON_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.20, patch_start_x_m: 0.334, patch_width_m: 0.779, patch_end_x_m: 1.113, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_rb_c_020, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: COMPARISON_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.20, patch_start_x_m: 0.344, patch_width_m: 0.781, patch_end_x_m: 1.125, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_la_c_025, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.344, patch_width_m: 0.777, patch_end_x_m: 1.121, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_lb_c_025, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.356, patch_width_m: 0.791, patch_end_x_m: 1.147, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_lc_c_025, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.348, patch_width_m: 0.781, patch_end_x_m: 1.129, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_ld_c_025, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.352, patch_width_m: 0.787, patch_end_x_m: 1.139, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_la_c_030, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.30, patch_start_x_m: 0.344, patch_width_m: 0.777, patch_end_x_m: 1.121, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_lb_c_030, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.30, patch_start_x_m: 0.356, patch_width_m: 0.791, patch_end_x_m: 1.147, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_ra_c_030, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: COMPARISON_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.30, patch_start_x_m: 0.334, patch_width_m: 0.779, patch_end_x_m: 1.113, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_rb_c_030, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: COMPARISON_DIRECTION, source_terrain: concrete, target_terrain: sand, speed_mps: 0.30, patch_start_x_m: 0.344, patch_width_m: 0.781, patch_end_x_m: 1.125, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_la_m_020, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.20, patch_start_x_m: 0.344, patch_width_m: 0.777, patch_end_x_m: 1.121, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_lb_m_020, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.20, patch_start_x_m: 0.356, patch_width_m: 0.791, patch_end_x_m: 1.147, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_ra_m_020, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: COMPARISON_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.20, patch_start_x_m: 0.334, patch_width_m: 0.779, patch_end_x_m: 1.113, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_rb_m_020, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: COMPARISON_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.20, patch_start_x_m: 0.344, patch_width_m: 0.781, patch_end_x_m: 1.125, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_la_m_025, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.344, patch_width_m: 0.777, patch_end_x_m: 1.121, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_lb_m_025, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.356, patch_width_m: 0.791, patch_end_x_m: 1.147, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_ra_m_025, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: COMPARISON_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.334, patch_width_m: 0.779, patch_end_x_m: 1.113, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_rb_m_025, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: COMPARISON_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.25, patch_start_x_m: 0.344, patch_width_m: 0.781, patch_end_x_m: 1.125, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_la_m_030, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.30, patch_start_x_m: 0.344, patch_width_m: 0.777, patch_end_x_m: 1.121, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_lb_m_030, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: ADVERSE_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.30, patch_start_x_m: 0.356, patch_width_m: 0.791, patch_end_x_m: 1.147, slip_pattern: uniform, sink_pattern: transition_left, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_ra_m_030, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: COMPARISON_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.30, patch_start_x_m: 0.334, patch_width_m: 0.779, patch_end_x_m: 1.113, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}
+    - {run_id: sfcpc_b1_rb_m_030, group: sand_benign, scenario_family: sand_factor_conditioned_physical_calibration, factor_manifold_intent: COMPARISON_DIRECTION, source_terrain: marble, target_terrain: sand, speed_mps: 0.30, patch_start_x_m: 0.344, patch_width_m: 0.781, patch_end_x_m: 1.125, slip_pattern: uniform, sink_pattern: transition_right, sink_severity: mild, severity_intent: LOW, support_pattern: balanced_deformable}

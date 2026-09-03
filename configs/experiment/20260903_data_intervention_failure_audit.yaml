@@ -1,0 +1,158 @@
+schema_version: 1
+
+experiment:
+  id: DATA_INTERVENTION_FAILURE_AUDIT
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  milestone: DATA_INTERVENTION_FAILURE_AUDIT
+  expected_scientific_base_commit: eb2dac1b9452307a6b83ca601471db07f1c7ab47
+  observed_starting_head: 9b1f008c0a665dd02f2243f92203e66406fcaeb8
+  physical_audit_only: true
+  model_blind: true
+
+failed_dataset:
+  id: sand_factor_conditioned_development_20260903
+  path: data/raw/sand_factor_conditioned_development_20260903
+  manifest_sha256: d4ec98b5c2bec6c9009b5da958195935c46dd57489c8f0f15e08258ae84d6998
+  physical_audit_sha256: b334f615323a2d770f5b8c35b251368f10f1f00f481868933971cb5f00d67dee
+  dataset_freeze_file_sha256: 36f5c93c5dba3793101d1401ab88864fe8833d9904f7593a3a6593c7a978327f
+  semantic_dataset_freeze_sha256: 4906682f9366bad572baeb529db81ca1d5b1b2878f1cd2e4782999e2588cd549
+  intervention_config:
+    path: configs/experiment/20260903_sand_factor_conditioned_data_intervention.yaml
+    sha256: 540034673d1703adce000182b73e2dc4c4bf8856e534e7489ea66bef6522246e
+  intervention_report:
+    path: reports/20260903_sand_factor_conditioned_data_intervention.md
+    sha256: b919131ea4d3110070e8273e36dbbe4f5f5a6e509c1f4544d047934ae0bd36ef
+
+historical_physical_reference:
+  dataset_id: sand_benign_generalization_mild_recalibrated_study_20260903
+  manifest_path: data/raw/sand_benign_generalization_mild_recalibrated_study_20260903/manifest.json
+  manifest_sha256: f19ec527cb9faac0d8f3a385a1a63e8a951ced7f275c7cfc3dd459cc42f375d1
+  calibration_redesign_config:
+    path: configs/experiment/20260903_sand_benign_mild_domain_calibration_redesign.yaml
+    sha256: 0ac6a6017b38fc412c6311a8ac89c513bd0381e15317de5e7c6dc623bb11c7bd
+  calibration_redesign_report:
+    path: reports/20260903_sand_benign_mild_domain_calibration_redesign.md
+    sha256: be740856957cf8c2f3369b73bb3a2a7a62c64e41647b4f002f3395188993c7a9
+  proven_mild_envelope:
+    transition_left:
+      patch_start_x_m: [0.325, 0.342]
+      patch_width_m: [0.795, 0.809]
+      patch_exit_x_m: [1.123, 1.147]
+      source_speed_cells: all_six
+    transition_right:
+      patch_start_x_m: [0.324, 0.330]
+      patch_width_m: [0.791, 0.794]
+      patch_exit_x_m: [1.115, 1.123]
+      source_speed_cells: all_except_concrete_0.25
+    concrete_0.25_exception: transition_left_only
+
+outcome_classification:
+  precedence:
+    - PRETARGET_FALL
+    - TARGET_FOLLOWING_FALL_CENSOR
+    - OTHER_INVALID
+    - STRICT_SAND_BENIGN
+    - SUPPORT
+    - SLIP
+    - DUAL_HAZARD
+  rules:
+    PRETARGET_FALL: invalid_reason_equals_pretarget_fall
+    TARGET_FOLLOWING_FALL_CENSOR: invalid_reason_equals_insufficient_post_target_observation
+    OTHER_INVALID: remaining_invalid_record
+    STRICT_SAND_BENIGN: valid_actual_STRICT_BENIGN
+    SUPPORT: valid_actual_SUPPORT
+    SLIP: valid_actual_SLIP
+    DUAL_HAZARD: valid_actual_DUAL_HAZARD
+
+post_target_taxonomy:
+  requested_observation_ms: 1000
+  precedence:
+    - IMMEDIATE_TARGET_INDUCED_INSTABILITY
+    - SHORT_LIVED_BENIGN_THEN_LATER_FALL
+    - PHYSICALLY_VALID_TARGET_PERIOD_STRICT_LAST_CONTACT_RULE
+    - TRUE_INSUFFICIENT_HORIZON
+    - OTHER
+  rules:
+    IMMEDIATE_TARGET_INDUCED_INSTABILITY: fall_exists_and_fall_minus_first_target_lt_1000ms
+    SHORT_LIVED_BENIGN_THEN_LATER_FALL: fall_exists_and_fall_minus_first_target_ge_1000ms
+    PHYSICALLY_VALID_TARGET_PERIOD_STRICT_LAST_CONTACT_RULE: no_fall_and_censor_minus_first_target_ge_1000ms_and_post_last_target_lt_1000ms
+    TRUE_INSUFFICIENT_HORIZON: no_fall_and_censor_minus_first_target_lt_1000ms
+    OTHER: none_of_the_above
+
+factor_region_categorization:
+  denominator: all_planned_records_in_cell
+  eligible_numerator: STRICT_SAND_BENIGN_plus_SUPPORT
+  STABLE: eligible_rate_at_least_0.75
+  MARGINAL: eligible_rate_at_least_0.50_and_below_0.75
+  UNSTABLE: eligible_rate_below_0.50
+  catastrophic_cell: eligible_rate_below_0.25
+
+domain_comparison:
+  inside: start_width_and_exit_all_inside_inclusive_proven_envelope_for_topology
+  near_boundary: outside_at_most_one_bound_by_at_most_0.004m_and_not_inside
+  outside: all_other_geometry
+  support_and_moderate: compare_against_exact_historical_physical_control_family_not_mild_bounds
+
+pilot_decision:
+  maximum_new_simulations: 64
+  maximum_batches: 2
+  no_pilot_if_all_required:
+    - one_mechanism_explains_at_least_0.80_of_invalid_runs
+    - both_factor_manifolds_have_prior_viable_physical_evidence
+    - every_required_source_speed_cell_has_prior_viable_physical_evidence
+    - fresh_nonoverlapping_redesign_coordinates_fit_inside_a_justified_envelope
+  pilot_required_if_any:
+    - more_than_0.20_of_invalid_runs_are_inside_the_applicable_viable_domain
+    - no_fresh_nonoverlapping_coordinates_fit_inside_the_justified_envelope
+    - an_intended_source_speed_factor_cell_lacks_viable_adverse_or_comparison_coverage
+  pilot_batches:
+    - batch: 1
+      config_path: configs/experiment/20260903_sand_factor_conditioned_physical_domain_calibration.yaml
+      exact_question: does_an_exit_preserving_later_start_narrower_width_strip_provide_fresh_stable_mild_coverage_for_all_required_cells_and_both_manifolds
+      planned: 24
+      frozen_profiles:
+        transition_left_outer: {patch_start_x_m: 0.344, patch_width_m: 0.777, patch_exit_x_m: 1.121}
+        transition_left_inner: {patch_start_x_m: 0.356, patch_width_m: 0.791, patch_exit_x_m: 1.147}
+        transition_right_outer: {patch_start_x_m: 0.334, patch_width_m: 0.779, patch_exit_x_m: 1.113}
+        transition_right_inner: {patch_start_x_m: 0.344, patch_width_m: 0.781, patch_exit_x_m: 1.125}
+        concrete_0.25_left_a: {patch_start_x_m: 0.348, patch_width_m: 0.781, patch_exit_x_m: 1.129}
+        concrete_0.25_left_b: {patch_start_x_m: 0.352, patch_width_m: 0.787, patch_exit_x_m: 1.139}
+      gates:
+        complete_execution: 24
+        strict_benign_total_min: 18
+        strict_benign_each_source_speed_cell_min: 3
+        strict_benign_adverse_manifold_min: 10
+        strict_benign_comparison_manifold_min: 7
+        pretarget_fall_max: 2
+        post_target_fall_censor_max: 4
+        Slip_plus_dual_max: 2
+        historical_exact_overlap: 0
+        historical_forbidden_near_overlap: 0
+        model_outputs: 0
+        replacement_or_backfill: 0
+
+boundaries:
+  old_holdout_payload_reads: 0
+  old_holdout_inference: 0
+  old_holdout_feature_reconstruction: 0
+  old_holdout_visualization: 0
+  old_sand_model_analysis: 0
+  failed_dataset_hazard_inference: 0
+  V1_inference: 0
+  V2_inference: 0
+  Terrain_inference: 0
+  training: 0
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  HNM_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  sensor_fusion_experiments: 0
+
+artifacts:
+  path: artifacts/runs/20260903_data_intervention_failure_audit
+  physical_failure_audit: physical_failure_audit.json
+  redesign_readiness: redesign_readiness.json

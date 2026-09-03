@@ -671,19 +671,31 @@ def expand_factor_conditioned_redesign(
             speed = float(cell["speed_mps"])
             source_code = "c" if source == "concrete" else "m"
             speed_code = f"{int(round(speed * 100)):03d}"
-            concrete_025 = source == "concrete" and speed == 0.25
-            selected_profiles = {
-                "sand_benign_mild": profiles[
-                    "mild_concrete_025_left" if concrete_025 else "mild_standard"
-                ],
-                "sand_benign_moderate": profiles[
-                    "moderate_concrete_025_left"
-                    if concrete_025
-                    else "moderate_standard"
-                ],
-                "ordinary_support_control": profiles["ordinary_support"],
-                "delayed_support_control": profiles["delayed_support"],
-            }
+            cell_key = f"{source}_{speed_code}"
+            if "source_speed" in profiles:
+                cell_profiles = profiles["source_speed"][cell_key]
+                selected_profiles = {
+                    "sand_benign_mild": cell_profiles["sand_benign_mild"],
+                    "sand_benign_moderate": cell_profiles["sand_benign_moderate"],
+                    "ordinary_support_control": cell_profiles[
+                        "ordinary_support_control"
+                    ],
+                    "delayed_support_control": cell_profiles["delayed_support_control"],
+                }
+            else:
+                concrete_025 = source == "concrete" and speed == 0.25
+                selected_profiles = {
+                    "sand_benign_mild": profiles[
+                        "mild_concrete_025_left" if concrete_025 else "mild_standard"
+                    ],
+                    "sand_benign_moderate": profiles[
+                        "moderate_concrete_025_left"
+                        if concrete_025
+                        else "moderate_standard"
+                    ],
+                    "ordinary_support_control": profiles["ordinary_support"],
+                    "delayed_support_control": profiles["delayed_support"],
+                }
             for group, group_profiles in selected_profiles.items():
                 for index, profile in enumerate(group_profiles, start=1):
                     support = group.endswith("support_control")
@@ -1241,9 +1253,7 @@ def _factor_conditioned_recalibrated_audit(
         int(historical["near_by_reference"][path]) for path in pilot_references
     )
     pilot_exact_expected = int(gates["integrity"].get("pilot_exact_overlap", 0))
-    pilot_near_expected = int(
-        gates["integrity"].get("pilot_forbidden_near_overlap", 0)
-    )
+    pilot_near_expected = int(gates["integrity"].get("pilot_forbidden_near_overlap", 0))
     add(
         "integrity/pilot_exact_overlap",
         pilot_exact,
@@ -1269,12 +1279,10 @@ def _factor_conditioned_recalibrated_audit(
             )
         ]
         failed_exact = sum(
-            int(historical["exact_by_reference"][path])
-            for path in failed_references
+            int(historical["exact_by_reference"][path]) for path in failed_references
         )
         failed_near = sum(
-            int(historical["near_by_reference"][path])
-            for path in failed_references
+            int(historical["near_by_reference"][path]) for path in failed_references
         )
         for name, actual, gate_key in (
             ("failed_198_exact_overlap", failed_exact, "failed_198_exact_overlap"),
@@ -1359,6 +1367,22 @@ def _factor_conditioned_recalibrated_audit(
         <= int(gates["contamination"]["designed_sand_Slip_plus_dual_max"]),
         "manifest.json",
     )
+    ordinary_rows = [row for row in rows if row["group"] == "ordinary_support_control"]
+    ordinary_hazards = [
+        row
+        for row in ordinary_rows
+        if row["objective_physical_outcome"] in {"SLIP", "DUAL_HAZARD"}
+    ]
+    ordinary_contamination_key = "ordinary_support_Slip_plus_dual_max"
+    if ordinary_contamination_key in gates["contamination"]:
+        maximum = int(gates["contamination"][ordinary_contamination_key])
+        add(
+            "contamination/ordinary_support_slip_plus_dual",
+            len(ordinary_hazards),
+            f"<={maximum}",
+            len(ordinary_hazards) <= maximum,
+            "manifest.json",
+        )
     delayed_rows = [row for row in rows if row["group"] == "delayed_support_control"]
     delayed_hazards = [
         row
@@ -1407,14 +1431,25 @@ def _factor_conditioned_recalibrated_audit(
         split_sand_hazards = [row for row in sand_hazards if row["split"] == split]
         sand_contamination_key = f"{split}_max"
         if sand_contamination_key in gates["contamination"]:
-            contamination_max = int(
-                gates["contamination"][sand_contamination_key]
-            )
+            contamination_max = int(gates["contamination"][sand_contamination_key])
             add(
                 f"contamination/{split}/designed_sand_slip_plus_dual",
                 len(split_sand_hazards),
                 f"<={contamination_max}",
                 len(split_sand_hazards) <= contamination_max,
+                "manifest.json",
+            )
+        ordinary_split_key = f"{split}_ordinary_support_Slip_plus_dual_max"
+        if ordinary_split_key in gates["contamination"]:
+            ordinary_split_hazards = [
+                row for row in ordinary_hazards if row["split"] == split
+            ]
+            contamination_max = int(gates["contamination"][ordinary_split_key])
+            add(
+                f"contamination/{split}/ordinary_support_slip_plus_dual",
+                len(ordinary_split_hazards),
+                f"<={contamination_max}",
+                len(ordinary_split_hazards) <= contamination_max,
                 "manifest.json",
             )
         delayed_split_key = f"{split}_delayed_support_Slip_plus_dual_max"

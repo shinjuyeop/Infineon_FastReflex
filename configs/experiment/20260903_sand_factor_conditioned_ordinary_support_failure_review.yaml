@@ -1,0 +1,175 @@
+schema_version: 1
+
+experiment:
+  id: SAND_FACTOR_CONDITIONED_ORDINARY_SUPPORT_FAILURE_REVIEW
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  scientific_base_commit: 65f7cf32ca4b099b0380512c5b886874f5354bb1
+  model_blind: true
+
+frozen_inputs:
+  prior_generation_report:
+    path: reports/20260903_sand_factor_conditioned_development_support_recalibrated_generation.md
+    sha256: 9ff9159abfa4718300ea08edd8a9c585d62a2f9425d3be26481b484b2d4200cf
+  prior_execution_config:
+    path: configs/experiment/20260903_sand_factor_conditioned_development_support_recalibrated_generation.yaml
+    sha256: c4bde7adc1d4a917fe78da9b2f470c1f6155af63a06f314972609c64ef5aade4
+  prior_design:
+    path: configs/experiment/20260903_sand_factor_conditioned_development_support_recalibrated.yaml
+    sha256: b1f09effbb90313ef8c883db8e0ef376c5f4eb8e83ec66d8ed5fe52ca95ef775
+  reviewed_manifest:
+    path: data/raw/sand_factor_conditioned_development_support_recalibrated_20260903/manifest.json
+    sha256: bda6961f79525df237d440086057aea71a03afc5134a49c50f5e4d4a2193be67
+  reviewed_physical_audit:
+    path: data/raw/sand_factor_conditioned_development_support_recalibrated_20260903/physical_audit.json
+    sha256: f4861dc18456da28f76caf38257de03abef90e184879378bcbe844301490f9a3
+  reviewed_dataset_freeze:
+    path: data/raw/sand_factor_conditioned_development_support_recalibrated_20260903/dataset_freeze.json
+    sha256: fb575566574ef87bdc6ca8c161cb770c6d16e530b18fda3df0b65d213ad59922
+  historical_holdout_guard:
+    path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+    sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154
+    required_guard: 1
+    required_scientific_open_count: 1
+    payload_reads: 0
+
+review_evidence:
+  records_reviewed: 36
+  split_result:
+    FACTOR_TRAIN: {planned: 24, correct_support: 20, misses: 4, frozen_minimum: 22, gate: FAIL}
+    FACTOR_VALIDATION: {planned: 12, correct_support: 11, misses: 1, frozen_minimum: 11, gate: PASS}
+  outcomes: {correct_support: 31, dual_hazard: 1, invalid: 4}
+  five_misses:
+    - {run_id: sfcsr_t_osp_c_030_01, class: POST_SUPPORT_PHYSICAL_FALL, source: concrete, speed_mps: 0.30, side: LEFT, topology: transition_left, start_m: 0.329, width_m: 0.713, exit_m: 1.042, entry_ms: 1227, i1_ms: 1246, support_ms: 3036, fall_or_slip_ms: 3599, post_support_ms: 563}
+    - {run_id: sfcsr_t_osp_c_030_02, class: POST_SUPPORT_PHYSICAL_FALL, source: concrete, speed_mps: 0.30, side: LEFT, topology: transition_left, start_m: 0.337, width_m: 0.723, exit_m: 1.060, entry_ms: 1227, i1_ms: 1246, support_ms: 3036, fall_or_slip_ms: 3602, post_support_ms: 566}
+    - {run_id: sfcsr_t_osp_c_030_03, class: POST_SUPPORT_PHYSICAL_FALL, source: concrete, speed_mps: 0.30, side: RIGHT, topology: transition_right, start_m: 0.331, width_m: 0.715, exit_m: 1.046, entry_ms: 1508, i1_ms: 1527, support_ms: 2731, fall_or_slip_ms: 3581, post_support_ms: 850}
+    - {run_id: sfcsr_t_osp_m_030_01, class: POST_SUPPORT_PHYSICAL_FALL, source: marble, speed_mps: 0.30, side: LEFT, topology: transition_left, start_m: 0.329, width_m: 0.713, exit_m: 1.042, entry_ms: 1227, i1_ms: 1246, support_ms: 3036, fall_or_slip_ms: 4026, post_support_ms: 990}
+    - {run_id: sfcsr_v_osp_c_020_01, class: DUAL_SUPPORT_PLUS_SLIP, source: concrete, speed_mps: 0.20, side: LEFT, topology: transition_left, start_m: 0.349, width_m: 0.745, exit_m: 1.094, entry_ms: 1808, i1_ms: 1827, support_ms: 2475, fall_or_slip_ms: 6874, post_support_ms: 6525}
+  observation_failure:
+    count: 4
+    nominal_horizon_ms: 9000
+    required_post_support_ms: 1000
+    support_time_ms: [2731, 3036]
+    physical_fall_time_ms: [3581, 4026]
+    available_post_support_ms: [563, 990]
+    classification: physical_fall_or_censor_after_established_support
+    horizon_issue: false
+    late_support_issue: false
+  previous_stable_ordinary_support:
+    records: 48
+    correct_support: 48
+    sources:
+      - data/raw/sand_benign_generalization_redesigned_study_20260902/manifest.json
+      - data/raw/sand_benign_generalization_mild_recalibrated_study_20260903/manifest.json
+    concrete_0.30_right_only: {correct_support: 8, planned: 8}
+  localization:
+    classification: MULTIFACTOR_ORDINARY_SUPPORT_INSTABILITY
+    primary_mechanism: SOURCE_SPEED_CONTACT_SEQUENCE_LOCALIZED
+    terminal_mechanism: POST_SUPPORT_PHYSICAL_FALL_LOCALIZED
+    concrete_0.30_transition_left_latest_factor_corpora: {correct_support: 0, planned: 4}
+    concrete_0.30_right_prior_stable: {correct_support: 8, planned: 8}
+    labeling_bug: false
+    generator_bug: false
+    shared_delayed_support_bug: false
+
+pilot:
+  decision: NO_NEW_PILOT_REQUIRED
+  rationale: two_independent_stable_studies_supply_48_of_48_controls_and_localize_the_source_speed_side_topology_correction
+  maximum_allowed_runs: 32
+  maximum_allowed_batches: 2
+  actual_runs: 0
+  actual_batches: 0
+  physical_only_contract: satisfied_without_execution
+  replacements: 0
+  backfill: 0
+  model_inference: 0
+
+ordinary_support_envelope:
+  authority: simulator_controller_specific_not_universal_real_world_thresholds
+  source_speed_applicability: [concrete_0.20, concrete_0.25, concrete_0.30, marble_0.20, marble_0.25, marble_0.30]
+  default_sides: [LEFT, RIGHT]
+  concrete_0.30_sides: [RIGHT]
+  marble_0.30_left_constraint: stable_higher_start_strip
+  topology_contact_expectation: {LEFT: transition_left_RIGHT_SINGLE_SUPPORT, RIGHT: transition_right_LEFT_SINGLE_SUPPORT}
+  stable_joint_geometry_m: {start: [0.336, 0.351], width: [0.710, 0.746], exit: [1.047, 1.097]}
+  concrete_0.20_left_geometry_m: {start: [0.336, 0.345], width: [0.710, 0.739], exit: [1.047, 1.084]}
+  marble_0.30_left_geometry_m: {start: [0.336, 0.341], width: [0.710, 0.733], exit: [1.047, 1.074]}
+  evidenced_timing_ms: {entry: [1220, 1810], i1: [1239, 1829], support_establishment: [2168, 3036]}
+  support_parameters:
+    entry_medial_reference: {travel_m: 0.004, stiffness_n_per_m: 50000, damping_ns_per_m: 1000}
+    exit_lateral_moderate: {travel_m: 0.040, stiffness_n_per_m: 7000, damping_ns_per_m: 374}
+  observation_horizon_ms: 9000
+  required_post_support_ms: 1000
+  known_exclusions:
+    - concrete_0.30_transition_left
+    - concrete_0.30_right_low_start_low_exit_corner
+    - marble_0.30_left_start_below_0.336
+    - concrete_0.20_left_late_long_geometry_near_0.349_0.745_1.094
+  expected_physical_yield: {saved_stable_point_estimate: 1.0, future_train_gate: 0.9166666666666666, future_validation_gate: 0.9166666666666666}
+
+semantics:
+  i1_definition: unchanged
+  established_support_threshold: unchanged
+  support_duration: unchanged
+  slip_threshold_and_duration: unchanged
+  side_semantics: unchanged
+  post_support_observation_requirement: unchanged
+  ordinary_vs_delayed_meaning: unchanged
+
+preserved_domains:
+  sand:
+    status: physically_successful
+    latest_result: {mild_strict: 107, mild_total: 108, moderate_strict: 33, moderate_total: 36, all_six_source_speed_gates: PASS}
+    physical_recalibration: none
+  delayed_support:
+    status: physically_successful
+    latest_result: {train_correct: 11, train_total: 12, validation_correct: 6, validation_total: 6, contamination_gates: PASS}
+    envelope: {side: LEFT_ONLY, topology: transition_left, expected_phase: RIGHT_SINGLE_SUPPORT, start_m: [0.324, 0.332], width_m: [0.825, 0.833], exit_m: [1.153, 1.165]}
+    physical_recalibration: none
+
+future_design:
+  path: configs/experiment/20260903_sand_factor_conditioned_development_controls_recalibrated.yaml
+  sha256: b18be44668f1d0e2c07b6a127c7fe626d42636a002ad023e48721af7c2443fb5
+  dataset_id: sand_factor_conditioned_development_controls_recalibrated_20260903
+  counts: {FACTOR_TRAIN: 132, FACTOR_VALIDATION: 66, mild_sand: 108, moderate_sand: 36, ordinary_support: 36, delayed_support: 18, total: 198}
+  historical_exact_overlap: 0
+  historical_forbidden_near_overlap: 0
+  cross_split_exact_overlap: 0
+  cross_split_forbidden_near_overlap: 0
+  run_id_reuse: 0
+  generated_now: false
+
+decision:
+  verdict: ORDINARY_SUPPORT_PHYSICAL_RECALIBRATION_READY
+  recommended_next_milestone: SAND_FACTOR_CONDITIONED_DEVELOPMENT_CONTROLS_RECALIBRATED_GENERATION
+  start_next_milestone_now: false
+
+historical_scientific_status:
+  MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED: unchanged
+  SIMULATION_GENERALIZATION_EVIDENCE_NOT_SUPPORTED: unchanged
+  SUPPORT_SIMULATION_GENERALIZATION_SUPPORTED: unchanged
+  FACTOR_CONDITIONED_DATA_DOMAIN_HYPOTHESIS: NOT_YET_MODEL_TESTED
+
+counters:
+  saved_ordinary_support_records_reviewed: 36
+  new_pilot_simulations: 0
+  pilot_batches: 0
+  failed_corpus_backfill: 0
+  failed_corpus_rerun: 0
+  V1_inference: 0
+  V2_inference: 0
+  Terrain_inference: 0
+  Hazard_probability: 0
+  training: 0
+  HNM: 0
+  normalizer_fits: 0
+  threshold_search: 0
+  persistence_search: 0
+  architecture_search: 0
+  sensor_fusion: 0
+  historical_HOLDOUT_access: 0
+
+review_freeze:
+  ordinary_support_ledger_sha256: dc5b9c2149ff5ad04686d09c6d99bce9c6067cf124eb0063e6cbd68c6aeaa696
+  five_miss_ledger_sha256: f5dce7aeb55818a21e0b439c659652b4f765392df7532bd6ee896a71b67c95a3
+  readiness_contract_sha256: 3518bb4b8cdeec8b47b59f9ed2bd8ccaadc02243c27fe17f54f04648a2c88deb

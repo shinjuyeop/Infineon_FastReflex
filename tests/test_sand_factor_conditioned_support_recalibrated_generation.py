@@ -28,8 +28,7 @@ EXECUTION = (
     / "configs/experiment/20260903_sand_factor_conditioned_development_support_recalibrated_generation.yaml"
 )
 DATASET = (
-    ROOT
-    / "data/raw/sand_factor_conditioned_development_support_recalibrated_20260903"
+    ROOT / "data/raw/sand_factor_conditioned_development_support_recalibrated_20260903"
 )
 DESIGN_SHA256 = "b1f09effbb90313ef8c883db8e0ef376c5f4eb8e83ec66d8ed5fe52ca95ef775"
 EXECUTION_SHA256 = "c4bde7adc1d4a917fe78da9b2f470c1f6155af63a06f314972609c64ef5aade4"
@@ -65,9 +64,7 @@ def test_frozen_design_has_exact_fresh_matrix_and_support_envelope() -> None:
     assert len(delayed) == 18
     assert {row["designed_side_topology"] for row in delayed} == {"LEFT_ONLY"}
     assert {row["sink_pattern"] for row in delayed} == {"transition_left"}
-    assert {row["support_pattern"] for row in delayed} == {
-        "staged_lateral_deformable"
-    }
+    assert {row["support_pattern"] for row in delayed} == {"staged_lateral_deformable"}
     assert min(row["patch_start_x_m"] for row in delayed) == 0.324
     assert max(row["patch_start_x_m"] for row in delayed) == 0.332
     assert min(row["patch_width_m"] for row in delayed) == 0.825
@@ -93,8 +90,7 @@ def test_frozen_sand_domain_and_separate_reference_overlap_are_preserved() -> No
     assert all(
         row["sink_pattern"] == "transition_left"
         for row in sand
-        if row["source_terrain"] == "concrete"
-        and row["speed_mps"] == 0.25
+        if row["source_terrain"] == "concrete" and row["speed_mps"] == 0.25
     )
 
     contamination = audit["historical_contamination"]
@@ -117,18 +113,18 @@ def test_frozen_sand_domain_and_separate_reference_overlap_are_preserved() -> No
 def test_execution_freeze_and_protected_evidence_are_exact() -> None:
     execution = _load_yaml(EXECUTION)
     generation = execution["generation"]
+    manifest = json.loads((DATASET / "manifest.json").read_text(encoding="utf-8"))
     assert sha256_file(EXECUTION) == EXECUTION_SHA256
     assert generation["source_commit"] == "5346eca3aeae1b09b6e23ffffe92c61a15c363c9"
     assert generation["planned_total_runs"] == 198
     assert generation["planned_factor_train_runs"] == 132
     assert generation["planned_factor_validation_runs"] == 66
-    for category in ("implementation_artifacts", "protected_artifacts"):
-        for artifact in generation[category]:
-            assert sha256_file(ROOT / artifact["path"]) == artifact["sha256"]
+    for artifact in generation["implementation_artifacts"]:
+        assert manifest["implementation_sha256"][artifact["path"]] == artifact["sha256"]
+    for artifact in generation["protected_artifacts"]:
+        assert sha256_file(ROOT / artifact["path"]) == artifact["sha256"]
     guard = json.loads(
-        (ROOT / generation["consumed_holdout_guard_path"]).read_text(
-            encoding="utf-8"
-        )
+        (ROOT / generation["consumed_holdout_guard_path"]).read_text(encoding="utf-8")
     )
     assert guard["guard_after"] == guard["scientific_open_count"] == 1
 
@@ -163,13 +159,9 @@ def test_generated_dataset_gate_ledger_and_freeze_are_deterministic() -> None:
     verification = verify_factor_conditioned_dataset(DATASET)
     assert verification["passed"] is True
     assert verification["run_count"] == 198
+    assert verification["dataset_freeze_file_sha256"] == DATASET_FREEZE_FILE_SHA256
     assert (
-        verification["dataset_freeze_file_sha256"]
-        == DATASET_FREEZE_FILE_SHA256
-    )
-    assert (
-        verification["dataset_freeze_semantic_sha256"]
-        == DATASET_FREEZE_SEMANTIC_SHA256
+        verification["dataset_freeze_semantic_sha256"] == DATASET_FREEZE_SEMANTIC_SHA256
     )
     assert all(verification["checks"].values())
 

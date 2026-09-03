@@ -1,0 +1,257 @@
+schema_version: 1
+
+experiment:
+  id: SAND_BENIGN_MILD_RECALIBRATED_CONFIRMATION_ANALYSIS
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  milestone: SAND_BENIGN_GENERALIZATION_STUDY_MILD_RECALIBRATED_CONFIRMATION_ANALYSIS
+  starting_commit: cda763d1db1400ebf1fe601f19f5e04fe56243bd
+  analysis_only: true
+  protocol_frozen_before_confirmation_open: true
+  hypothesis_selection: false
+  hypothesis_replication_only: true
+
+implementation:
+  path: src/fastreflex/evaluation/sand_confirmation.py
+  sha256: 76aba665b4fffb5edd6ae51db6be36e818edded903874a7ccf7b704ae5ffce56
+  responsibility: one_shot_Confirmation_authorization_replication_and_freeze
+
+metric_implementation:
+  path: src/fastreflex/evaluation/sand.py
+  sha256: 9ded34b78647e64cd9825070fb80a1397e09d0c73f32df7b901500977ac4014e
+  exact_Discovery_metric_body_reused: true
+  metric_addition_or_removal: false
+
+dataset:
+  id: sand_benign_generalization_mild_recalibrated_study_20260903
+  path: data/raw/sand_benign_generalization_mild_recalibrated_study_20260903
+  total: 176
+  discovery_split: MILD_RECALIBRATED_DISCOVERY
+  confirmation_split: MILD_RECALIBRATED_CONFIRMATION
+  confirmation_population:
+    total: 88
+    strict_mild: 48
+    strict_moderate: 17
+    support: 16
+    actual_slip: 3
+    invalid: 4
+  primary_analysis_denominator:
+    strict_sand: 65
+    support: 16
+    total: 81
+  actual_slip_role: provenance_and_optional_descriptive_only_not_benign
+  invalid_role: provenance_only_not_primary_analysis
+  hashes:
+    manifest: f19ec527cb9faac0d8f3a385a1a63e8a951ced7f275c7cfc3dd459cc42f375d1
+    discovery_split: 1c211c38ee2bd7f9e9a44e0f81ec6a0dd110a8e14809c12777c043d33928f93f
+    confirmation_split: 3bfbb050db3ebadcc363d1c6e51013dc349dbac4e0594c183a55245ea38c2e80
+    confirmation_seal: 2795fa2cc02a049dbe0de2331820506845d333980e17fd0c6e33e5ce471082c2
+    semantic_dataset_freeze: 706d939c03bf31df0fb39d1043e99dbbb05922664e207425c8c96ab7c93ee675
+
+discovery:
+  analysis_config:
+    path: configs/experiment/20260903_sand_benign_generalization_study_mild_recalibrated_discovery_analysis.yaml
+    sha256: e7b4f2f53ac102ca822ad0d00c0b23650d7ed792ded75fcf5d7f371805f2556f
+  report:
+    path: reports/20260903_sand_benign_generalization_study_mild_recalibrated_discovery_analysis.md
+    sha256: 5a3de344a727efc1d8d4aed87332323e15968b24ddde612bba3c3621f9a62a4f
+  artifact_path: artifacts/runs/20260903_sand_benign_generalization_study_mild_recalibrated_discovery_analysis
+  artifact_hashes:
+    pelvis_analysis.json: ee82865cd8171cc9d337f94f09d5d0242ce1aef92fe9a4064bb384a52e9be6ad
+    fsr_contact_analysis.json: 1fa3f98ef2319b052795f0e6ab30188d7b3ea9fa7cb7256ba67727080d034374
+    privileged_oracle_analysis.json: 02a2bcab898533bc93cf3c00a3d80158682554acaa443e903ec7251434f2dd53
+    v2_discovery_replay.json: c6595d174c73f05d569e6d8d64650493481ecb1346b0713ab580b97446e2164e
+    factor_localization.json: 86fbe59e89ed2e4ae7053bebbfd9bd262d88864c8e6ebb2b88f18a551551b0b2
+    discovery_hypothesis_decision.json: f650d829e471dd9bb047e7235ef65e822d041acb1040caf429b9006bc22bbb48
+    discovery_interpretation.json: 8461e1ad6b31bb7715b7d0e91c81ea3c6d3547a7c3c4dc0c1d96437e339a66a5
+  validity: SAND_BENIGN_GENERALIZATION_STUDY_DISCOVERY_ANALYSIS_VALID
+  frozen_hypothesis: DOMAIN_DIVERSITY_GAP_SUPPORTED
+  interpretation_sha256: 7c045cd98bb221a0f41911a9662b430548393be90ef192e3194bd619cc3f2ae5
+  frozen_localization_direction:
+    topology: transition_left_adverse_greater_than_transition_right
+    phase: right_single_precontact_adverse_greater_than_left_single_precontact
+    topology_and_phase_physically_coupled: true
+  model_replay_now: prohibited
+
+model:
+  candidate_id: model_v2_anchor_refined_gru20_20260902
+  record:
+    path: configs/model/final_generalization_candidate.yaml
+    sha256: 52644d3efb0e756002bd43a7f94aea0a16a65eb2ff014c72548f2b3b138b7bc2
+  candidate_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json
+    sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f
+  normalizer:
+    path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json
+    sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+  checkpoints:
+    - seed: 20260828
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260828.pt
+      sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9
+    - seed: 20260829
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260829.pt
+      sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39
+    - seed: 20260830
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260830.pt
+      sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd
+  input: PELVIS_IMU6
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  history_ms: 20
+  hidden_size: 32
+  layers: 1
+  bidirectional: false
+  ensemble_seeds: [20260828, 20260829, 20260830]
+  threshold: 0.99
+  persistence_ms: 5
+  replay_stride_ms: 1
+  confirmation_split_replay_count: 1
+
+analysis:
+  same_anchors_as_Discovery: true
+  same_frozen_final_v2_normalizer: true
+  same_feature_schema: true
+  same_run_balancing: one_anchor_and_one_vector_per_run
+  distance_scalers:
+    source: deterministically_reconstructed_Discovery_pooled_values
+    verification: exact_match_to_all_frozen_Discovery_mean_and_std_hashes
+    Confirmation_refit: false
+    recovery_is_new_Discovery_model_replay: false
+  representations:
+    - pelvis_current_80d
+    - pelvis_flattened_window_20x80
+    - realizable_FSR_contact_39d
+    - pelvis_window_plus_FSR_contact
+    - privileged_oracle_16d_separate
+  metrics:
+    - within_group_RMS_normalized_centroid_separation
+    - leave_one_run_out_balanced_1NN_and_5NN_group_agreement
+    - nearest_opposite_to_same_distance_ratio
+    - five_neighbor_opposite_class_mixing
+    - bidirectional_95pct_centroid_radius_inclusion
+    - within_and_between_distance_quantiles
+    - deterministic_full_SVD_PCA
+  descriptive_factors:
+    - source
+    - speed
+    - transition_topology
+    - actual_entry_phase
+    - actual_severity
+    - entry_timing_stratum
+    - exposure_stratum
+  no_new_metrics_or_factors: true
+  no_classifier_probe_or_fusion: true
+
+replication:
+  adverse_margin_definition: reflex_or_max_probability_at_least_0.95
+  systematic_adverse:
+    overall_fraction_min: 0.20
+    both_sources_with_at_least_two_adverse_each: true
+    at_least_two_speeds_with_at_least_two_adverse_each: true
+  metadata_localization:
+    factors: [speed, start_stratum, width_stratum, transition_topology, actual_entry_phase, actual_severity]
+    adverse_fraction_range_min: 0.25
+    cramers_v_min: 0.20
+    minimum_valid_runs_per_level: 8
+  exact_direction_requirements:
+    transition_left_adverse_fraction_greater_than_transition_right: true
+    topology_association_passes_frozen_thresholds: true
+    right_single_precontact_adverse_fraction_greater_than_left_single_precontact: true
+    phase_association_passes_frozen_thresholds: true
+    coupled_interpretation: true
+  reasonable_pelvis_separation:
+    decision_representation: flattened_window_20x80
+    all_required:
+      centroid_separation_min: 0.75
+      balanced_5nn_agreement_min: 0.80
+      local_mixing_max: 0.30
+      distance_ratio_min: 1.25
+  strong_pelvis_mixing:
+    at_least_three_required:
+      centroid_separation_max: 0.60
+      balanced_5nn_agreement_max: 0.70
+      local_mixing_min: 0.40
+      distance_ratio_max: 1.10
+      radius_inclusion_min: 0.75
+    required_outcome_for_H1: false
+  realizable_fsr_material_increment:
+    compare: pelvis_plus_FSR_minus_pelvis_window
+    at_least_three_required:
+      centroid_separation_delta_min: 0.25
+      balanced_5nn_agreement_delta_min: 0.10
+      local_mixing_delta_max: -0.15
+      distance_ratio_delta_min: 0.20
+    no_directional_metric_degradation_more_than: 0.05
+    required_outcome_for_H1: false
+  Support_control:
+    recall_required: 1.0
+    pre_I1_responses_required: 0
+  H1_confirmed_all_required:
+    - integrity_and_population
+    - systematic_adverse_pattern
+    - exact_topology_and_phase_direction_replication
+    - reasonable_pelvis_separation
+    - strong_pelvis_mixing_false
+    - realizable_FSR_material_increment_false
+    - Support_16_of_16_and_no_pre_I1
+    - no_hypothesis_substitution
+  valid_nonmatch_verdict: DOMAIN_DIVERSITY_GAP_NOT_CONFIRMED
+  integrity_or_sample_insufficiency_verdict: SAND_GENERALIZATION_CONFIRMATION_INCONCLUSIVE
+  match_verdict: DOMAIN_DIVERSITY_GAP_CONFIRMED
+  H2_or_H3_substitution: prohibited
+
+boundaries:
+  old_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  old_holdout_guard_sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154
+  old_holdout_guard_count: 1
+  old_holdout_payload_reads: 0
+  old_holdout_inference: 0
+  old_holdout_feature_reconstruction: 0
+  old_holdout_visualization: 0
+  training: prohibited
+  HNM: prohibited
+  normalizer_fit: prohibited
+  threshold_or_persistence_search: prohibited
+  model_seed_or_checkpoint_selection: prohibited
+  architecture_or_sensor_search: prohibited
+  Discovery_model_replay: prohibited
+  Confirmation_reopen_or_rerun: prohibited
+
+artifacts:
+  path: artifacts/runs/20260903_sand_benign_generalization_study_mild_recalibrated_confirmation_analysis
+  access_guard: confirmation_access_guard.json
+  deterministic_files:
+    - pre_open_freeze.json
+    - discovery_scalers.json
+    - confirmation_access_guard.json
+    - pelvis_confirmation_analysis.json
+    - fsr_contact_confirmation_analysis.json
+    - privileged_oracle_confirmation_analysis.json
+    - v2_confirmation_replay.json
+    - confirmation_factor_localization.json
+    - discovery_confirmation_replication.json
+    - confirmation_decision.json
+    - confirmation_interpretation.json
+
+limitations:
+  - deterministic_MuJoCo_evidence_not_real_soil_or_robot_evidence
+  - one_model_independent_anchor_per_run_does_not_exhaust_the_trace
+  - pooled_distance_metrics_do_not_prove_Bayes_separability
+  - topology_and_precontact_phase_are_physically_coupled
+  - zero_distance_same_class_anchors_can_make_neighbor_ratio_epsilon_bounded
+  - study_Confirmation_is_development_replication_not_fresh_final_evidence
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  HNM_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  new_simulation_runs: 0
+  V1_inference: 0
+  Terrain_inference: 0
+  V2_Discovery_replay_now: 0
+  V2_Confirmation_replay: one_split_88_runs
+  old_HOLDOUT_payload_reads: 0
+  training: 0

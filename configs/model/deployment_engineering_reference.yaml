@@ -78,6 +78,24 @@ golden:
   scientific_evidence: false
   purpose: runtime_chain_parity_only
 
+float_numerical_contract:
+  verdict: FLOAT_EXPORT_NUMERICAL_CONTRACT_RESOLVED
+  canonical_batch_size: 1
+  evidence_batch_sizes: [1, 2, 3, 4, 5, 7, 8, 16, 32, 64, 121]
+  continuous_parity:
+    preprocessing_and_model_windows:
+      absolute: 1.0e-6
+      relative: 1.0e-6
+    member_logits:
+      absolute: 4.0e-6
+      relative: 0.0
+    member_hazard_probability:
+      absolute: 1.0e-6
+      relative: 1.0e-6
+    ensemble_hazard_probability:
+      absolute: 1.0e-6
+      relative: 1.0e-6
+
 scientific_status:
   internal_validation:
     hazard: {correct: 59, total: 64}

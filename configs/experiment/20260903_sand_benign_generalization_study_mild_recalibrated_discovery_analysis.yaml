@@ -1,0 +1,245 @@
+schema_version: 1
+
+experiment:
+  id: SAND_BENIGN_MILD_RECALIBRATED_DISCOVERY_ANALYSIS
+  date: 2026-09-03
+  timezone: Asia/Seoul
+  milestone: SAND_BENIGN_GENERALIZATION_STUDY_MILD_RECALIBRATED_DISCOVERY_ANALYSIS
+  starting_commit: 52c0ab71c404fe44daf435ecb99bf502d56ccbc0
+  analysis_only: true
+  protocol_frozen_before_v2_discovery_replay: true
+
+implementation:
+  path: src/fastreflex/evaluation/sand.py
+  sha256: 9ded34b78647e64cd9825070fb80a1397e09d0c73f32df7b901500977ac4014e
+  canonical_responsibility: sand_discovery_model_independent_analysis_and_frozen_v2_replay
+
+dataset:
+  id: sand_benign_generalization_mild_recalibrated_study_20260903
+  path: data/raw/sand_benign_generalization_mild_recalibrated_study_20260903
+  discovery_split: MILD_RECALIBRATED_DISCOVERY
+  confirmation_split: MILD_RECALIBRATED_CONFIRMATION
+  counts: {total: 176, discovery: 88, confirmation: 88}
+  expected_discovery_population:
+    strict_mild_sand: 48
+    strict_moderate_sand: 21
+    ordinary_support: 12
+    delayed_support: 4
+    invalid: 3
+  hashes:
+    pre_simulation_freeze: d617d1ff423e3f0d416995a3228cbfe0d077ecbad0834356c10bb1d1eb1c5ee1
+    manifest: f19ec527cb9faac0d8f3a385a1a63e8a951ced7f275c7cfc3dd459cc42f375d1
+    discovery_split: 1c211c38ee2bd7f9e9a44e0f81ec6a0dd110a8e14809c12777c043d33928f93f
+    confirmation_split: 3bfbb050db3ebadcc363d1c6e51013dc349dbac4e0594c183a55245ea38c2e80
+    scenario_signatures: be6d6f0d6bb312617784bad31b55cedfd686bb32aaebd37235efe7a24345fad1
+    physical_signatures: dc47c671d5bd7452902fbc7ba1a9e5491f2b1c231af994a881583c304783f51f
+    npz_aggregate: 5f63a5e4def8d09159407109f2b51635c5819931551e604c138ba1f02693f3c4
+    physical_outcomes: f71b80920b047ad27271ef08c0136a49686992c921ccbebd498f68263b2dfbd6
+    gate_results: 5034afca0071473888fe5895093cb065868f65df909324b969f1ccd75c1f7a8c
+    physical_audit: ec88a6a9b99dc91cd36d4e1bdba88f21a60ca1f1967630e4975aa7eb3e8ffb90
+    confirmation_seal: 2795fa2cc02a049dbe0de2331820506845d333980e17fd0c6e33e5ce471082c2
+    semantic_dataset_freeze: 706d939c03bf31df0fb39d1043e99dbbb05922664e207425c8c96ab7c93ee675
+
+model:
+  candidate_id: model_v2_anchor_refined_gru20_20260902
+  record:
+    path: configs/model/final_generalization_candidate.yaml
+    sha256: 52644d3efb0e756002bd43a7f94aea0a16a65eb2ff014c72548f2b3b138b7bc2
+  candidate_freeze:
+    path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json
+    sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f
+  normalizer:
+    path: artifacts/runs/20260901_model_v2_data_only_training/normalization/gru_history20.json
+    sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+  checkpoints:
+    - seed: 20260828
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260828.pt
+      sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9
+    - seed: 20260829
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260829.pt
+      sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39
+    - seed: 20260830
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/checkpoints/model_v2_anchor_refined_gru_history20_round3_seed20260830.pt
+      sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd
+  input: PELVIS_IMU6
+  feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+  feature_dimension: 80
+  history_ms: 20
+  hidden_size: 32
+  layers: 1
+  bidirectional: false
+  ensemble_seeds: [20260828, 20260829, 20260830]
+  threshold: 0.99
+  persistence_ms: 5
+  replay_stride_ms: 1
+  discovery_split_replay_count: 1
+  confirmation_replay_count: 0
+
+analysis:
+  population: strict_confirmed_benign_sand_versus_actual_valid_support_controls
+  balancing: one_anchor_and_one_vector_per_run
+  anchors:
+    benign:
+      selection: earliest_sample_maximizing_trailing_20ms_RMS_pelvis_acceleration_deviation
+      candidate_interval: first_target_contact_through_500ms_after_last_pre_censor_target_contact
+      precontact_baseline: mean_acceleration_over_up_to_200ms_immediately_before_first_target_contact
+      model_probability_used: false
+    support: frozen_manifest_I1_first_sample
+    support_established_secondary: frozen_manifest_established_Support_first_sample
+  pelvis:
+    representations:
+      current_80d: frozen_final_v2_normalized_causal_80D_at_anchor
+      flattened_window: frozen_final_v2_normalized_trailing_20x80_at_anchor
+    decision_representation: flattened_window
+  distance_normalization:
+    method: Discovery_pooled_per_dimension_mean_and_population_standard_deviation
+    epsilon: 1.0e-8
+    refit_on_confirmation: forbidden
+  metrics:
+    centroid_separation: Euclidean_centroid_distance_divided_by_sqrt_of_balanced_mean_class_centroid_squared_distance
+    nearest_neighbor: leave_one_run_out_Euclidean_balanced_class_accuracy_stable_index_tie_break
+    ratio: mean_of_class_medians_of_nearest_opposite_divided_by_nearest_same_distance
+    mixing: balanced_mean_opposite_class_fraction_among_five_nearest_other_runs
+    radius: mean_of_Sand_in_Support_and_Support_in_Sand_95pct_own_centroid_radius_inclusion
+    pairwise_quantiles: p05_p25_median_p75_p95_for_within_Sand_within_Support_and_between
+    pca: full_SVD_with_largest_absolute_loading_positive_and_95pct_projection_interval_Jaccard_overlap
+  realizable_fsr_contact:
+    window_ms: 20
+    vector:
+      - FSR8_per_channel_mean_max_population_std_and_endpoint_delta
+      - bilateral_load_imbalance_mean_population_std_and_current
+      - per_foot_FSR_sum_greater_than_zero_contact_fraction_and_current
+    dimension: 39
+    exact_loaded_contact_included: false
+    exact_support_spread_included: false
+    representations: [FSR_contact_only, pelvis_window_plus_FSR_contact]
+    no_classifier_or_probe: true
+  privileged_oracle:
+    vector:
+      - per_foot_support_spread_mean_max_current
+      - per_foot_transition_displacement_mean_max_current
+      - exact_loaded_contact_fraction_and_current
+    dimension: 16
+    reported_separately: true
+    runtime_or_sensor_claim: prohibited
+  descriptive_factors:
+    - source
+    - speed
+    - transition_topology
+    - actual_entry_phase
+    - actual_severity
+    - entry_timing_stratum
+    - exposure_stratum
+  frozen_factor_definitions:
+    start_stratum_m: {EARLY: "x < 0.305", MID: "0.305 <= x < 0.355", LATE: "x >= 0.355"}
+    width_stratum_m: {NARROW: "w < 0.695", MEDIUM: "0.695 <= w < 0.760", WIDE: "w >= 0.760"}
+    entry_timing_ms: {EARLY: "t < 2500", MID: "2500 <= t < 4500", LATE: "t >= 4500"}
+    exposure_source: mild_cumulative_loaded_sand_exposure_else_target_contact_duration_before_censor
+    exposure_ms: {LOW: "t < 2800", MID: "2800 <= t < 3600", HIGH: "t >= 3600"}
+
+decision:
+  adverse_margin: reflex_or_max_probability_at_least_0.95
+  systematic_adverse:
+    overall_fraction_min: 0.20
+    both_sources_with_at_least_two_adverse_each: true
+    at_least_two_speeds_with_at_least_two_adverse_each: true
+  metadata_localization:
+    factors: [speed, start_stratum, width_stratum, transition_topology, actual_entry_phase, actual_severity]
+    adverse_fraction_range_min: 0.25
+    cramers_v_min: 0.20
+    minimum_valid_runs_per_level: 8
+    both_thresholds_required_for_one_factor: true
+  reasonable_pelvis_separation:
+    all_required:
+      centroid_separation_min: 0.75
+      balanced_5nn_agreement_min: 0.80
+      local_mixing_max: 0.30
+      distance_ratio_min: 1.25
+  strong_pelvis_mixing:
+    at_least_three_required:
+      centroid_separation_max: 0.60
+      balanced_5nn_agreement_max: 0.70
+      local_mixing_min: 0.40
+      distance_ratio_max: 1.10
+      radius_inclusion_min: 0.75
+  realizable_fsr_material_increment:
+    at_least_three_required:
+      centroid_separation_delta_min: 0.25
+      balanced_5nn_agreement_delta_min: 0.10
+      local_mixing_delta_max: -0.15
+      distance_ratio_delta_min: 0.20
+    no_directional_metric_degradation_more_than: 0.05
+    comparison: pelvis_window_plus_FSR_contact_minus_pelvis_window
+  hypothesis_rules:
+    DOMAIN_DIVERSITY_GAP_SUPPORTED: [prerequisites, systematic_adverse, metadata_localization, reasonable_pelvis, no_material_FSR_increment]
+    PELVIS_OBSERVABILITY_TENSION_SUPPORTED: [prerequisites, systematic_adverse, no_metadata_localization, strong_pelvis_mixing, material_FSR_increment]
+    MODEL_REPRESENTATION_OR_CAPACITY_TENSION_SUPPORTED: [prerequisites, systematic_adverse, no_metadata_localization, reasonable_pelvis, no_material_FSR_increment]
+    SAND_GENERALIZATION_STUDY_INCONCLUSIVE: prerequisites_fail_or_no_unique_rule_matches
+  unique_match_required: true
+  no_post_replay_rule_change: true
+
+margin_bins:
+  mutually_exclusive_precedence:
+    - REFLEX
+    - GE_0.99_STREAK_LT_5MS
+    - "[0.95,0.99)"
+    - "[0.90,0.95)"
+    - LT_0.90
+
+boundaries:
+  confirmation_status: SEALED_FOR_MILD_RECALIBRATED_CONFIRMATION
+  confirmation_payload_deserialization: prohibited
+  confirmation_model_inference: prohibited
+  confirmation_80d_analysis: prohibited
+  confirmation_fsr_observability: prohibited
+  confirmation_visualization: prohibited
+  confirmation_hypothesis_testing: prohibited
+  old_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  old_holdout_guard_sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154
+  old_holdout_guard_count: 1
+  old_holdout_payload_reads: 0
+  old_holdout_inference: 0
+  old_holdout_feature_reconstruction: 0
+  old_holdout_visualization: 0
+  training: prohibited
+  HNM: prohibited
+  normalizer_fit: prohibited
+  threshold_or_persistence_search: prohibited
+  seed_or_checkpoint_selection: prohibited
+  architecture_or_sensor_search: prohibited
+
+artifacts:
+  path: artifacts/runs/20260903_sand_benign_generalization_study_mild_recalibrated_discovery_analysis
+  deterministic_files:
+    - pre_replay_freeze.json
+    - model_independent_analysis_freeze.json
+    - pelvis_analysis.json
+    - fsr_contact_analysis.json
+    - privileged_oracle_analysis.json
+    - v2_discovery_replay.json
+    - factor_localization.json
+    - discovery_hypothesis_decision.json
+    - discovery_interpretation.json
+
+limitations:
+  - deterministic_MuJoCo_evidence_not_real_soil_or_robot_evidence
+  - one_model_independent_anchor_per_run_does_not_exhaust_the_trace
+  - pooled_distance_metrics_do_not_prove_Bayes_separability
+  - FSR_and_oracle_results_are_descriptive_and_no_fusion_model_is_trained
+  - Discovery_selects_a_hypothesis_but_does_not_confirm_it
+
+counters:
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  HNM_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  new_simulation_runs: 0
+  V1_inference: 0
+  Terrain_inference: 0
+  V2_Discovery_replay: one_split_88_runs
+  V2_Confirmation_inference: 0
+  old_HOLDOUT_payload_reads: 0
+  Confirmation_feature_analysis: 0

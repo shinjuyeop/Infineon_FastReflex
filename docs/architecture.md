@@ -23,7 +23,7 @@ simulation/g1.py
   -> features.py
   -> training/hazard.py
   -> models/baselines.py
-  -> evaluation/{hazard,generalization,readiness}.py
+  -> evaluation/{hazard,generalization,readiness,sand}.py
 
 simulation/{g1,sensors,terrain}.py
   -> dataset/terrain.py
@@ -155,5 +155,7 @@ MoS/Stability, direct NORMAL/SLIP/SINK classification, event-centric detectors, 
 `dataset/sand_calibration.py` owns model-blind pilot expansion, pre-simulation freeze, censor-aware physical summaries, failed-study Discovery tabulation, and redesigned-matrix integrity checks. It does not perform Hazard/Terrain inference or feature extraction. The older `dataset/sand_study.py` remains unchanged as the exact implementation provenance of the failed frozen study.
 
 `dataset/sand_mild_calibration.py` owns the later mild-only physical ledger, deterministic expansion/validation, one-pass generation, model-blind physical audit, dataset freeze, and Confirmation sealing for the recalibrated matrix. Its geometry check treats start, width, exit, and topology jointly; it rejects the predeclared Concrete/.25 right topology and fails closed on historical or cross-split contamination. It loads no model, and its Confirmation loader rejects sealed records before NPZ access.
+
+`evaluation/sand.py` owns the corresponding Discovery-only run-balanced Pelvis/FSR/oracle analysis, metadata localization, and exact frozen-V2 replay. It uses one model-independent anchor per run, verifies every frozen dataset/model hash before analysis, rejects Confirmation before payload access, and refuses a second Discovery replay after the result artifact exists. FSR and privileged oracle vectors remain diagnostics and never enter the Hazard runtime model.
 
 The corrected calibration path distinguishes touchdown-sample contact state from the primary 20 ms pre-contact gait phase. For Support controls, a fully established and sufficiently observed event is not retroactively invalidated by a later fall. These corrections affect only new calibration/redesign artifacts; historical manifests and verdicts are not rewritten.

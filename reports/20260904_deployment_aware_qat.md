@@ -320,13 +320,17 @@ state is recorded after documentation completion in the task handoff response.
 
 Before training, focused QAT tests passed for the one-family/protected-data
 contract, Float bypass equation/state-layout parity, finite fake-quant shapes,
-and recurrent gradient flow. The final repository-wide commands are run after
-this report is frozen:
+and recurrent gradient flow. Final verification produced:
 
 ```bash
-pytest
-python -m compileall
-ruff check
-git diff --check
+pytest                                                        # unavailable on PATH
+PYTHONPATH=src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
+# 218 passed, 1 skipped in 94.53s
+python -m compileall -q .                                    # PASS
+ruff check                                                    # PASS
+git diff --check                                              # PASS
 ```
 
+The first command's shell exit was `127` because no standalone `pytest`
+executable is installed. The equivalent repository-supported `python -m
+pytest` invocation passed the complete suite.

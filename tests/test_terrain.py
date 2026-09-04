@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -31,9 +30,8 @@ from fastreflex.evaluation.terrain import (
     verify_supported_terrain_candidate,
 )
 from fastreflex.simulation.g1 import RuntimeTrace, SimulationResult
+from tests.support import REPOSITORY_ROOT as ROOT
 
-
-ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml"
 
 
@@ -112,12 +110,12 @@ class TerrainTest(unittest.TestCase):
             / "selected_models"
         )
         models, mean, std = load_frozen_terrain_candidate(model_path)
-        window = np.random.default_rng(20260831).uniform(
-            0.0, 120.0, size=(50, 4)
-        ).astype(np.float32)
-        prediction, probability = predict_terrain_window(
-            window, models, mean, std
+        window = (
+            np.random.default_rng(20260831)
+            .uniform(0.0, 120.0, size=(50, 4))
+            .astype(np.float32)
         )
+        prediction, probability = predict_terrain_window(window, models, mean, std)
         normalized = ((window - mean) / std).astype(np.float32)[None]
         tensor = torch.from_numpy(normalized)
         with torch.no_grad():
@@ -185,7 +183,9 @@ class TerrainTest(unittest.TestCase):
         )
         changed = contact.copy()
         changed[70:, :, :] = True
-        self.assertTrue(np.array_equal(onset[:70], terrain_identity_touchdown(changed)[:70]))
+        self.assertTrue(
+            np.array_equal(onset[:70], terrain_identity_touchdown(changed)[:70])
+        )
 
     def test_current_dataset_matrix_remains_run_disjoint(self) -> None:
         config = load_terrain_collection_config(CONFIG)
@@ -209,10 +209,9 @@ class TerrainTest(unittest.TestCase):
     def test_supported_terrain_hashes_are_unchanged_and_advisory_only(self) -> None:
         audit = verify_supported_terrain_candidate(ROOT)
         self.assertTrue(audit["passed"])
-        self.assertEqual((audit["input"], audit["model_family"], audit["observation_ms"]), ("FSR4", "mlp", 50))
+        self.assertEqual(
+            (audit["input"], audit["model_family"], audit["observation_ms"]),
+            ("FSR4", "mlp", 50),
+        )
         self.assertTrue(audit["advisory_only"])
         self.assertFalse(audit["hazard_gate"])
-
-
-if __name__ == "__main__":
-    unittest.main()

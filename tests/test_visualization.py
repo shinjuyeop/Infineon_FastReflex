@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import unittest
-from contextlib import nullcontext
 from pathlib import Path
 from unittest import mock
 
@@ -15,7 +14,12 @@ from fastreflex.visualization import (
     ParityReport,
     PlaybackEvents,
     PlaybackState,
+    RECORDING_HEIGHT,
+    RECORDING_WIDTH,
     SnapshotPlaybackControl,
+    build_qualitative_recording_plan,
+    build_recording_plan,
+    compose_recording_frame,
     format_viewer_overlay,
     play_snapshot_trace,
     playback_events,
@@ -28,8 +32,13 @@ from fastreflex.visualization import (
     visualize_prepared_run,
 )
 from scripts.fastreflex import build_parser
+from tests.support import (
+    REPOSITORY_ROOT as ROOT,
+    ViewerStub,
+    assert_contains,
+    assert_false_fields,
+)
 
-ROOT = Path(__file__).resolve().parents[1]
 DATASET = ROOT / "data/raw/unified_hazard_reflex_20260829"
 POLICY = ROOT / "artifacts/external/unitree_g1/g1_velocity_policy.onnx"
 REPRESENTATIVES = {
@@ -40,61 +49,102 @@ REPRESENTATIVES = {
 }
 
 
-class _FakeViewer:
-    def __init__(self, running_checks: int = 3) -> None:
-        self.sync_count = 0
-        self.texts: list[object] = []
-        self.running_checks = running_checks
-        self.is_running_count = 0
+def _press(
+    control: SnapshotPlaybackControl,
+    keycode: int,
+    *,
+    sample: int | None = None,
+    state: PlaybackState | None = None,
+) -> None:
+    control.key_callback(keycode)
+    view = control.view()
+    if sample is not None:
+        assert view.current_sample == sample
+    if state is not None:
+        assert view.state is state
 
-    def __enter__(self) -> "_FakeViewer":
-        return self
 
-    def __exit__(self, *args: object) -> None:
-        return None
+class QualitativeRecordingContractTest(unittest.TestCase):
+    def test_plan_stops_at_fall_or_after_simulator_risk(self) -> None:
+        config = mock.Mock(sensor_rate_hz=1000)
+        result = mock.Mock()
+        result.runtime.timestamp_us = np.arange(2000, dtype=np.int64) * 1000
+        result.diagnostics.deformable_sink_onset = np.zeros(
+            (2000, 2), dtype=bool
+        )
+        result.diagnostics.deformable_sink_onset[100, 0] = True
+        result.diagnostics.sink_degradation_active = np.zeros(2000, dtype=bool)
+        result.diagnostics.sink_degradation_active[250:500] = True
+        result.metadata = {"first_fall_sample": 800}
 
-    def is_running(self) -> bool:
-        self.is_running_count += 1
-        return self.is_running_count <= self.running_checks
+        fall_plan = build_qualitative_recording_plan(config, result)
+        self.assertEqual(fall_plan.end_reason, "at_first_fall")
+        self.assertEqual(fall_plan.end_sample, 800)
+        self.assertEqual(fall_plan.hold_frame_count, 60)
+        self.assertEqual(fall_plan.sample_indices[-1], 800)
 
-    def sync(self, state_only: bool = False) -> None:
-        self.sync_count += 1
-
-    def lock(self) -> nullcontext[None]:
-        return nullcontext()
-
-    def set_texts(self, texts: object) -> None:
-        self.texts.append(texts)
+        result.metadata = {"first_fall_sample": None}
+        risk_plan = build_qualitative_recording_plan(config, result)
+        self.assertEqual(risk_plan.end_reason, "post_simulator_risk")
+        self.assertEqual(risk_plan.end_sample, 1000)
+        with self.assertRaisesRegex(ValueError, "positive and finite"):
+            build_qualitative_recording_plan(config, result, playback_speed=0.0)
 
 
 @unittest.skipUnless(DATASET.is_dir(), "local frozen dataset is absent")
 class VisualizationResolutionTest(unittest.TestCase):
     def test_cli_and_authorized_run_resolution(self) -> None:
         parser = build_parser()
-        args = parser.parse_args(
-            ["visualize", "--run-id", "uhr_ice_h_c20", "--speed", "2.0"]
+        cases = (
+            (
+                ("--speed", "2.0"),
+                {
+                    "command": "visualize",
+                    "speed": 2.0,
+                    "mode": "analysis",
+                    "show_debug": False,
+                },
+            ),
+            (
+                (
+                    "--pause-at",
+                    "1.5",
+                    "--pause-on-reflex",
+                    "--single-step",
+                    "--mode",
+                    "demo",
+                ),
+                {
+                    "pause_at": 1.5,
+                    "pause_on_reflex": True,
+                    "single_step": True,
+                    "mode": "demo",
+                },
+            ),
+            (
+                (
+                    "--speed",
+                    "0.5",
+                    "--mode",
+                    "demo",
+                    "--record",
+                    "simulation/outputs/ice_hazard_demo.mp4",
+                    "--stop-before-fall",
+                ),
+                {
+                    "speed": 0.5,
+                    "record": Path("simulation/outputs/ice_hazard_demo.mp4"),
+                    "stop_before_fall": True,
+                },
+            ),
         )
-        self.assertEqual(args.command, "visualize")
-        self.assertEqual(args.speed, 2.0)
-        self.assertEqual(args.mode, "analysis")
-        self.assertFalse(args.show_debug)
-        controls = parser.parse_args(
-            [
-                "visualize",
-                "--run-id",
-                "uhr_ice_h_c20",
-                "--pause-at",
-                "1.5",
-                "--pause-on-reflex",
-                "--single-step",
-                "--mode",
-                "demo",
-            ]
-        )
-        self.assertEqual(controls.pause_at, 1.5)
-        self.assertTrue(controls.pause_on_reflex)
-        self.assertTrue(controls.single_step)
-        self.assertEqual(controls.mode, "demo")
+        for arguments, expected in cases:
+            with self.subTest(arguments=arguments):
+                parsed = parser.parse_args(
+                    ["visualize", "--run-id", "uhr_ice_h_c20", *arguments]
+                )
+                for name, value in expected.items():
+                    self.assertEqual(getattr(parsed, name), value)
 
         validation = resolve_visualization_run(ROOT, "uhr_ice_h_c20")
         train = resolve_visualization_run(ROOT, "uhr_ice_h_c01")
@@ -147,42 +197,37 @@ class VisualizationResolutionTest(unittest.TestCase):
         control = SnapshotPlaybackControl(40, events=events)
         self.assertEqual(control.view().state, PlaybackState.PLAYING)
 
-        control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
-        self.assertEqual(control.view().state, PlaybackState.PAUSED)
-        control.key_callback(SnapshotPlaybackControl.RIGHT_ARROW_KEY)
-        self.assertEqual(control.view().current_sample, 1)
-        control.key_callback(SnapshotPlaybackControl.D_KEY)
-        self.assertEqual(control.view().current_sample, 11)
-        control.key_callback(SnapshotPlaybackControl.A_KEY)
-        self.assertEqual(control.view().current_sample, 1)
-        control.key_callback(SnapshotPlaybackControl.LEFT_ARROW_KEY)
-        control.key_callback(SnapshotPlaybackControl.LEFT_ARROW_KEY)
-        self.assertEqual(control.view().current_sample, 0)
+        _press(control, SnapshotPlaybackControl.SPACE_KEY, state=PlaybackState.PAUSED)
+        _press(control, SnapshotPlaybackControl.RIGHT_ARROW_KEY, sample=1)
+        _press(control, SnapshotPlaybackControl.D_KEY, sample=11)
+        _press(control, SnapshotPlaybackControl.A_KEY, sample=1)
+        _press(control, SnapshotPlaybackControl.LEFT_ARROW_KEY)
+        _press(control, SnapshotPlaybackControl.LEFT_ARROW_KEY, sample=0)
 
-        control.key_callback(SnapshotPlaybackControl.R_KEY)
-        self.assertEqual(control.view().current_sample, 20)
-        control.key_callback(SnapshotPlaybackControl.H_KEY)
-        self.assertEqual(control.view().current_sample, 30)
-        control.key_callback(SnapshotPlaybackControl.I_KEY)
-        self.assertEqual(control.view().current_sample, 30)
+        _press(control, SnapshotPlaybackControl.R_KEY, sample=20)
+        _press(control, SnapshotPlaybackControl.H_KEY, sample=30)
+        _press(control, SnapshotPlaybackControl.I_KEY, sample=30)
         self.assertIn("not present", control.view().notice)
-        control.key_callback(SnapshotPlaybackControl.HOME_KEY)
-        control.key_callback(SnapshotPlaybackControl.T_KEY)
-        self.assertEqual(control.view().current_sample, 5)
-        control.key_callback(SnapshotPlaybackControl.T_KEY)
-        self.assertEqual(control.view().current_sample, 15)
-        control.key_callback(SnapshotPlaybackControl.G_KEY)
-        self.assertEqual(control.view().current_sample, 5)
+        _press(control, SnapshotPlaybackControl.HOME_KEY)
+        _press(control, SnapshotPlaybackControl.T_KEY, sample=5)
+        _press(control, SnapshotPlaybackControl.T_KEY, sample=15)
+        _press(control, SnapshotPlaybackControl.G_KEY, sample=5)
 
-        control.key_callback(SnapshotPlaybackControl.END_KEY)
-        self.assertEqual(control.view().current_sample, 39)
-        self.assertEqual(control.view().state, PlaybackState.ENDED_PAUSED)
+        _press(
+            control,
+            SnapshotPlaybackControl.END_KEY,
+            sample=39,
+            state=PlaybackState.ENDED_PAUSED,
+        )
         self.assertTrue(control.view().ended_reached)
-        control.key_callback(SnapshotPlaybackControl.HOME_KEY)
-        control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
-        control.key_callback(SnapshotPlaybackControl.D_KEY)
-        self.assertEqual(control.view().current_sample, 10)
-        self.assertEqual(control.view().state, PlaybackState.PAUSED)
+        _press(control, SnapshotPlaybackControl.HOME_KEY)
+        _press(control, SnapshotPlaybackControl.SPACE_KEY)
+        _press(
+            control,
+            SnapshotPlaybackControl.D_KEY,
+            sample=10,
+            state=PlaybackState.PAUSED,
+        )
 
         control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
         ended = control.advance_by(100)
@@ -190,9 +235,12 @@ class VisualizationResolutionTest(unittest.TestCase):
         self.assertEqual(ended.state, PlaybackState.ENDED_PAUSED)
         self.assertTrue(ended.ended_reached)
         self.assertEqual(control.advance_by(100).state, PlaybackState.ENDED_PAUSED)
-        control.key_callback(SnapshotPlaybackControl.SPACE_KEY)
-        self.assertEqual(control.view().current_sample, 0)
-        self.assertEqual(control.view().state, PlaybackState.PLAYING)
+        _press(
+            control,
+            SnapshotPlaybackControl.SPACE_KEY,
+            sample=0,
+            state=PlaybackState.PLAYING,
+        )
 
     def test_missing_event_jump_is_a_safe_pause(self) -> None:
         control = SnapshotPlaybackControl(40)
@@ -278,10 +326,13 @@ class VisualizationIntegrationTest(unittest.TestCase):
 
     def test_overlay_separates_model_output_from_simulator_gt(self) -> None:
         initial_model, initial_diagnostics = format_viewer_overlay(self.prepared, -1)
-        self.assertIn("Simulation time: 0.000 s", initial_model)
-        self.assertIn("Hazard probability: N/A", initial_model)
-        self.assertIn("Terrain state: UNKNOWN", initial_model)
-        self.assertIn("Tangential drift: N/A", initial_diagnostics)
+        assert_contains(
+            initial_model,
+            "Simulation time: 0.000 s",
+            "Hazard probability: N/A",
+            "Terrain state: UNKNOWN",
+        )
+        assert_contains(initial_diagnostics, "Tangential drift: N/A")
 
         first_reflex = self.prepared.traces.first_reflex_sample
         self.assertIsNotNone(first_reflex)
@@ -289,22 +340,28 @@ class VisualizationIntegrationTest(unittest.TestCase):
         model, diagnostics = format_viewer_overlay(
             self.prepared, first_reflex, show_debug=True
         )
-        self.assertIn("MODEL OUTPUT", model)
-        self.assertIn("Hazard probability", model)
-        self.assertIn("Terrain state", model)
-        self.assertIn("Current reflex (REFLEX_REQUIRED): TRUE", model)
-        self.assertIn("Reflex occurred: TRUE (display history only)", model)
-        self.assertIn("Current advisory cause", model)
-        self.assertIn("Cause at first reflex", model)
-        self.assertIn("SIMULATOR GT / DIAGNOSTIC", diagnostics)
-        self.assertIn("NEVER USED AS MODEL INPUT", diagnostics)
-        self.assertIn("Tangential drift", diagnostics)
-        self.assertIn("Support spread", diagnostics)
-        self.assertIn("EVENT TIMING", diagnostics)
-        self.assertIn("delta = detector - reference", diagnostics)
-        self.assertIn("Reflex -> Slip: -24 ms", diagnostics)
-        self.assertIn("Reflex -> Terrain: -456 ms", diagnostics)
-        self.assertIn("R=Reflex", diagnostics)
+        assert_contains(
+            model,
+            "MODEL OUTPUT",
+            "Hazard probability",
+            "Terrain state",
+            "Current reflex (REFLEX_REQUIRED): TRUE",
+            "Reflex occurred: TRUE (display history only)",
+            "Current advisory cause",
+            "Cause at first reflex",
+        )
+        assert_contains(
+            diagnostics,
+            "SIMULATOR GT / DIAGNOSTIC",
+            "NEVER USED AS MODEL INPUT",
+            "Tangential drift",
+            "Support spread",
+            "EVENT TIMING",
+            "delta = detector - reference",
+            "Reflex -> Slip: -24 ms",
+            "Reflex -> Terrain: -456 ms",
+            "R=Reflex",
+        )
 
         later_false = np.flatnonzero(
             (~self.prepared.traces.reflex_required)
@@ -316,27 +373,32 @@ class VisualizationIntegrationTest(unittest.TestCase):
         )
         self.assertTrue(later_false.size)
         history_model, _ = format_viewer_overlay(self.prepared, int(later_false[0]))
-        self.assertIn("Current reflex (REFLEX_REQUIRED): FALSE", history_model)
-        self.assertIn("Reflex occurred: TRUE", history_model)
+        assert_contains(
+            history_model,
+            "Current reflex (REFLEX_REQUIRED): FALSE",
+            "Reflex occurred: TRUE",
+        )
 
         censor = self.prepared.resolved.run.censor_sample
         censored_model, censored_diagnostics = format_viewer_overlay(
             self.prepared, min(censor, len(self.prepared.resolved.run.timestamp_us) - 1)
         )
-        self.assertIn("Current reflex (REFLEX_REQUIRED): CENSORED", censored_model)
-        self.assertIn("Reflex occurred: TRUE", censored_model)
+        assert_contains(
+            censored_model,
+            "Current reflex (REFLEX_REQUIRED): CENSORED",
+            "Reflex occurred: TRUE",
+            "Hazard probability: N/A",
+        )
         self.assertNotIn("First reflex: not reached", censored_model)
-        self.assertIn("Hazard probability: N/A", censored_model)
-        self.assertIn("Slip event:", censored_diagnostics)
+        assert_contains(censored_diagnostics, "Slip event:")
 
         demo_model, demo_diagnostics = format_viewer_overlay(
             self.prepared,
             first_reflex,
             mode="demo",
         )
-        self.assertIn("MODEL OUTPUT / DEMO", demo_model)
-        self.assertIn("Physical reference: SLIP", demo_diagnostics)
-        self.assertIn("Reflex -> Slip", demo_diagnostics)
+        assert_contains(demo_model, "MODEL OUTPUT / DEMO")
+        assert_contains(demo_diagnostics, "Physical reference: SLIP", "Reflex -> Slip")
 
     def test_event_destinations_are_exact_and_missing_i1_is_safe(self) -> None:
         events = playback_events(self.prepared)
@@ -380,13 +442,61 @@ class VisualizationIntegrationTest(unittest.TestCase):
         self.assertEqual(playback.view().current_sample, events.physical_hazard)
         self.assertEqual(playback.view().state, PlaybackState.PAUSED)
 
+    def test_recording_plan_and_demo_alert_are_deterministic(self) -> None:
+        prepared = self.prepared
+        plan = build_recording_plan(prepared, playback_speed=0.5)
+        self.assertEqual(plan.end_reason, "post_first_fall")
+        self.assertEqual(
+            plan.end_sample,
+            prepared.simulation.metadata["first_fall_sample"] + 750,
+        )
+        self.assertEqual(plan.sample_indices[0], 0)
+        self.assertEqual(plan.sample_indices[-1], plan.end_sample)
+        self.assertEqual(plan.hold_frame_count, 60)
+        self.assertEqual(
+            len(plan.sample_indices),
+            plan.playback_frame_count + plan.hold_frame_count,
+        )
+        pre_fall = build_recording_plan(
+            prepared,
+            playback_speed=0.5,
+            stop_before_fall=True,
+        )
+        self.assertEqual(pre_fall.end_reason, "pre_first_fall")
+        self.assertEqual(
+            pre_fall.end_sample,
+            prepared.simulation.metadata["first_fall_sample"] - 1,
+        )
+
+        frame = np.zeros((RECORDING_HEIGHT, RECORDING_WIDTH, 3), dtype=np.uint8)
+        first_reflex = prepared.traces.first_reflex_sample
+        assert first_reflex is not None
+        safe = compose_recording_frame(
+            frame,
+            prepared,
+            first_reflex - 1,
+            playback_speed=0.5,
+        )
+        danger = compose_recording_frame(
+            frame,
+            prepared,
+            first_reflex,
+            playback_speed=0.5,
+        )
+        self.assertEqual(safe.shape, frame.shape)
+        self.assertEqual(danger.shape, frame.shape)
+        self.assertGreater(int(danger[0, 0, 0]), int(safe[0, 0, 0]))
+
+        with self.assertRaisesRegex(ValueError, "positive and finite"):
+            build_recording_plan(prepared, playback_speed=0.0)
+
     def test_snapshot_playback_never_steps_or_changes_frozen_traces(self) -> None:
         playback = SnapshotPlaybackControl(
             len(self.prepared.resolved.run.timestamp_us),
             events=playback_events(self.prepared),
             start_paused=True,
         )
-        fake_viewer = _FakeViewer()
+        fake_viewer = ViewerStub()
         runtime_before = self.prepared.simulation.runtime.pelvis_imu.copy()
         reflex_before = self.prepared.traces.reflex_required.copy()
         with (
@@ -409,11 +519,10 @@ class VisualizationIntegrationTest(unittest.TestCase):
         self.assertTrue(fake_viewer.texts)
         rendered_panels = fake_viewer.texts[-1]
         self.assertEqual(len(rendered_panels), 4)
-        self.assertIn("MODEL OUTPUT", rendered_panels[0][2])
-        self.assertIn("SIMULATOR GT / DIAGNOSTIC", rendered_panels[1][2])
-        self.assertIn("TERRAIN ADVISORY (CONTINUED)", rendered_panels[2][2])
-        self.assertIn("EVENT TIMING", rendered_panels[3][2])
-        self.assertIn("NOW", rendered_panels[3][2])
+        assert_contains(rendered_panels[0][2], "MODEL OUTPUT")
+        assert_contains(rendered_panels[1][2], "SIMULATOR GT / DIAGNOSTIC")
+        assert_contains(rendered_panels[2][2], "TERRAIN ADVISORY (CONTINUED)")
+        assert_contains(rendered_panels[3][2], "EVENT TIMING", "NOW")
         self.assertEqual(final.state, PlaybackState.PAUSED)
         np.testing.assert_array_equal(
             self.prepared.simulation.runtime.pelvis_imu, runtime_before
@@ -426,7 +535,7 @@ class VisualizationIntegrationTest(unittest.TestCase):
         playback = SnapshotPlaybackControl(len(self.prepared.resolved.run.timestamp_us))
         ended = playback.advance_by(playback.total_samples)
         self.assertEqual(ended.state, PlaybackState.ENDED_PAUSED)
-        fake_viewer = _FakeViewer(running_checks=5)
+        fake_viewer = ViewerStub(running_checks=5)
         with (
             mock.patch(
                 "fastreflex.visualization.launch_passive_viewer",
@@ -441,12 +550,16 @@ class VisualizationIntegrationTest(unittest.TestCase):
         self.assertIn("PLAYBACK: ENDED / PAUSED", str(fake_viewer.texts[-1]))
 
     def test_early_viewer_close_is_clean_after_headless_parity(self) -> None:
-        fake_viewer = _FakeViewer(running_checks=1)
+        fake_viewer = ViewerStub(running_checks=1)
         first_reflex = self.prepared.traces.first_reflex_sample
         assert first_reflex is not None
-        later_pause_s = float(
-            self.prepared.resolved.run.timestamp_us[first_reflex + 100] / 1_000_000.0
-        ) + 0.0004
+        later_pause_s = (
+            float(
+                self.prepared.resolved.run.timestamp_us[first_reflex + 100]
+                / 1_000_000.0
+            )
+            + 0.0004
+        )
         with (
             mock.patch(
                 "fastreflex.visualization.launch_passive_viewer",
@@ -465,12 +578,7 @@ class VisualizationIntegrationTest(unittest.TestCase):
             )
         self.assertTrue(result["viewer_closed_cleanly"])
         self.assertTrue(result["scientific_parity_prechecked"])
-        self.assertFalse(result["viewer_physics_executed"])
+        assert_false_fields(result, "viewer_physics_executed", "holdout_opened")
         self.assertIsNone(result["viewer_physics_parity"])
         self.assertEqual(result["pause_at_sample"], first_reflex + 100)
         self.assertEqual(result["auto_pause_sample"], first_reflex)
-        self.assertFalse(result["holdout_opened"])
-
-
-if __name__ == "__main__":
-    unittest.main()

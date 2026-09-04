@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import numpy as np
 
 from fastreflex.export import verify_release
+from tests.support import REPOSITORY_ROOT as ROOT, load_json
 
-
-ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ROOT / "artifacts/releases/model_v2_anchor_refined_gru20_20260902"
 
 
@@ -25,7 +21,7 @@ def test_reviewed_deployment_reference_release_is_intact() -> None:
 
 
 def test_int8_calibration_handoff_is_train_only_and_reproducible() -> None:
-    manifest = json.loads((RELEASE / "calibration_manifest.json").read_text())
+    manifest = load_json(RELEASE / "calibration_manifest.json")
     assert manifest["purpose"] == "formal_int8_representative_calibration_only"
     assert manifest["protected_holdout_access"] is False
     assert manifest["scientific_evidence"] is False
@@ -49,7 +45,7 @@ def test_int8_calibration_handoff_is_train_only_and_reproducible() -> None:
 
 
 def test_golden_evidence_is_non_protected_and_exercises_decision() -> None:
-    manifest = json.loads((RELEASE / "golden_manifest.json").read_text())
+    manifest = load_json(RELEASE / "golden_manifest.json")
     assert manifest["scientific_evidence"] is False
     assert manifest["protected_holdout_access"] is False
     assert manifest["source"]["split"] == "V2_VALIDATION"
@@ -67,7 +63,7 @@ def test_golden_evidence_is_non_protected_and_exercises_decision() -> None:
 
 
 def test_deployment_float_contract_is_batch_one_and_evidence_based() -> None:
-    contract = json.loads((RELEASE / "float_numerical_contract.json").read_text())
+    contract = load_json(RELEASE / "float_numerical_contract.json")
     assert contract["verdict"] == "FLOAT_EXPORT_NUMERICAL_CONTRACT_RESOLVED"
     assert contract["protected_holdout_access"] is False
     assert contract["canonical_execution"]["input_shape"] == [1, 20, 80]
@@ -90,12 +86,15 @@ def test_deployment_float_contract_is_batch_one_and_evidence_based() -> None:
     assert sensitivity["minimum_absolute_margin"] == 0.0009300009409586307
     assert sensitivity["margin_to_permitted_error_ratio"] > 400.0
 
-    with np.load(
-        RELEASE / "golden_outputs/runtime_chain.npz", allow_pickle=False
-    ) as historical, np.load(
-        RELEASE / "golden_outputs/deployment_runtime_chain.npz",
-        allow_pickle=False,
-    ) as deployment:
+    with (
+        np.load(
+            RELEASE / "golden_outputs/runtime_chain.npz", allow_pickle=False
+        ) as historical,
+        np.load(
+            RELEASE / "golden_outputs/deployment_runtime_chain.npz",
+            allow_pickle=False,
+        ) as deployment,
+    ):
         assert deployment["member_logits"].shape == (3, 121, 2)
         assert not np.array_equal(
             historical["member_logits"], deployment["member_logits"]
@@ -112,11 +111,14 @@ def test_deployment_float_contract_is_batch_one_and_evidence_based() -> None:
 
 
 def test_decision_probe_freezes_inclusive_threshold_and_persistence() -> None:
-    with np.load(
-        RELEASE / "golden_inputs/decision_probe.npz", allow_pickle=False
-    ) as inputs, np.load(
-        RELEASE / "golden_outputs/decision_probe.npz", allow_pickle=False
-    ) as outputs:
+    with (
+        np.load(
+            RELEASE / "golden_inputs/decision_probe.npz", allow_pickle=False
+        ) as inputs,
+        np.load(
+            RELEASE / "golden_outputs/decision_probe.npz", allow_pickle=False
+        ) as outputs,
+    ):
         probability = inputs["ensemble_hazard_probability"]
         crossing = outputs["threshold_crossing"]
         reflex = outputs["reflex_required"]

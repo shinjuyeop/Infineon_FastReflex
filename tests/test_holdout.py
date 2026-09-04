@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import ast
-import json
 import tempfile
 import unittest
 from copy import deepcopy
@@ -26,9 +24,8 @@ from fastreflex.evaluation.holdout import (
     preflight_holdout_evaluation,
     verify_generalization_holdout_evaluation,
 )
+from tests.support import REPOSITORY_ROOT as ROOT, imported_modules, load_json
 
-
-ROOT = Path(__file__).resolve().parents[1]
 CONFIG = (
     ROOT
     / "configs/experiment/20260902_model_v2_generalization_holdout_one_shot_evaluation.yaml"
@@ -54,12 +51,8 @@ class GeneralizationHoldoutEvaluationTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.document = load_holdout_yaml(CONFIG)
         artifact_path = ROOT / cls.document["artifacts"]["path"]
-        cls.result = json.loads(
-            (artifact_path / "evaluation_result.json").read_text(encoding="utf-8")
-        )
-        cls.guard = json.loads(
-            (artifact_path / "holdout_access_guard.json").read_text(encoding="utf-8")
-        )
+        cls.result = load_json(artifact_path / "evaluation_result.json")
+        cls.guard = load_json(artifact_path / "holdout_access_guard.json")
         with (
             patch(
                 "fastreflex.evaluation.generalization.np.load",
@@ -162,7 +155,9 @@ class GeneralizationHoldoutEvaluationTest(unittest.TestCase):
                 RuntimeError, "HOLDOUT_EVALUATION_ABORTED_GUARD_STATE"
             ):
                 preflight_holdout_evaluation(ROOT, CONFIG)
-        self.assertEqual((self.guard["guard_before"], self.guard["guard_after"]), (0, 1))
+        self.assertEqual(
+            (self.guard["guard_before"], self.guard["guard_after"]), (0, 1)
+        )
         self.assertTrue(self.guard["second_scientific_open_forbidden"])
         self.assertFalse(self.result["second_open_attempted"])
 
@@ -209,20 +204,7 @@ class GeneralizationHoldoutEvaluationTest(unittest.TestCase):
             ROOT / "src/fastreflex/evaluation/terrain.py",
             ROOT / "src/fastreflex/models/checkpoint.py",
         ]
-        imported: set[str] = set()
-        for path in paths:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            imported.update(
-                node.module
-                for node in ast.walk(tree)
-                if isinstance(node, ast.ImportFrom) and node.module is not None
-            )
-            imported.update(
-                alias.name
-                for node in ast.walk(tree)
-                if isinstance(node, ast.Import)
-                for alias in node.names
-            )
+        imported = imported_modules(*paths)
         self.assertFalse(
             any(module.startswith("fastreflex.training") for module in imported)
         )
@@ -247,7 +229,3 @@ class GeneralizationHoldoutEvaluationTest(unittest.TestCase):
             expected["final_holdout_verdict"],
             "MODEL_V2_GENERALIZATION_HOLDOUT_SUPPORTED",
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

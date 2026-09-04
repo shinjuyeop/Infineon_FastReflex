@@ -12,7 +12,6 @@ from unittest import mock
 
 import mujoco
 import numpy as np
-import yaml
 
 from fastreflex.simulation.g1 import (
     ACTUATOR_NAMES,
@@ -29,20 +28,13 @@ from fastreflex.simulation.hazards import (
     LOAD_OFF_N,
     LOAD_ON_N,
     PRE_EVENT_BASELINE_SAMPLES,
+    PhysicalDiagnostics,
     SINK_HAZARD_TILT_PERSISTENCE_SAMPLES,
     SINK_HAZARD_TILT_THRESHOLD_RAD,
     SINK_PHYSICAL_PERSISTENCE_SAMPLES,
     SINK_PHYSICAL_THRESHOLD_M,
     SLIP_PERSISTENCE_SAMPLES,
     SLIP_THRESHOLD_M,
-    SUPPORT_BASELINE_MIN_QUADRANTS,
-    SUPPORT_BASELINE_PRESENCE_RATIO,
-    SUPPORT_BASELINE_SAMPLES,
-    SUPPORT_LOSS_PERSISTENCE_SAMPLES,
-    SUPPORT_LOSS_THRESHOLD_RATIO,
-    SUPPORT_TOTAL_LOAD_MIN_RATIO,
-    SURFACE_SPREAD_PERSISTENCE_SAMPLES,
-    SURFACE_SPREAD_THRESHOLD_M,
     TOUCHDOWN_TRANSIENT_SAMPLES,
     derive_physical_diagnostics,
     read_exact_foot_sample,
@@ -66,6 +58,7 @@ from fastreflex.simulation.terrain import (
     SINK_SUPPORT_PATTERNS,
     SLIP_PATTERNS,
     TERRAIN_CLASS_ORDER,
+    TerrainProfile,
     TERRAIN_PROFILES,
     TRANSITION_GROUND_GEOM_NAMES,
     TRANSITION_PATCH_END_X_M,
@@ -78,70 +71,108 @@ from fastreflex.simulation.terrain import (
     terrain_contact_class_by_geom_id,
 )
 from scripts.fastreflex import build_parser
+from tests.support import (
+    REPOSITORY_ROOT as ROOT,
+    ViewerStub,
+    assert_attributes,
+    assert_dataclass_equal,
+    assert_mapping_values,
+    load_yaml,
+)
 
-ROOT = Path(__file__).resolve().parents[1]
 SIMULATOR_CONFIG = ROOT / "configs" / "simulator" / "g1.yaml"
 DATASET_CONFIG = ROOT / "configs" / "dataset" / "hazard.yaml"
-SINK_EXPERIMENT_CONFIG = (
-    ROOT / "configs" / "experiment" / "20260826_sink_scenario_sanity.yaml"
-)
-SINK_TRANSITION_EXPERIMENT_CONFIG = (
-    ROOT / "configs" / "experiment" / "20260826_sink_transition_criteria.yaml"
-)
-SLIP_TRANSITION_EXPERIMENT_CONFIG = (
-    ROOT / "configs" / "experiment" / "20260826_slip_transition_sanity.yaml"
-)
-SINK_PHYSICAL_REDEFINITION_CONFIG = (
-    ROOT
-    / "configs"
-    / "experiment"
-    / "20260827_sink_physical_hazard_redefinition.yaml"
-)
-SINK_SUPPORT_LOSS_CONFIG = (
-    ROOT
-    / "configs"
-    / "experiment"
-    / "20260827_sink_support_loss_oracle_sanity.yaml"
-)
-SINK_DEFORMABLE_SUPPORT_CONFIG = (
-    ROOT
-    / "configs"
-    / "experiment"
-    / "20260827_sink_deformable_support_proxy_sanity.yaml"
-)
 LOCAL_POLICY = (
-    ROOT
-    / "artifacts"
-    / "external"
-    / "unitree_g1"
-    / "g1_velocity_policy.onnx"
+    ROOT / "artifacts" / "external" / "unitree_g1" / "g1_velocity_policy.onnx"
 )
 
 
-class FakeViewer:
-    def __init__(self, running_checks: int | None = None) -> None:
-        self.sync_count = 0
-        self.running_checks = running_checks
-        self.is_running_count = 0
-
-    def __enter__(self) -> "FakeViewer":
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        return None
-
-    def is_running(self) -> bool:
-        self.is_running_count += 1
-        return (
-            self.running_checks is None
-            or self.is_running_count <= self.running_checks
-        )
-
-    def sync(self, state_only: bool = False) -> None:
-        self.sync_count += 1
+def _episode_state(samples: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    return (
+        np.ones((samples, 2), dtype=bool),
+        np.zeros((samples, 2), dtype=np.int32),
+        np.ones(samples, dtype=bool),
+    )
 
 
-class SimulationTest(unittest.TestCase):
+def _quadrant_support_state(
+    samples: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    loaded, episodes, pre_fall = _episode_state(samples)
+    return (
+        np.ones((samples, 2, 4), dtype=bool),
+        np.full((samples, 2, 4), 10.0),
+        loaded,
+        episodes,
+        pre_fall,
+    )
+
+
+def _place_robot_on_ground(model: mujoco.MjModel, data: mujoco.MjData) -> None:
+    data.qpos[:] = model.qpos0
+    data.qpos[2] = 0.78
+    mujoco.mj_forward(model, data)
+
+
+def _loaded_concrete_foot_sample() -> tuple[
+    mujoco.MjModel, mujoco.MjData, frozenset[int]
+]:
+    model, ground_ids = load_g1_model("concrete")
+    data = mujoco.MjData(model)
+    _place_robot_on_ground(model, data)
+    return model, data, ground_ids
+
+
+def _assert_contact_profile(
+    model: mujoco.MjModel,
+    geom_id: int,
+    profile: TerrainProfile,
+    *,
+    include_friction: bool = True,
+) -> None:
+    if include_friction:
+        np.testing.assert_allclose(model.geom_friction[geom_id], profile.friction)
+    np.testing.assert_allclose(model.geom_solref[geom_id], profile.solref)
+    np.testing.assert_allclose(model.geom_solimp[geom_id], profile.solimp)
+
+
+def _assert_finite_foot_diagnostics(diagnostics: PhysicalDiagnostics) -> None:
+    for name in (
+        "foot_world_xyz",
+        "foot_world_velocity_xyz",
+        "contact_penetration_m",
+    ):
+        assert np.all(np.isfinite(getattr(diagnostics, name))), name
+
+
+def _assert_transition_geometry(
+    model: mujoco.MjModel,
+    start_x_m: float = TRANSITION_PATCH_START_X_M,
+    end_x_m: float = TRANSITION_PATCH_END_X_M,
+) -> None:
+    pre = model.geom("terrain_transition_pre").id
+    left = model.geom("terrain_transition_left").id
+    right = model.geom("terrain_transition_right").id
+    post = model.geom("terrain_transition_post").id
+    actual = (
+        model.geom_pos[pre, 0] + model.geom_size[pre, 0],
+        model.geom_pos[left, 0] - model.geom_size[left, 0],
+        model.geom_pos[left, 0] + model.geom_size[left, 0],
+        model.geom_pos[right, 0] - model.geom_size[right, 0],
+        model.geom_pos[right, 0] + model.geom_size[right, 0],
+        model.geom_pos[post, 0] - model.geom_size[post, 0],
+        model.geom_pos[left, 1] - model.geom_size[left, 1],
+        model.geom_pos[right, 1] + model.geom_size[right, 1],
+    )
+    np.testing.assert_allclose(
+        actual,
+        (start_x_m, start_x_m, end_x_m, start_x_m, end_x_m, end_x_m, 0.0, 0.0),
+        atol=1.0e-12,
+        rtol=0.0,
+    )
+
+
+class DeformableSupportTest(unittest.TestCase):
     def test_deformable_support_geometry_joint_and_pattern_contract(self) -> None:
         selected_by_pattern = {
             "medial_deformable": {"entry_medial", "exit_medial"},
@@ -162,9 +193,7 @@ class SimulationTest(unittest.TestCase):
                     self.assertEqual(
                         np.count_nonzero(layout.geom_ids[side_index] >= 0), 4
                     )
-                    self.assertFalse(
-                        np.any(layout.geom_ids[1 - side_index] >= 0)
-                    )
+                    self.assertFalse(np.any(layout.geom_ids[1 - side_index] >= 0))
                     data = mujoco.MjData(model)
                     mujoco.mj_forward(model, data)
                     for cell_index, cell in enumerate(DEFORMABLE_CELL_ORDER):
@@ -172,17 +201,14 @@ class SimulationTest(unittest.TestCase):
                         self.assertIn(geom_id, ground_ids)
                         self.assertAlmostEqual(
                             float(
-                                data.geom_xpos[geom_id, 2]
-                                + model.geom_size[geom_id, 2]
+                                data.geom_xpos[geom_id, 2] + model.geom_size[geom_id, 2]
                             ),
                             0.0,
                         )
                         qpos_address = int(
                             layout.qpos_addresses[side_index, cell_index]
                         )
-                        joint_ids = np.flatnonzero(
-                            model.jnt_qposadr == qpos_address
-                        )
+                        joint_ids = np.flatnonzero(model.jnt_qposadr == qpos_address)
                         self.assertEqual(joint_ids.size, 1)
                         joint_id = int(joint_ids[0])
                         self.assertEqual(
@@ -195,12 +221,11 @@ class SimulationTest(unittest.TestCase):
                         body_id = int(model.jnt_bodyid[joint_id])
                         self.assertEqual(model.body_gravcomp[body_id], 1.0)
                         expected_profile = DEFORMABLE_SUPPORT_PROFILES["moderate"]
-                        if pattern != "balanced_deformable" and cell not in (
-                            selected_by_pattern[pattern]
+                        if (
+                            pattern != "balanced_deformable"
+                            and cell not in (selected_by_pattern[pattern])
                         ):
-                            expected_profile = DEFORMABLE_SUPPORT_PROFILES[
-                                "reference"
-                            ]
+                            expected_profile = DEFORMABLE_SUPPORT_PROFILES["reference"]
                         self.assertAlmostEqual(
                             -float(model.jnt_range[joint_id, 0]),
                             expected_profile.travel_m,
@@ -268,9 +293,7 @@ class SimulationTest(unittest.TestCase):
         cell_contact[5:15, 0, 2] = True
         patch_contact = np.zeros((samples, 2), dtype=bool)
         patch_contact[5:15, 0] = True
-        loaded = np.ones((samples, 2), dtype=bool)
-        episodes = np.zeros((samples, 2), dtype=np.int32)
-        pre_fall = np.ones(samples, dtype=bool)
+        loaded, episodes, pre_fall = _episode_state(samples)
         diagnostics = surface_displacement_diagnostics(
             displacement,
             velocity,
@@ -332,40 +355,6 @@ class SimulationTest(unittest.TestCase):
         )
         self.assertFalse(reset["deformable_sink_active"][20:, 0].any())
 
-    def test_deformable_support_experiment_config_is_predeclared(self) -> None:
-        with SINK_DEFORMABLE_SUPPORT_CONFIG.open(
-            "r", encoding="utf-8"
-        ) as stream:
-            config = yaml.safe_load(stream)
-        self.assertEqual(
-            config["experiment"]["id"],
-            "SINK_DEFORMABLE_SUPPORT_PROXY_SANITY",
-        )
-        self.assertEqual(
-            config["mechanics"]["parameter_status"],
-            "frozen_after_mechanical_stabilization_before_robot_matrix",
-        )
-        self.assertFalse(config["mechanics"]["robot_results_used_for_selection"])
-        oracle = config["surface_displacement_oracle"]
-        self.assertEqual(oracle["spread_threshold_m"], SURFACE_SPREAD_THRESHOLD_M)
-        self.assertEqual(
-            oracle["persistence_ms"], SURFACE_SPREAD_PERSISTENCE_SAMPLES
-        )
-        runs = config["runs"]
-        self.assertEqual(len(runs), 32)
-        self.assertEqual(
-            sum(run["group"] == "rigid_benign" for run in runs), 6
-        )
-        self.assertEqual(
-            sum(run["group"] == "balanced_benign" for run in runs), 8
-        )
-        self.assertEqual(
-            sum(run["group"] == "primary_uneven" for run in runs), 12
-        )
-        self.assertEqual(
-            sum(run["group"] == "outcome_diversity" for run in runs), 6
-        )
-
     def test_uneven_support_geometry_profiles_and_no_step_or_hole(self) -> None:
         self.assertEqual(
             SINK_SUPPORT_PATTERNS,
@@ -396,8 +385,7 @@ class SimulationTest(unittest.TestCase):
                     for geom_id in ground_ids:
                         self.assertEqual(
                             float(
-                                model.geom_pos[geom_id, 2]
-                                + model.geom_size[geom_id, 2]
+                                model.geom_pos[geom_id, 2] + model.geom_size[geom_id, 2]
                             ),
                             0.0,
                         )
@@ -410,14 +398,12 @@ class SimulationTest(unittest.TestCase):
                     self.assertAlmostEqual(
                         float(model.geom_pos[entry, 0] + model.geom_size[entry, 0]),
                         float(
-                            model.geom_pos[exit_cell, 0]
-                            - model.geom_size[exit_cell, 0]
+                            model.geom_pos[exit_cell, 0] - model.geom_size[exit_cell, 0]
                         ),
                     )
                     self.assertAlmostEqual(
                         float(
-                            model.geom_pos[exit_cell, 0]
-                            + model.geom_size[exit_cell, 0]
+                            model.geom_pos[exit_cell, 0] + model.geom_size[exit_cell, 0]
                         ),
                         TRANSITION_PATCH_END_X_M,
                     )
@@ -493,12 +479,10 @@ class SimulationTest(unittest.TestCase):
                 explicit.geom_solimp[explicit.geom(name).id],
             )
 
+
+class SupportDiagnosticsTest(unittest.TestCase):
     def test_exact_quadrant_penetration_mapping_and_load_sum(self) -> None:
-        model, ground_ids = load_g1_model("concrete")
-        data = mujoco.MjData(model)
-        data.qpos[:] = model.qpos0
-        data.qpos[2] = 0.78
-        mujoco.mj_forward(model, data)
+        model, data, ground_ids = _loaded_concrete_foot_sample()
         exact = read_exact_foot_sample(model, data, ground_ids)
         self.assertEqual(exact.quadrant_contact.shape, (2, 4))
         self.assertEqual(exact.quadrant_normal_force_n.shape, (2, 4))
@@ -526,23 +510,17 @@ class SimulationTest(unittest.TestCase):
 
     def test_loaded_only_support_spread_and_causal_persistence(self) -> None:
         samples = 40
-        contact = np.ones((samples, 2, 4), dtype=bool)
-        load = np.full((samples, 2, 4), 10.0)
+        contact, load, loaded, episodes, pre_fall = _quadrant_support_state(samples)
         penetration = np.tile(
             np.asarray((0.001, 0.002, 0.004, 0.005)),
             (samples, 2, 1),
         )
-        loaded = np.ones((samples, 2), dtype=bool)
-        episodes = np.zeros((samples, 2), dtype=np.int32)
-        pre_fall = np.ones(samples, dtype=bool)
         support = support_penetration_diagnostics(
             contact, load, penetration, loaded, episodes, pre_fall
         )
         self.assertTrue(
             np.isnan(
-                support["support_penetration_spread_m"][
-                    :TOUCHDOWN_TRANSIENT_SAMPLES
-                ]
+                support["support_penetration_spread_m"][:TOUCHDOWN_TRANSIENT_SAMPLES]
             ).all()
         )
         np.testing.assert_allclose(
@@ -554,9 +532,7 @@ class SimulationTest(unittest.TestCase):
         invalid = support_penetration_diagnostics(
             contact, load, penetration, unloaded, episodes, pre_fall
         )
-        self.assertTrue(
-            np.isnan(invalid["support_penetration_spread_m"][20, 0])
-        )
+        self.assertTrue(np.isnan(invalid["support_penetration_spread_m"][20, 0]))
 
         spread = np.zeros((40, 2), dtype=float)
         valid = np.zeros((40, 2), dtype=bool)
@@ -580,30 +556,20 @@ class SimulationTest(unittest.TestCase):
 
     def test_support_loss_baseline_retention_weighting_and_persistence(self) -> None:
         samples = 70
-        contact = np.ones((samples, 2, 4), dtype=bool)
-        load = np.full((samples, 2, 4), 10.0)
-        loaded = np.ones((samples, 2), dtype=bool)
-        episodes = np.zeros((samples, 2), dtype=np.int32)
-        pre_fall = np.ones(samples, dtype=bool)
+        contact, load, loaded, episodes, pre_fall = _quadrant_support_state(samples)
         load[30:, 0, (1, 3)] = 0.0
         diagnostics = support_loss_diagnostics(
             contact, load, loaded, episodes, pre_fall
         )
 
-        self.assertFalse(
-            diagnostics["support_baseline_established"][:29, 0].any()
-        )
+        self.assertFalse(diagnostics["support_baseline_established"][:29, 0].any())
         self.assertTrue(diagnostics["support_baseline_onset"][29, 0])
         np.testing.assert_array_equal(
             diagnostics["support_baseline_mask"][29, 0],
             np.ones(4, dtype=bool),
         )
-        self.assertEqual(
-            diagnostics["baseline_supported_quadrant_count"][29, 0], 4
-        )
-        self.assertEqual(
-            diagnostics["support_retained_quadrant_count"][30, 0], 2
-        )
+        self.assertEqual(diagnostics["baseline_supported_quadrant_count"][29, 0], 4)
+        self.assertEqual(diagnostics["support_retained_quadrant_count"][30, 0], 2)
         self.assertEqual(diagnostics["support_retention_ratio"][30, 0], 0.5)
         self.assertEqual(diagnostics["support_loss_ratio"][30, 0], 0.5)
         self.assertEqual(diagnostics["weighted_support_loss"][30, 0], 0.5)
@@ -612,11 +578,7 @@ class SimulationTest(unittest.TestCase):
 
     def test_support_loss_presence_boundary_reset_and_toe_off_gate(self) -> None:
         samples = 90
-        contact = np.ones((samples, 2, 4), dtype=bool)
-        load = np.full((samples, 2, 4), 10.0)
-        loaded = np.ones((samples, 2), dtype=bool)
-        episodes = np.zeros((samples, 2), dtype=np.int32)
-        pre_fall = np.ones(samples, dtype=bool)
+        contact, load, loaded, episodes, pre_fall = _quadrant_support_state(samples)
         # Baseline samples are 10:30. Exactly 10 supported samples are retained;
         # nine are excluded by the predeclared >=50% presence aggregation.
         load[10:20, 0, 2] = 0.0
@@ -628,14 +590,10 @@ class SimulationTest(unittest.TestCase):
             diagnostics["support_baseline_mask"][29, 0],
             np.asarray((True, True, True, False)),
         )
-        self.assertEqual(
-            diagnostics["baseline_supported_quadrant_count"][29, 0], 3
-        )
+        self.assertEqual(diagnostics["baseline_supported_quadrant_count"][29, 0], 3)
 
         loaded[35, 0] = False
-        reset = support_loss_diagnostics(
-            contact, load, loaded, episodes, pre_fall
-        )
+        reset = support_loss_diagnostics(contact, load, loaded, episodes, pre_fall)
         self.assertFalse(reset["support_baseline_established"][35, 0])
         self.assertFalse(reset["support_loss_active"][35, 0])
         self.assertTrue(reset["support_baseline_onset"][55, 0])
@@ -659,15 +617,9 @@ class SimulationTest(unittest.TestCase):
 
     def test_support_loss_is_causal_and_censored_at_fall(self) -> None:
         samples = 70
-        contact = np.ones((samples, 2, 4), dtype=bool)
-        load = np.full((samples, 2, 4), 10.0)
+        contact, load, loaded, episodes, pre_fall = _quadrant_support_state(samples)
         load[30:, 0, (0, 2)] = 0.0
-        loaded = np.ones((samples, 2), dtype=bool)
-        episodes = np.zeros((samples, 2), dtype=np.int32)
-        pre_fall = np.ones(samples, dtype=bool)
-        original = support_loss_diagnostics(
-            contact, load, loaded, episodes, pre_fall
-        )
+        original = support_loss_diagnostics(contact, load, loaded, episodes, pre_fall)
         future_load = load.copy()
         future_load[55:, 0] = 10.0
         changed = support_loss_diagnostics(
@@ -678,113 +630,12 @@ class SimulationTest(unittest.TestCase):
             changed["support_loss_onset"][:55],
         )
         pre_fall[45:] = False
-        censored = support_loss_diagnostics(
-            contact, load, loaded, episodes, pre_fall
-        )
+        censored = support_loss_diagnostics(contact, load, loaded, episodes, pre_fall)
         self.assertFalse(censored["support_loss_active"].any())
         self.assertFalse(censored["support_baseline_established"][45:].any())
 
-    def test_sink_physical_redefinition_config_is_bounded(self) -> None:
-        with SINK_PHYSICAL_REDEFINITION_CONFIG.open("r", encoding="utf-8") as stream:
-            config = yaml.safe_load(stream)
-        self.assertEqual(
-            config["experiment"]["id"], "SINK_PHYSICAL_HAZARD_REDEFINITION"
-        )
-        runs = config["runs"]
-        self.assertEqual(len(runs), 26)
-        self.assertEqual(sum(run["role"] == "benign" for run in runs), 14)
-        self.assertEqual(sum(run["role"] == "uneven" for run in runs), 12)
-        self.assertEqual(len({run["id"] for run in runs}), 26)
-        self.assertEqual(
-            config["support_metric"]["freeze_status"],
-            "criterion_not_freezable",
-        )
-        self.assertFalse(config["support_metric"]["future_outcome_dependency"])
 
-    def test_support_loss_config_freezes_candidate_and_acceptance(self) -> None:
-        with SINK_SUPPORT_LOSS_CONFIG.open("r", encoding="utf-8") as stream:
-            config = yaml.safe_load(stream)
-        self.assertEqual(
-            config["experiment"]["id"], "SINK_SUPPORT_LOSS_ORACLE_SANITY"
-        )
-        oracle = config["support_loss_oracle"]
-        self.assertEqual(oracle["quadrant_load_cutoff_n"], LOAD_OFF_N)
-        self.assertEqual(oracle["touchdown_transient_ms"], TOUCHDOWN_TRANSIENT_SAMPLES)
-        self.assertEqual(oracle["baseline_window_ms"], SUPPORT_BASELINE_SAMPLES)
-        self.assertEqual(
-            oracle["baseline_presence_ratio"], SUPPORT_BASELINE_PRESENCE_RATIO
-        )
-        self.assertEqual(
-            oracle["minimum_baseline_supported_quadrants"],
-            SUPPORT_BASELINE_MIN_QUADRANTS,
-        )
-        self.assertEqual(
-            oracle["support_loss_ratio_threshold"], SUPPORT_LOSS_THRESHOLD_RATIO
-        )
-        self.assertEqual(
-            oracle["persistence_ms"], SUPPORT_LOSS_PERSISTENCE_SAMPLES
-        )
-        self.assertEqual(
-            oracle["current_total_load_minimum_baseline_ratio"],
-            SUPPORT_TOTAL_LOAD_MIN_RATIO,
-        )
-        runs = config["runs"]
-        self.assertEqual(len(runs), 26)
-        self.assertEqual(sum(run["role"] == "benign" for run in runs), 14)
-        self.assertEqual(sum(run["role"] == "uneven" for run in runs), 12)
-        with SINK_PHYSICAL_REDEFINITION_CONFIG.open(
-            "r", encoding="utf-8"
-        ) as stream:
-            previous = yaml.safe_load(stream)
-        self.assertEqual(runs, previous["runs"])
-        self.assertEqual(config["provisional_acceptance"]["uneven_detection_min"], 9)
-        self.assertEqual(oracle["freeze_status"], "criterion_not_freezable")
-
-    @unittest.skipUnless(LOCAL_POLICY.is_file(), "local verified policy is absent")
-    def test_balanced_medial_and_lateral_support_diagnostics_smoke(self) -> None:
-        with SINK_PHYSICAL_REDEFINITION_CONFIG.open("r", encoding="utf-8") as stream:
-            experiment = yaml.safe_load(stream)
-        base = load_simulation_config(SIMULATOR_CONFIG)
-        threshold = float(experiment["support_metric"]["candidate_threshold_m"])
-        cases = (
-            ("balanced_soft", "moderate", False, False),
-            ("medial_soft", "severe", True, True),
-            ("lateral_soft", "severe", False, True),
-        )
-        for pattern, severity, old_spread_expected, fall_expected in cases:
-            with self.subTest(pattern=pattern):
-                result = run_simulation(
-                    replace(
-                        base,
-                        duration_s=8.0,
-                        command_speed_mps=0.15,
-                        policy_path=LOCAL_POLICY,
-                        terrain="sand",
-                        sink_pattern="transition_right",
-                        sink_severity=severity,
-                        sink_support_pattern=pattern,
-                        headless=True,
-                    )
-                )
-                spread = result.diagnostics.support_penetration_spread_m
-                active, _ = uneven_support_oracle(
-                    spread,
-                    np.isfinite(spread),
-                    result.diagnostics.contact_episode_id,
-                    threshold,
-                    20,
-                )
-                self.assertEqual(bool(np.any(active)), old_spread_expected)
-                self.assertTrue(np.any(result.diagnostics.support_baseline_onset))
-                self.assertTrue(
-                    np.any(np.isfinite(result.diagnostics.support_loss_ratio))
-                )
-                self.assertEqual(
-                    result.metadata["first_fall_sample"] is not None,
-                    fall_expected,
-                )
-                self.assertEqual(result.metadata["dropped_samples"], 0)
-
+class SimulationRuntimeParityTest(unittest.TestCase):
     @unittest.skipUnless(LOCAL_POLICY.is_file(), "local verified policy is absent")
     def test_deformable_support_runtime_and_viewer_physics_parity(self) -> None:
         base = load_simulation_config(SIMULATOR_CONFIG)
@@ -815,9 +666,7 @@ class SimulationTest(unittest.TestCase):
         assert headless.render_trace is not None
         self.assertEqual(headless.render_trace.model_nq, 46)
         self.assertEqual(headless.render_trace.model_nv, 45)
-        self.assertEqual(
-            headless.render_trace.integration_state.shape[0], 2200
-        )
+        self.assertEqual(headless.render_trace.integration_state.shape[0], 2200)
         render_model, _ = load_g1_model(
             "sand",
             "transition_left",
@@ -836,9 +685,7 @@ class SimulationTest(unittest.TestCase):
         )
         displacement = headless.diagnostics.support_surface_displacement_m
         self.assertEqual(displacement.shape, (2200, 2, 4))
-        d0 = np.flatnonzero(
-            headless.diagnostics.soft_patch_contact_onset[:, 0]
-        )
+        d0 = np.flatnonzero(headless.diagnostics.soft_patch_contact_onset[:, 0])
         self.assertTrue(d0.size)
         np.testing.assert_allclose(displacement[: d0[0], 0], 0.0, atol=1.0e-12)
         self.assertGreater(float(np.max(displacement[d0[0] :, 0])), 0.0)
@@ -885,53 +732,41 @@ class SimulationTest(unittest.TestCase):
         without_capture = run_simulation(config, capture_state_trace=True)
         self.assertFalse(without_capture.metadata["render_trace_captured"])
         self.assertIsNone(without_capture.render_trace)
-        for field in RuntimeTrace.__dataclass_fields__:
-            np.testing.assert_equal(
-                getattr(headless.runtime, field),
-                getattr(without_capture.runtime, field),
-            )
-        for field in type(headless.diagnostics).__dataclass_fields__:
-            np.testing.assert_equal(
-                getattr(headless.diagnostics, field),
-                getattr(without_capture.diagnostics, field),
-            )
+        assert_dataclass_equal(headless.runtime, without_capture.runtime)
+        assert_dataclass_equal(headless.diagnostics, without_capture.diagnostics)
         self.assertIsNotNone(headless.state_trace)
         self.assertIsNotNone(without_capture.state_trace)
         assert headless.state_trace is not None
         assert without_capture.state_trace is not None
-        for field in type(headless.state_trace).__dataclass_fields__:
-            np.testing.assert_equal(
-                getattr(headless.state_trace, field),
-                getattr(without_capture.state_trace, field),
-            )
+        assert_dataclass_equal(headless.state_trace, without_capture.state_trace)
 
-        fake_viewer = FakeViewer()
-        with mock.patch(
-            "fastreflex.simulation.g1.launch_passive_viewer",
-            return_value=fake_viewer,
-        ), mock.patch("fastreflex.simulation.g1._pace_viewer"):
+        fake_viewer = ViewerStub(running_checks=None)
+        with (
+            mock.patch(
+                "fastreflex.simulation.g1.launch_passive_viewer",
+                return_value=fake_viewer,
+            ),
+            mock.patch("fastreflex.simulation.g1._pace_viewer"),
+        ):
             viewer = run_simulation(replace(config, headless=False))
         self.assertGreater(fake_viewer.sync_count, 1)
         self.assertFalse(viewer.metadata["render_trace_captured"])
         self.assertIsNone(viewer.render_trace)
-        for field in RuntimeTrace.__dataclass_fields__:
-            np.testing.assert_equal(
-                getattr(headless.runtime, field), getattr(viewer.runtime, field)
-            )
-        for field in type(headless.diagnostics).__dataclass_fields__:
-            np.testing.assert_equal(
-                getattr(headless.diagnostics, field),
-                getattr(viewer.diagnostics, field),
-            )
+        assert_dataclass_equal(headless.runtime, viewer.runtime)
+        assert_dataclass_equal(headless.diagnostics, viewer.diagnostics)
 
     def test_virtual_fsr_channel_order_quadrants_and_contact_force_sum(self) -> None:
         self.assertEqual(
             FSR_CHANNELS,
             (
-                "left_front_left", "left_front_right",
-                "left_rear_left", "left_rear_right",
-                "right_front_left", "right_front_right",
-                "right_rear_left", "right_rear_right",
+                "left_front_left",
+                "left_front_right",
+                "left_rear_left",
+                "left_rear_right",
+                "right_front_left",
+                "right_front_right",
+                "right_rear_left",
+                "right_rear_right",
             ),
         )
         self.assertEqual(fsr_quadrant_index(0.0, 0.0), 0)
@@ -942,14 +777,16 @@ class SimulationTest(unittest.TestCase):
         model, ground_ids = load_g1_model("concrete")
         data = mujoco.MjData(model)
         mujoco.mj_forward(model, data)
-        np.testing.assert_array_equal(read_virtual_fsr(model, data, ground_ids), np.zeros(8))
+        np.testing.assert_array_equal(
+            read_virtual_fsr(model, data, ground_ids), np.zeros(8)
+        )
 
-        data.qpos[:] = model.qpos0
-        data.qpos[2] = 0.78
-        mujoco.mj_forward(model, data)
+        _place_robot_on_ground(model, data)
         before = {
-            "qpos": data.qpos.copy(), "qvel": data.qvel.copy(),
-            "ctrl": data.ctrl.copy(), "time": float(data.time),
+            "qpos": data.qpos.copy(),
+            "qvel": data.qvel.copy(),
+            "ctrl": data.ctrl.copy(),
+            "time": float(data.time),
             "imu": read_pelvis_imu(model, data).copy(),
         }
         fsr = read_virtual_fsr(model, data, ground_ids)
@@ -971,16 +808,21 @@ class SimulationTest(unittest.TestCase):
 
     def test_config_model_and_pelvis_imu_contract(self) -> None:
         config = load_simulation_config(SIMULATOR_CONFIG)
-        self.assertEqual(config.physics_timestep_s, 0.0005)
-        self.assertEqual(config.sensor_rate_hz, 1000)
-        self.assertEqual(config.physics_steps_per_sample, 2)
-        self.assertIsNone(config.policy_path)
-        self.assertEqual(config.slip_pattern, "uniform")
-        self.assertEqual(config.sink_pattern, "uniform")
-        self.assertEqual(config.sink_severity, "moderate")
-        self.assertEqual(config.sink_support_pattern, "balanced_soft")
-        self.assertEqual(config.patch_start_x_m, TRANSITION_PATCH_START_X_M)
-        self.assertEqual(config.patch_width_m, TRANSITION_PATCH_WIDTH_M)
+        assert_attributes(
+            config,
+            {
+                "physics_timestep_s": 0.0005,
+                "sensor_rate_hz": 1000,
+                "physics_steps_per_sample": 2,
+                "policy_path": None,
+                "slip_pattern": "uniform",
+                "sink_pattern": "uniform",
+                "sink_severity": "moderate",
+                "sink_support_pattern": "balanced_soft",
+                "patch_start_x_m": TRANSITION_PATCH_START_X_M,
+                "patch_width_m": TRANSITION_PATCH_WIDTH_M,
+            },
+        )
 
         model, ground_ids = load_g1_model("concrete")
         self.assertEqual(len(ground_ids), 1)
@@ -1029,15 +871,15 @@ class SimulationTest(unittest.TestCase):
         np.testing.assert_array_equal(imu, np.arange(1.0, 7.0, dtype=np.float32))
         self.assertTrue(np.all(np.isfinite(imu)))
 
+
+class TerrainTopologyTest(unittest.TestCase):
     def test_terrain_profiles_apply_exactly(self) -> None:
         self.assertEqual(tuple(TERRAIN_PROFILES), ("concrete", "marble", "ice", "sand"))
         for name, profile in TERRAIN_PROFILES.items():
             with self.subTest(terrain=name):
                 model, ground_ids = load_g1_model(name)
                 terrain_id = next(iter(ground_ids))
-                np.testing.assert_allclose(model.geom_friction[terrain_id], profile.friction)
-                np.testing.assert_allclose(model.geom_solref[terrain_id], profile.solref)
-                np.testing.assert_allclose(model.geom_solimp[terrain_id], profile.solimp)
+                _assert_contact_profile(model, terrain_id, profile)
 
     def test_sink_patch_topology_side_mapping_and_profile_application(self) -> None:
         baseline, baseline_ids = load_g1_model("sand")
@@ -1057,9 +899,7 @@ class SimulationTest(unittest.TestCase):
                     )
                     self.assertEqual(len(ground_ids), 2)
                     self.assertEqual(
-                        mujoco.mj_name2id(
-                            model, mujoco.mjtObj.mjOBJ_GEOM, "terrain"
-                        ),
+                        mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "terrain"),
                         -1,
                     )
                     for side in ("left", "right"):
@@ -1067,9 +907,8 @@ class SimulationTest(unittest.TestCase):
                         self.assertEqual(
                             model.geom_type[geom_id], mujoco.mjtGeom.mjGEOM_BOX
                         )
-                        top_z = (
-                            float(model.geom_pos[geom_id, 2])
-                            + float(model.geom_size[geom_id, 2])
+                        top_z = float(model.geom_pos[geom_id, 2]) + float(
+                            model.geom_size[geom_id, 2]
                         )
                         self.assertEqual(top_z, 0.0)
                         expected = (
@@ -1077,15 +916,7 @@ class SimulationTest(unittest.TestCase):
                             if side == soft_side
                             else TERRAIN_PROFILES["sand"]
                         )
-                        np.testing.assert_allclose(
-                            model.geom_friction[geom_id], expected.friction
-                        )
-                        np.testing.assert_allclose(
-                            model.geom_solref[geom_id], expected.solref
-                        )
-                        np.testing.assert_allclose(
-                            model.geom_solimp[geom_id], expected.solimp
-                        )
+                        _assert_contact_profile(model, geom_id, expected)
 
                     left_id = model.geom("terrain_left").id
                     right_id = model.geom("terrain_right").id
@@ -1114,49 +945,27 @@ class SimulationTest(unittest.TestCase):
                         {model.geom(geom_id).name for geom_id in ground_ids},
                         set(TRANSITION_GROUND_GEOM_NAMES),
                     )
-                    self.assertEqual(model.geom_contype[model.geom("terrain_left").id], 0)
-                    self.assertEqual(model.geom_contype[model.geom("terrain_right").id], 0)
+                    self.assertEqual(
+                        model.geom_contype[model.geom("terrain_left").id], 0
+                    )
+                    self.assertEqual(
+                        model.geom_contype[model.geom("terrain_right").id], 0
+                    )
                     for name in TRANSITION_GROUND_GEOM_NAMES:
                         geom_id = model.geom(name).id
                         self.assertEqual(model.geom_contype[geom_id], 1)
                         self.assertEqual(
-                            float(model.geom_pos[geom_id, 2] + model.geom_size[geom_id, 2]),
+                            float(
+                                model.geom_pos[geom_id, 2] + model.geom_size[geom_id, 2]
+                            ),
                             0.0,
                         )
 
-                    pre_id = model.geom("terrain_transition_pre").id
-                    left_id = model.geom("terrain_transition_left").id
-                    right_id = model.geom("terrain_transition_right").id
-                    post_id = model.geom("terrain_transition_post").id
-                    self.assertAlmostEqual(
-                        float(model.geom_pos[pre_id, 0] + model.geom_size[pre_id, 0]),
-                        TRANSITION_PATCH_START_X_M,
-                    )
-                    for patch_id in (left_id, right_id):
-                        self.assertAlmostEqual(
-                            float(model.geom_pos[patch_id, 0] - model.geom_size[patch_id, 0]),
-                            TRANSITION_PATCH_START_X_M,
-                        )
-                        self.assertAlmostEqual(
-                            float(model.geom_pos[patch_id, 0] + model.geom_size[patch_id, 0]),
-                            TRANSITION_PATCH_END_X_M,
-                        )
-                    self.assertAlmostEqual(
-                        float(model.geom_pos[post_id, 0] - model.geom_size[post_id, 0]),
-                        TRANSITION_PATCH_END_X_M,
-                    )
+                    _assert_transition_geometry(model)
                     self.assertEqual(float(model.qpos0[0]), 0.0)
                     self.assertGreater(
                         TRANSITION_PATCH_START_X_M,
                         float(model.qpos0[0]),
-                    )
-                    self.assertEqual(
-                        float(model.geom_pos[left_id, 1] - model.geom_size[left_id, 1]),
-                        0.0,
-                    )
-                    self.assertEqual(
-                        float(model.geom_pos[right_id, 1] + model.geom_size[right_id, 1]),
-                        0.0,
                     )
                     for side in ("left", "right"):
                         geom_id = model.geom(f"terrain_transition_{side}").id
@@ -1165,11 +974,8 @@ class SimulationTest(unittest.TestCase):
                             if side == soft_side
                             else TERRAIN_PROFILES["concrete"]
                         )
-                        np.testing.assert_allclose(
-                            model.geom_solref[geom_id], expected.solref
-                        )
-                        np.testing.assert_allclose(
-                            model.geom_solimp[geom_id], expected.solimp
+                        _assert_contact_profile(
+                            model, geom_id, expected, include_friction=False
                         )
 
     def test_full_width_slip_transition_topology_and_profile(self) -> None:
@@ -1184,35 +990,7 @@ class SimulationTest(unittest.TestCase):
         )
         self.assertEqual(model.geom_contype[model.geom("terrain_left").id], 0)
         self.assertEqual(model.geom_contype[model.geom("terrain_right").id], 0)
-        pre_id = model.geom("terrain_transition_pre").id
-        left_id = model.geom("terrain_transition_left").id
-        right_id = model.geom("terrain_transition_right").id
-        post_id = model.geom("terrain_transition_post").id
-        self.assertAlmostEqual(
-            float(model.geom_pos[pre_id, 0] + model.geom_size[pre_id, 0]),
-            TRANSITION_PATCH_START_X_M,
-        )
-        for patch_id in (left_id, right_id):
-            self.assertAlmostEqual(
-                float(model.geom_pos[patch_id, 0] - model.geom_size[patch_id, 0]),
-                TRANSITION_PATCH_START_X_M,
-            )
-            self.assertAlmostEqual(
-                float(model.geom_pos[patch_id, 0] + model.geom_size[patch_id, 0]),
-                TRANSITION_PATCH_END_X_M,
-            )
-        self.assertAlmostEqual(
-            float(model.geom_pos[post_id, 0] - model.geom_size[post_id, 0]),
-            TRANSITION_PATCH_END_X_M,
-        )
-        self.assertEqual(
-            float(model.geom_pos[left_id, 1] - model.geom_size[left_id, 1]),
-            0.0,
-        )
-        self.assertEqual(
-            float(model.geom_pos[right_id, 1] + model.geom_size[right_id, 1]),
-            0.0,
-        )
+        _assert_transition_geometry(model)
         for name in TRANSITION_GROUND_GEOM_NAMES:
             geom_id = model.geom(name).id
             self.assertEqual(model.geom_contype[geom_id], 1)
@@ -1225,12 +1003,7 @@ class SimulationTest(unittest.TestCase):
                 if name in TRANSITION_PATCH_GEOM_NAMES
                 else TERRAIN_PROFILES["concrete"]
             )
-            np.testing.assert_allclose(
-                model.geom_friction[geom_id],
-                expected.friction,
-            )
-            np.testing.assert_allclose(model.geom_solref[geom_id], expected.solref)
-            np.testing.assert_allclose(model.geom_solimp[geom_id], expected.solimp)
+            _assert_contact_profile(model, geom_id, expected)
 
         config = load_simulation_config(SIMULATOR_CONFIG)
         with self.assertRaisesRegex(ValueError, "requires terrain='ice'"):
@@ -1249,116 +1022,102 @@ class SimulationTest(unittest.TestCase):
             patch_start_x_m=0.40,
             patch_width_m=0.75,
         )
-        shifted_left = shifted.geom("terrain_transition_left").id
-        shifted_pre = shifted.geom("terrain_transition_pre").id
-        shifted_post = shifted.geom("terrain_transition_post").id
-        self.assertAlmostEqual(
-            float(
-                shifted.geom_pos[shifted_pre, 0]
-                + shifted.geom_size[shifted_pre, 0]
-            ),
-            0.40,
-        )
-        self.assertAlmostEqual(
-            float(
-                shifted.geom_pos[shifted_left, 0]
-                - shifted.geom_size[shifted_left, 0]
-            ),
-            0.40,
-        )
-        self.assertAlmostEqual(
-            float(
-                shifted.geom_pos[shifted_left, 0]
-                + shifted.geom_size[shifted_left, 0]
-            ),
-            1.15,
-        )
-        self.assertAlmostEqual(
-            float(
-                shifted.geom_pos[shifted_post, 0]
-                - shifted.geom_size[shifted_post, 0]
-            ),
-            1.15,
-        )
+        _assert_transition_geometry(shifted, start_x_m=0.40, end_x_m=1.15)
 
+
+class ViewerContractTest(unittest.TestCase):
     def test_viewer_cli_rates_and_availability_contract(self) -> None:
         parser = build_parser()
-        viewer_args = parser.parse_args(["simulate", "--viewer"])
-        self.assertTrue(viewer_args.viewer)
-        self.assertFalse(viewer_args.headless)
-        sink_args = parser.parse_args(
-            [
-                "simulate",
-                "--terrain",
-                "sand",
-                "--sink-pattern",
-                "asymmetric_right",
-                "--sink-severity",
-                "severe",
-            ]
+        cases = (
+            (("--viewer",), {"viewer": True, "headless": False}),
+            (
+                (
+                    "--terrain",
+                    "sand",
+                    "--sink-pattern",
+                    "asymmetric_right",
+                    "--sink-severity",
+                    "severe",
+                ),
+                {"sink_pattern": "asymmetric_right", "sink_severity": "severe"},
+            ),
+            (
+                (
+                    "--terrain",
+                    "sand",
+                    "--sink-pattern",
+                    "transition_left",
+                    "--sink-support-pattern",
+                    "medial_soft",
+                ),
+                {
+                    "sink_pattern": "transition_left",
+                    "sink_support_pattern": "medial_soft",
+                },
+            ),
+            (
+                (
+                    "--terrain",
+                    "sand",
+                    "--sink-pattern",
+                    "transition_right",
+                    "--sink-support-pattern",
+                    "lateral_deformable",
+                ),
+                {"sink_support_pattern": "lateral_deformable"},
+            ),
+            (
+                (
+                    "--terrain",
+                    "sand",
+                    "--sink-pattern",
+                    "transition_left",
+                    "--sink-support-pattern",
+                    "staged_lateral_deformable",
+                ),
+                {"sink_support_pattern": "staged_lateral_deformable"},
+            ),
+            (
+                (
+                    "--terrain",
+                    "sand",
+                    "--sink-severity",
+                    "severe",
+                    "--record",
+                    "simulation/outputs/sand_severe_qualitative_demo.mp4",
+                    "--playback-speed",
+                    "0.5",
+                ),
+                {
+                    "record": Path(
+                        "simulation/outputs/sand_severe_qualitative_demo.mp4"
+                    ),
+                    "playback_speed": 0.5,
+                },
+            ),
+            (
+                ("--terrain", "ice", "--slip-pattern", "transition"),
+                {"slip_pattern": "transition"},
+            ),
+            (
+                (
+                    "--terrain",
+                    "ice",
+                    "--slip-pattern",
+                    "transition",
+                    "--patch-start-x",
+                    "0.40",
+                    "--patch-width",
+                    "0.75",
+                ),
+                {"patch_start_x": 0.40, "patch_width": 0.75},
+            ),
         )
-        self.assertEqual(sink_args.sink_pattern, "asymmetric_right")
-        self.assertEqual(sink_args.sink_severity, "severe")
-        transition_args = parser.parse_args(
-            [
-                "simulate",
-                "--terrain",
-                "sand",
-                "--sink-pattern",
-                "transition_left",
-                "--sink-support-pattern",
-                "medial_soft",
-            ]
-        )
-        self.assertEqual(transition_args.sink_pattern, "transition_left")
-        self.assertEqual(transition_args.sink_support_pattern, "medial_soft")
-        deformable_args = parser.parse_args(
-            [
-                "simulate",
-                "--terrain",
-                "sand",
-                "--sink-pattern",
-                "transition_right",
-                "--sink-support-pattern",
-                "lateral_deformable",
-            ]
-        )
-        self.assertEqual(
-            deformable_args.sink_support_pattern, "lateral_deformable"
-        )
-        staged_args = parser.parse_args(
-            [
-                "simulate",
-                "--terrain",
-                "sand",
-                "--sink-pattern",
-                "transition_left",
-                "--sink-support-pattern",
-                "staged_lateral_deformable",
-            ]
-        )
-        self.assertEqual(
-            staged_args.sink_support_pattern, "staged_lateral_deformable"
-        )
-        slip_transition_args = parser.parse_args(
-            ["simulate", "--terrain", "ice", "--slip-pattern", "transition"]
-        )
-        self.assertEqual(slip_transition_args.slip_pattern, "transition")
-        shifted_args = parser.parse_args(
-            [
-                "simulate",
-                "--terrain",
-                "ice",
-                "--slip-pattern",
-                "transition",
-                "--patch-start-x",
-                "0.40",
-                "--patch-width",
-                "0.75",
-            ]
-        )
-        self.assertEqual(shifted_args.patch_start_x, 0.40)
-        self.assertEqual(shifted_args.patch_width, 0.75)
+        for arguments, expected in cases:
+            with self.subTest(arguments=arguments):
+                parsed = parser.parse_args(["simulate", *arguments])
+                for name, value in expected.items():
+                    self.assertEqual(getattr(parsed, name), value)
         with redirect_stderr(io.StringIO()) as error:
             with self.assertRaises(SystemExit) as conflict:
                 parser.parse_args(["simulate", "--headless", "--viewer"])
@@ -1379,6 +1138,8 @@ class SimulationTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "viewer is unavailable"):
                 launch_passive_viewer(model, mujoco.MjData(model))
 
+
+class StagedDeformableSupportTest(unittest.TestCase):
     def test_staged_deformable_support_is_explicit_and_spatially_bounded(self) -> None:
         model, ground_ids = load_g1_model(
             "sand",
@@ -1476,46 +1237,40 @@ class SimulationTest(unittest.TestCase):
                 sink_support_pattern="staged_lateral_deformable",
             ).validate()
 
+
+class PhysicalDiagnosticsTest(unittest.TestCase):
     def test_physical_diagnostics_and_dataset_threshold_parity(self) -> None:
-        with DATASET_CONFIG.open("r", encoding="utf-8") as stream:
-            contract = yaml.safe_load(stream)["labels"]
-        self.assertEqual(contract["physical_load"]["on_threshold_n"], LOAD_ON_N)
-        self.assertEqual(contract["physical_load"]["off_threshold_n"], LOAD_OFF_N)
-        self.assertEqual(
-            contract["physical_load"]["touchdown_transient_ms"],
-            TOUCHDOWN_TRANSIENT_SAMPLES,
+        contract = load_yaml(DATASET_CONFIG)["labels"]
+        assert_mapping_values(
+            contract["physical_load"],
+            {
+                "on_threshold_n": LOAD_ON_N,
+                "off_threshold_n": LOAD_OFF_N,
+                "touchdown_transient_ms": TOUCHDOWN_TRANSIENT_SAMPLES,
+            },
         )
-        self.assertEqual(
-            contract["established_slip"]["touchdown_anchor_drift_m"],
-            SLIP_THRESHOLD_M,
+        assert_mapping_values(
+            contract["established_slip"],
+            {
+                "touchdown_anchor_drift_m": SLIP_THRESHOLD_M,
+                "persistence_ms": SLIP_PERSISTENCE_SAMPLES,
+                "primary_aggregation": "any_foot",
+            },
         )
-        self.assertEqual(
-            contract["established_slip"]["persistence_ms"],
-            SLIP_PERSISTENCE_SAMPLES,
+        assert_mapping_values(
+            contract["sink_physical"],
+            {
+                "first_loaded_penetration_change_m": SINK_PHYSICAL_THRESHOLD_M,
+                "persistence_ms": SINK_PHYSICAL_PERSISTENCE_SAMPLES,
+            },
         )
-        self.assertEqual(
-            contract["established_slip"]["primary_aggregation"],
-            "any_foot",
-        )
-        self.assertEqual(
-            contract["sink_physical"]["first_loaded_penetration_change_m"],
-            SINK_PHYSICAL_THRESHOLD_M,
-        )
-        self.assertEqual(
-            contract["sink_physical"]["persistence_ms"],
-            SINK_PHYSICAL_PERSISTENCE_SAMPLES,
-        )
-        self.assertEqual(
-            contract["sink_hazard"]["criteria_status"],
-            "SINK_HAZARD_CRITERIA_FROZEN",
-        )
-        self.assertEqual(
-            contract["sink_hazard"]["pelvis_tilt_threshold_rad"],
-            SINK_HAZARD_TILT_THRESHOLD_RAD,
-        )
-        self.assertEqual(
-            contract["sink_hazard"]["persistence_ms"],
-            SINK_HAZARD_TILT_PERSISTENCE_SAMPLES,
+        assert_mapping_values(
+            contract["sink_hazard"],
+            {
+                "criteria_status": "SINK_HAZARD_CRITERIA_FROZEN",
+                "pelvis_tilt_threshold_rad": SINK_HAZARD_TILT_THRESHOLD_RAD,
+                "persistence_ms": SINK_HAZARD_TILT_PERSISTENCE_SAMPLES,
+            },
         )
 
         samples = 50
@@ -1571,19 +1326,13 @@ class SimulationTest(unittest.TestCase):
         np.testing.assert_allclose(diagnostics.pelvis_tilt_rad, 0.0)
         np.testing.assert_allclose(diagnostics.pelvis_forward_velocity_m_s, 0.1)
         np.testing.assert_allclose(diagnostics.forward_velocity_error_m_s, 0.05)
-        self.assertEqual(
-            np.count_nonzero(diagnostics.pre_event_baseline_valid), 10
-        )
+        self.assertEqual(np.count_nonzero(diagnostics.pre_event_baseline_valid), 10)
         self.assertEqual(PRE_EVENT_BASELINE_SAMPLES, 1000)
-        np.testing.assert_allclose(
-            diagnostics.pelvis_z_drop_from_pre_event_m[10:], 0.0
-        )
+        np.testing.assert_allclose(diagnostics.pelvis_z_drop_from_pre_event_m[10:], 0.0)
         np.testing.assert_allclose(
             diagnostics.forward_velocity_drop_from_pre_event_m_s[10:], 0.0
         )
-        self.assertTrue(np.all(np.isfinite(diagnostics.foot_world_xyz)))
-        self.assertTrue(np.all(np.isfinite(diagnostics.foot_world_velocity_xyz)))
-        self.assertTrue(np.all(np.isfinite(diagnostics.contact_penetration_m)))
+        _assert_finite_foot_diagnostics(diagnostics)
         self.assertEqual(
             tuple(RuntimeTrace.__dataclass_fields__),
             ("sequence", "timestamp_us", "pelvis_imu", "foot_fsr", "foot_imu"),
@@ -1614,105 +1363,8 @@ class SimulationTest(unittest.TestCase):
         self.assertTrue(tilted.sink_hazard_onset[expected_t2])
         self.assertFalse(tilted.sink_hazard_active[:expected_t2].any())
 
-    def test_sink_sanity_experiment_config_is_bounded_and_symmetric(self) -> None:
-        with SINK_EXPERIMENT_CONFIG.open("r", encoding="utf-8") as stream:
-            experiment = yaml.safe_load(stream)
-        self.assertEqual(
-            experiment["experiment"]["id"], "SINK_HAZARD_SCENARIO_SANITY"
-        )
-        self.assertEqual(experiment["common"]["duration_s"], 10.0)
-        runs = experiment["runs"]
-        self.assertEqual(len(runs), 8)
-        self.assertEqual(
-            {run["id"] for run in runs[:2]},
-            {"concrete_control", "uniform_sand_control"},
-        )
-        asymmetric = runs[2:]
-        self.assertEqual(
-            {
-                (run["sink_pattern"], run["sink_severity"])
-                for run in asymmetric
-            },
-            {
-                (f"asymmetric_{side}", severity)
-                for side in ("left", "right")
-                for severity in SINK_SEVERITIES
-            },
-        )
-        self.assertFalse(
-            experiment["interpretation"]["primary_sink_labels_generated"]
-        )
 
-    def test_sink_transition_experiment_config_is_finite_and_bounded(self) -> None:
-        with SINK_TRANSITION_EXPERIMENT_CONFIG.open("r", encoding="utf-8") as stream:
-            experiment = yaml.safe_load(stream)
-        self.assertEqual(
-            experiment["experiment"]["id"], "SINK_HAZARD_TRANSITION_AND_CRITERIA"
-        )
-        self.assertEqual(experiment["common"]["duration_s"], 8.0)
-        self.assertEqual(
-            experiment["geometry"]["patch_start_x_m"],
-            TRANSITION_PATCH_START_X_M,
-        )
-        self.assertEqual(
-            experiment["geometry"]["patch_end_x_m"],
-            TRANSITION_PATCH_END_X_M,
-        )
-        self.assertEqual(
-            experiment["timeline"]["t2_degradation"]["threshold_rad"],
-            SINK_HAZARD_TILT_THRESHOLD_RAD,
-        )
-        runs = experiment["runs"]
-        self.assertEqual(len(runs), 8)
-        self.assertEqual(
-            {
-                (run["sink_pattern"], run["sink_severity"])
-                for run in runs[2:]
-            },
-            {
-                (f"transition_{side}", severity)
-                for side in ("left", "right")
-                for severity in SINK_SEVERITIES
-            },
-        )
-        self.assertFalse(
-            experiment["interpretation"]["primary_sink_labels_generated"]
-        )
-        self.assertEqual(
-            experiment["interpretation"]["sink_hazard_status"],
-            "SINK_HAZARD_CRITERIA_FROZEN",
-        )
-
-    def test_slip_transition_experiment_config_is_finite_and_bounded(self) -> None:
-        with SLIP_TRANSITION_EXPERIMENT_CONFIG.open("r", encoding="utf-8") as stream:
-            experiment = yaml.safe_load(stream)
-        self.assertEqual(
-            experiment["experiment"]["id"],
-            "SLIP_HAZARD_TRANSITION_SANITY",
-        )
-        self.assertEqual(experiment["common"]["duration_s"], 8.0)
-        self.assertEqual(
-            experiment["geometry"]["patch_start_x_m"],
-            TRANSITION_PATCH_START_X_M,
-        )
-        self.assertEqual(
-            experiment["geometry"]["patch_end_x_m"],
-            TRANSITION_PATCH_END_X_M,
-        )
-        self.assertEqual(experiment["geometry"]["patch_width"], "full")
-        runs = experiment["runs"]
-        self.assertEqual(len(runs), 5)
-        self.assertEqual(
-            {run["command_speed_mps"] for run in runs[1:]},
-            {0.10, 0.15, 0.20, 0.25},
-        )
-        self.assertTrue(
-            all(run["slip_pattern"] == "transition" for run in runs[1:])
-        )
-        self.assertFalse(
-            experiment["interpretation"]["terrain_identity_is_label"]
-        )
-
+class WalkingIntegrationTest(unittest.TestCase):
     @unittest.skipUnless(
         os.environ.get("FASTREFLEX_G1_POLICY"),
         "end-to-end policy smoke requires the user-supplied ONNX artifact",
@@ -1752,9 +1404,7 @@ class SimulationTest(unittest.TestCase):
         self.assertEqual(diagnostics.pelvis_linear_velocity_m_s.shape, (200, 3))
         self.assertEqual(diagnostics.pelvis_tilt_rad.shape, (200,))
         self.assertEqual(diagnostics.fall_active.shape, (200,))
-        self.assertTrue(np.all(np.isfinite(diagnostics.foot_world_xyz)))
-        self.assertTrue(np.all(np.isfinite(diagnostics.foot_world_velocity_xyz)))
-        self.assertTrue(np.all(np.isfinite(diagnostics.contact_penetration_m)))
+        _assert_finite_foot_diagnostics(diagnostics)
 
         transition_result = run_simulation(
             replace(
@@ -1767,9 +1417,7 @@ class SimulationTest(unittest.TestCase):
         )
         transition_summary = summarize_result(transition_result)
         t0 = transition_summary["first_soft_patch_contact_sample_per_foot"][0]
-        t1 = transition_summary[
-            "first_sink_physical_after_patch_sample_per_foot"
-        ][0]
+        t1 = transition_summary["first_sink_physical_after_patch_sample_per_foot"][0]
         t2 = transition_summary["first_sink_hazard_sample"]
         t3 = transition_summary["first_fall_sample"]
         self.assertIsNotNone(t0)
@@ -1801,15 +1449,9 @@ class SimulationTest(unittest.TestCase):
             )
         )
         slip_summary = summarize_result(slip_result)
-        slip_t0 = slip_summary[
-            "first_low_friction_patch_contact_sample_per_foot"
-        ]
-        slip_t1 = slip_summary[
-            "first_established_slip_after_patch_sample_per_foot"
-        ]
-        any_slip_t1 = slip_summary[
-            "first_any_established_slip_after_patch_sample"
-        ]
+        slip_t0 = slip_summary["first_low_friction_patch_contact_sample_per_foot"]
+        slip_t1 = slip_summary["first_established_slip_after_patch_sample_per_foot"]
+        any_slip_t1 = slip_summary["first_any_established_slip_after_patch_sample"]
         self.assertTrue(all(value is not None for value in slip_t0))
         self.assertTrue(all(value is not None for value in slip_t1))
         self.assertGreaterEqual(min(slip_t0), 1500)
@@ -1826,32 +1468,32 @@ class SimulationTest(unittest.TestCase):
             {"sequence", "timestamp_us", "pelvis_imu"},
         )
 
-        fake_viewer = FakeViewer()
+        fake_viewer = ViewerStub(running_checks=None)
         viewer_config = replace(config, headless=False)
-        with mock.patch(
-            "fastreflex.simulation.g1.launch_passive_viewer",
-            return_value=fake_viewer,
-        ), mock.patch("fastreflex.simulation.g1._pace_viewer"):
+        with (
+            mock.patch(
+                "fastreflex.simulation.g1.launch_passive_viewer",
+                return_value=fake_viewer,
+            ),
+            mock.patch("fastreflex.simulation.g1._pace_viewer"),
+        ):
             viewer_result = run_simulation(viewer_config)
         self.assertGreater(fake_viewer.sync_count, 1)
         self.assertEqual(viewer_result.metadata["physics_timestep_s"], 0.0005)
         self.assertEqual(viewer_result.metadata["sensor_rate_hz"], 1000)
         self.assertTrue(viewer_result.metadata["viewer"])
         self.assertFalse(viewer_result.metadata["terminated_by_viewer"])
-        for field in RuntimeTrace.__dataclass_fields__:
-            np.testing.assert_equal(
-                getattr(result.runtime, field), getattr(viewer_result.runtime, field)
-            )
-        for field in type(diagnostics).__dataclass_fields__:
-            np.testing.assert_equal(
-                getattr(diagnostics, field), getattr(viewer_result.diagnostics, field)
-            )
+        assert_dataclass_equal(result.runtime, viewer_result.runtime)
+        assert_dataclass_equal(diagnostics, viewer_result.diagnostics)
 
-        closing_viewer = FakeViewer(running_checks=20)
-        with mock.patch(
-            "fastreflex.simulation.g1.launch_passive_viewer",
-            return_value=closing_viewer,
-        ), mock.patch("fastreflex.simulation.g1._pace_viewer"):
+        closing_viewer = ViewerStub(running_checks=20)
+        with (
+            mock.patch(
+                "fastreflex.simulation.g1.launch_passive_viewer",
+                return_value=closing_viewer,
+            ),
+            mock.patch("fastreflex.simulation.g1._pace_viewer"),
+        ):
             partial_result = run_simulation(viewer_config)
         self.assertTrue(partial_result.metadata["terminated_by_viewer"])
         self.assertLess(
@@ -1859,7 +1501,3 @@ class SimulationTest(unittest.TestCase):
             partial_result.metadata["expected_samples"],
         )
         self.assertEqual(partial_result.metadata["dropped_samples"], 0)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -19,9 +19,8 @@ from fastreflex.dataset.hazard import (
     physical_signature,
     validate_hazard_design,
 )
+from tests.support import REPOSITORY_ROOT as ROOT
 
-
-ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/experiment/20260829_unified_hazard_reflex_system.yaml"
 
 
@@ -80,9 +79,7 @@ class DatasetTest(unittest.TestCase):
             result["total_split_counts"],
             {"train": 152, "validation": 52, "holdout": 52},
         )
-        self.assertEqual(
-            len({physical_signature(row) for row in specifications}), 256
-        )
+        self.assertEqual(len({physical_signature(row) for row in specifications}), 256)
 
     def test_manifest_integrity_and_run_tensor_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -106,12 +103,8 @@ class DatasetTest(unittest.TestCase):
             manifest = load_hazard_manifest(root)
             runs = load_hazard_runs(root, manifest, ("train",))
             self.assertEqual(set(runs), {"train"})
-            self.assertEqual(
-                runs["train"].features["PELVIS_IMU6"].shape, (40, 6)
-            )
-            self.assertEqual(
-                runs["train"].features["PELVIS_IMU6_FSR8"].shape, (40, 14)
-            )
+            self.assertEqual(runs["train"].features["PELVIS_IMU6"].shape, (40, 6))
+            self.assertEqual(runs["train"].features["PELVIS_IMU6_FSR8"].shape, (40, 14))
             self.assertEqual(runs["train"].timestamp_us.dtype, np.int64)
 
     def test_holdout_waveforms_fail_closed_without_one_shot_guard(self) -> None:
@@ -126,9 +119,7 @@ class DatasetTest(unittest.TestCase):
             guard.open_once()
             self.assertEqual(
                 set(
-                    load_hazard_runs(
-                        root, manifest, ("holdout",), holdout_guard=guard
-                    )
+                    load_hazard_runs(root, manifest, ("holdout",), holdout_guard=guard)
                 ),
                 {"holdout"},
             )
@@ -152,7 +143,3 @@ class DatasetTest(unittest.TestCase):
             path.write_bytes(path.read_bytes() + b"changed")
             with self.assertRaises(ValueError):
                 load_hazard_runs(root, manifest, ("train",))
-
-
-if __name__ == "__main__":
-    unittest.main()

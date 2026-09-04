@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import unittest
-from pathlib import Path
 
 from fastreflex.dataset.hazard import canonical_sha256
 from fastreflex.dataset.loader import sha256_file
@@ -21,9 +20,8 @@ from fastreflex.evaluation.generalization import (
     verify_generalization_development_evaluation,
     verify_promoted_candidate,
 )
+from tests.support import REPOSITORY_ROOT as ROOT, load_json
 
-
-ROOT = Path(__file__).resolve().parents[1]
 CONFIG = (
     ROOT
     / "configs/experiment/20260902_model_v2_generalization_development_evaluation.yaml"
@@ -57,9 +55,7 @@ class GeneralizationEvaluationTest(unittest.TestCase):
             if row["split"] == VALIDATION_SPLIT
         ]
         holdout_ids = [
-            row["run_id"]
-            for row in manifest["runs"]
-            if row["split"] == HOLDOUT_SPLIT
+            row["run_id"] for row in manifest["runs"] if row["split"] == HOLDOUT_SPLIT
         ]
         self.assertEqual(len(validation_ids), VALIDATION_COUNT)
         self.assertEqual(len(holdout_ids), HOLDOUT_COUNT)
@@ -85,9 +81,7 @@ class GeneralizationEvaluationTest(unittest.TestCase):
     def test_primary_and_precursor_semantics_are_frozen(self) -> None:
         self.assertEqual(self.document["experiment"]["id"], EXPERIMENT_ID)
         self.assertEqual(
-            self.document["primary_evaluation"]["event_timing"][
-                "slip_valid_window_ms"
-            ],
+            self.document["primary_evaluation"]["event_timing"]["slip_valid_window_ms"],
             [-30, 40],
         )
         secondary = self.document["secondary_evaluation"]
@@ -116,12 +110,8 @@ class GeneralizationEvaluationTest(unittest.TestCase):
             return
         result = verify_generalization_development_evaluation(ROOT, CONFIG)
         self.assertTrue(result["passed"])
-        freeze = json.loads(freeze_path.read_text(encoding="utf-8"))
+        freeze = load_json(freeze_path)
         self.assertEqual(
             sha256_file(artifact_path / "run_level_results.json"),
             freeze["artifact_sha256"]["run_level_results.json"],
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

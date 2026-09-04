@@ -13,6 +13,7 @@ dependencies = [
   "matplotlib>=3.5",
   "numpy>=1.23",
   "onnxruntime>=1.16",
+  "Pillow>=9",
   "PyYAML>=6",
   "torch>=2.2",
 ]

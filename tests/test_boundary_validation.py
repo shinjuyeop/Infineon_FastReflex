@@ -1,8 +1,6 @@
-import json
-from pathlib import Path
-from unittest.mock import patch
+"""Current model-blind boundary validation and stop-condition contracts."""
 
-import yaml
+from unittest.mock import patch
 
 from fastreflex.dataset.sand_factor_conditioned import (
     BOUNDARY_VALIDATION_DATASET_ID,
@@ -16,35 +14,24 @@ from fastreflex.training.hazard import (
     _load_factor_conditioned_runs,
     verify_boundary_failure_audit_result,
 )
+from tests.support import REPOSITORY_ROOT as ROOT, load_json, load_yaml
 
-
-ROOT = Path(__file__).resolve().parents[1]
-AUDIT_CONFIG = (
-    ROOT / "configs/experiment/20260904_hazard_boundary_failure_audit.yaml"
-)
+AUDIT_CONFIG = ROOT / "configs/experiment/20260904_hazard_boundary_failure_audit.yaml"
 DESIGN_CONFIG = (
     ROOT / "configs/experiment/20260904_hazard_boundary_validation_generation.yaml"
 )
-RESOLUTION_CONFIG = (
-    ROOT / "configs/experiment/20260904_hazard_boundary_resolution.yaml"
-)
+RESOLUTION_CONFIG = ROOT / "configs/experiment/20260904_hazard_boundary_resolution.yaml"
 PRIOR_CONFIG = (
     ROOT / "configs/experiment/20260904_sand_factor_conditioned_model_training.yaml"
 )
 
 
-def _load_yaml(path: Path) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
-
-
 def test_train_only_root_cause_is_frozen_and_run_disjoint() -> None:
     verification = verify_boundary_failure_audit_result(ROOT, AUDIT_CONFIG)
     assert verification["primary_root_cause"] == "TRAINING_OBJECTIVE_SAMPLING_TENSION"
-    split = json.loads(
-        (
-            ROOT
-            / "artifacts/runs/20260904_hazard_boundary_failure_audit/diagnostic_split.json"
-        ).read_text(encoding="utf-8")
+    split = load_json(
+        ROOT
+        / "artifacts/runs/20260904_hazard_boundary_failure_audit/diagnostic_split.json"
     )
     assert split["created_before_checkpoint_diagnostics"] is True
     assert split["run_overlap"] == 0
@@ -54,7 +41,7 @@ def test_train_only_root_cause_is_frozen_and_run_disjoint() -> None:
 
 
 def test_consumed_factor_validation_cannot_reopen_before_npz_load() -> None:
-    document = _load_yaml(PRIOR_CONFIG)
+    document = load_yaml(PRIOR_CONFIG)
     artifact = ROOT / document["artifacts"]["path"]
     with patch(
         "fastreflex.training.hazard.np.load",
@@ -77,7 +64,7 @@ def test_consumed_factor_validation_cannot_reopen_before_npz_load() -> None:
 
 
 def test_boundary_validation_design_is_model_blind_balanced_and_fresh() -> None:
-    document = _load_yaml(DESIGN_CONFIG)
+    document = load_yaml(DESIGN_CONFIG)
     rows = expand_boundary_validation_design(document)
     audit = validate_boundary_validation_design(ROOT, document)
     assert audit["run_count"] == 120
@@ -97,9 +84,9 @@ def test_boundary_validation_design_is_model_blind_balanced_and_fresh() -> None:
 
 
 def test_historical_holdout_guard_remains_consumed() -> None:
-    document = _load_yaml(DESIGN_CONFIG)
+    document = load_yaml(DESIGN_CONFIG)
     guard_path = ROOT / document["generation"]["consumed_holdout_guard_path"]
-    guard = json.loads(guard_path.read_text(encoding="utf-8"))
+    guard = load_json(guard_path)
     assert guard["guard_after"] == 1
     assert guard["scientific_open_count"] == 1
 
@@ -108,8 +95,8 @@ def test_failed_physical_generation_stays_sealed_without_model_open() -> None:
     dataset = ROOT / "data/raw/hazard_boundary_resolution_validation_20260904"
     verification = verify_boundary_validation_dataset(dataset)
     assert verification["passed"] is True
-    seal = json.loads((dataset / "validation_seal.json").read_text(encoding="utf-8"))
-    audit = json.loads((dataset / "physical_audit.json").read_text(encoding="utf-8"))
+    seal = load_json(dataset / "validation_seal.json")
+    audit = load_json(dataset / "physical_audit.json")
     assert seal["status"] == "SEALED_FAILED_PHYSICAL_EVIDENCE"
     assert seal["model_inference"] is False
     assert audit["all_gates_passed"] is False
@@ -117,7 +104,7 @@ def test_failed_physical_generation_stays_sealed_without_model_open() -> None:
 
 
 def test_intervention_and_candidate_budget_froze_without_training() -> None:
-    document = _load_yaml(RESOLUTION_CONFIG)
+    document = load_yaml(RESOLUTION_CONFIG)
     intervention = document["selected_intervention"]
     stop = document["execution_stop"]
     assert document["failure_audit"]["primary_root_cause"] == (
@@ -135,7 +122,7 @@ def test_intervention_and_candidate_budget_froze_without_training() -> None:
 
 
 def test_runtime_and_sensor_contract_did_not_change() -> None:
-    document = _load_yaml(RESOLUTION_CONFIG)
+    document = load_yaml(RESOLUTION_CONFIG)
     intervention = document["selected_intervention"]
     assert intervention["architecture"]["input_shape"] == [20, 80]
     assert intervention["architecture"]["hidden_size"] == 32
@@ -153,7 +140,7 @@ def test_milestone_semantic_result_hash_is_deterministic() -> None:
         ROOT
         / "artifacts/runs/20260904_hazard_boundary_resolution/milestone_result.json"
     )
-    result = json.loads(path.read_text(encoding="utf-8"))
+    result = load_json(path)
     expected = result.pop("semantic_result_sha256")
     assert canonical_sha256(result) == expected
     assert result["primary_scientific_outcome"] == "BOUNDARY_RESOLUTION_INVALID"

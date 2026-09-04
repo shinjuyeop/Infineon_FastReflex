@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,9 +24,12 @@ from fastreflex.evaluation.readiness import (
     verify_final_candidate,
     verify_protected_datasets,
 )
+from tests.support import (
+    REPOSITORY_ROOT as ROOT,
+    assert_false_fields,
+    imported_modules,
+)
 
-
-ROOT = Path(__file__).resolve().parents[1]
 CONFIG = (
     ROOT
     / "configs/experiment/20260902_model_v2_final_candidate_holdout_readiness_review.yaml"
@@ -102,10 +104,13 @@ class FinalCandidateReadinessTest(unittest.TestCase):
         self.assertFalse(holdout["authorized_now"])
         self.assertTrue(holdout["no_access_this_milestone"])
         self.assertEqual(holdout["guard_before"], 0)
-        self.assertFalse(sealed["Generalization_HOLDOUT_waveform_opened"])
-        self.assertFalse(sealed["Generalization_HOLDOUT_Hazard_inference"])
-        self.assertFalse(sealed["Generalization_HOLDOUT_Terrain_inference"])
-        self.assertFalse(sealed["Generalization_HOLDOUT_visualization"])
+        assert_false_fields(
+            sealed,
+            "Generalization_HOLDOUT_waveform_opened",
+            "Generalization_HOLDOUT_Hazard_inference",
+            "Generalization_HOLDOUT_Terrain_inference",
+            "Generalization_HOLDOUT_visualization",
+        )
         self.assertEqual(sealed["Generalization_HOLDOUT_guard_count"], 0)
 
     def test_one_shot_authorization_rejects_wrong_candidate_or_guard(self) -> None:
@@ -143,26 +148,12 @@ class FinalCandidateReadinessTest(unittest.TestCase):
 
     def test_readiness_path_has_no_trainer_or_optimizer_import(self) -> None:
         source_path = ROOT / "src/fastreflex/evaluation/readiness.py"
-        tree = ast.parse(source_path.read_text(encoding="utf-8"))
-        modules = {
-            node.module
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom)
-        }
-        modules.update(
-            alias.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Import)
-            for alias in node.names
-        )
+        modules = imported_modules(source_path)
         self.assertFalse(
             any(
-                module is not None
-                and (
-                    module.startswith("fastreflex.training")
-                    or module.startswith("torch")
-                    or module.startswith("numpy")
-                )
+                module.startswith("fastreflex.training")
+                or module.startswith("torch")
+                or module.startswith("numpy")
                 for module in modules
             )
         )
@@ -201,7 +192,3 @@ class FinalCandidateReadinessTest(unittest.TestCase):
                 "ice_near_hazard_semantics_20260901": 48,
             },
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

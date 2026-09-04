@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 import torch
-import yaml
 
 from fastreflex.models.baselines import build_model, parameter_count
 from fastreflex.training.qat import (
@@ -17,9 +14,8 @@ from fastreflex.training.qat import (
     explicit_float_forward,
     validate_qat_protocol,
 )
+from tests.support import REPOSITORY_ROOT as ROOT, load_yaml
 
-
-ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/experiment/20260904_deployment_aware_qat.yaml"
 
 
@@ -45,7 +41,7 @@ def _specs() -> dict[str, QuantizationSpec]:
 
 
 def test_qat_protocol_is_one_family_and_rejects_protected_data() -> None:
-    document = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    document = load_yaml(CONFIG)
     validate_qat_protocol(document)
     assert set(document["scientific_boundary"]["prohibited_data_sources"]) == set(
         PROTECTED_SOURCES
@@ -54,7 +50,7 @@ def test_qat_protocol_is_one_family_and_rejects_protected_data() -> None:
     assert document["training"]["seeds"] == [20260828, 20260829, 20260830]
     assert document["objective"]["within_class_domain_balanced_loss_mass"] is False
 
-    modified = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    modified = load_yaml(CONFIG)
     modified["data"]["allowed_sources"].append("Generalization_HOLDOUT")
     with pytest.raises(ValueError, match="allowed data"):
         validate_qat_protocol(modified)

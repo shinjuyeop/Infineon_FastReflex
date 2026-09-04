@@ -25,9 +25,12 @@ simulation/g1.py
   -> models/baselines.py
   -> evaluation/{hazard,generalization,readiness,sand}.py
 
+frozen Float engineering reference
+  -> training/qat.py
+  -> deployment-only engineering derivative
+
 simulation/{g1,sensors,terrain}.py
   -> dataset/terrain.py
-  -> training/terrain.py
   -> evaluation/terrain.py
   -> advisory cause
 
@@ -127,7 +130,11 @@ These references are privileged scoring/label fields. They are excluded from run
 
 `evaluation/hazard.py` owns continuous replay, probability aggregation, threshold/persistence, physical run metrics and read-only verification of selected freezes. `evaluation/generalization.py` owns the development comparison and fail-closed Generalization split loader. `evaluation/readiness.py` owns metadata-only final-candidate, protected-data, and frozen-contract checks. `evaluation/holdout.py` owns the consumed one-shot summary verifier and permanent second-open refusal. Scientific HOLDOUT payloads are never reopened during routine verification.
 
-`dataset/terrain.py`, `training/terrain.py`, and `evaluation/terrain.py` own the corresponding clean-event, training and runtime inference responsibilities. No historical Terrain-gated Hazard fusion module remains in the current dependency graph.
+`dataset/terrain.py` and `evaluation/terrain.py` own the current clean-event and
+runtime-inference responsibilities. The Terrain candidate is frozen and the current
+CLI supports read-only verification, not implicit retraining. Historical Terrain
+training code is recoverable from its recorded source commit. No historical
+Terrain-gated Hazard fusion module remains in the current dependency graph.
 
 ## 6. Simulation boundary
 
@@ -136,7 +143,9 @@ These references are privileged scoring/label fields. They are excluded from run
 - `simulation/sensors.py`: FSR and Foot IMU observation
 - `simulation/terrain.py`: Concrete/Marble/Ice/Sand and support mechanics
 - `simulation/hazards.py`: contact/touchdown, Slip, support spread/loss and I1 inputs
-- `simulation/stability.py`: simulator diagnostics still computed by `g1.py` to preserve physics/viewer result parity; it is not a supported runtime Hazard detector
+- `simulation/stability.py`: shared gait-phase naming plus the exact frozen
+  stability implementation referenced by existing dataset provenance; it is not a
+  current runtime Hazard detector
 
 The ordinary simulation viewer copies physics state into a render-only model. Viewer input cannot feed back into the canonical simulation.
 
@@ -145,6 +154,13 @@ The ordinary simulation viewer copies physics state into a render-only model. Vi
 ## 7. Research-to-Deployment boundary
 
 This repository ends at reviewed Float research artifacts and their contracts. The exact frozen V2 engineering reference is exported at `artifacts/releases/model_v2_anchor_refined_gru20_20260902`. The canonical `export` command verifies every source checksum, copies only the three selected Round-3 checkpoints and normalizer, and derives layered golden outputs from one non-protected `V2_VALIDATION` slice. It never trains, selects, tunes, opens Generalization HOLDOUT, or overwrites an existing release.
+
+`training/qat.py` is a separately predeclared deployment-only engineering path
+over that frozen Float reference. It may use only the authorized TRAIN-derived
+sources in `20260904_deployment_aware_qat.yaml`; it does not reopen scientific
+validation/HOLDOUT evidence or change the immutable generalization verdict. Research
+emulation does not establish TFLite full-INT8, Vela, target-runtime, real-robot, or
+safety support.
 
 The bundle labels the candidate `DEPLOYMENT_ENGINEERING_REFERENCE_MODEL` and preserves `MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED` plus `SIMULATION_GENERALIZATION_EVIDENCE_NOT_SUPPORTED`. Its canonical deployment Float execution is one independent `[1,20,80] float32` window per invocation with a new zero hidden state. The original batch-121 M1 golden remains historical evidence; a separate batch-1 golden and `float_numerical_contract.json` define layer-specific continuous tolerances and require exact threshold, persistence, and final decisions. Research also owns a deterministic M3 calibration handoff: five runtime-uniform endpoints from every exact effective-TRAIN run plus valid physical precursor, Slip and Support anchors, deduplicated into 2,597 windows. The calibration manifest records every run/file checksum and prohibits model-output or quantization-result selection; clipping policy, quantization, Vela, E84 firmware integration, HIL, target latency and Recovery belong to the deployment repository. The handoff does not imply a supported research, real-robot, production, or safety release.
 

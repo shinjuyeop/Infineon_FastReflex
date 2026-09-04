@@ -282,6 +282,76 @@ python scripts/fastreflex.py visualize \
   --pause-on-reflex
 ```
 
+### Recording presentation videos
+
+`--record`는 interactive viewer를 열지 않고 parity-approved snapshot을 고정된
+1920x1080, 60 fps MP4로 기록한다. 녹화 frame을 만들 때 physics를 다시 진행하지
+않으며, output frame은 simulation sample에 결정론적으로 대응한다. FFmpeg가
+실행 경로에 있어야 하며 기존 MP4를 덮어쓰지 않는다.
+
+Ice 대표 validation과 실제 fall까지 이어지는 Sand validation demo를 0.5x slow
+motion으로 기록하는 명령은 다음과 같다. `simulation/outputs/`는 generated
+artifact 경계이며 Git에서 제외된다. Sand `c24`는
+`SAND_SUPPORT_HAZARD` validation 중 physical fall이 존재하고 first SAND update 뒤
+fall censor까지 non-SAND advisory가 없는 첫 사전순 run이라는 표시 목적의 규칙으로
+선택한다. 일반 성능 대표 run은 아래 절의 `c20`을 유지한다.
+
+```bash
+python scripts/fastreflex.py visualize \
+  --run-id uhr_ice_h_c20 \
+  --mode demo \
+  --speed 0.5 \
+  --record simulation/outputs/ice_hazard_demo.mp4 \
+  --stop-before-fall
+
+python scripts/fastreflex.py visualize \
+  --run-id uhr_sand_h_c24 \
+  --mode demo \
+  --speed 0.5 \
+  --record simulation/outputs/sand_hazard_demo.mp4
+```
+
+녹화 HUD는 Hazard가 발생하기 전에는 `SAFE`, 첫 frozen Reflex 이후에는 붉은
+`DANGER / HAZARD DETECTED`를 표시하고 그 상태를 display history로 유지한다.
+Terrain은 confidence와 함께 별도의 `advisory only` card에 표시되며 Hazard gate로
+오해되지 않도록 분리된다. Fall이 있는 run은 first fall 뒤 0.75초, fall이 없는
+hazard run은 physical hazard 뒤 0.75초까지 재생한 다음 마지막 frame을 1초
+유지하고 종료한다. Fall censor 뒤 붉은 상태는 `display history`로 명시되며 현재
+controller latch나 recovery controller 동작을 뜻하지 않는다. `--record`는 interactive 전용
+`--pause-at`, `--pause-on-reflex`, `--single-step`, `--show-debug`와 함께 사용할 수
+없다. `--stop-before-fall`을 추가하면 first fall censor의 직전 sample에서 재생을
+끝내고 그 frame을 1초 유지한다.
+
+Frozen Unified Hazard validation에는 `moderate` Sand만 포함되므로, 더 깊은
+`severe` Sand는 validation demo와 분리된 정성 engineering demo로 기록한다.
+다음 명령은 같은 transition geometry에서 최대 변형 설정을 40 mm급에서 65 mm급으로
+높인다. HUD는 physical status, support-cell displacement, pelvis tilt/drop을
+simulator ground truth로 표시하며, 모델 출력이나 검증 결과로 오인되지 않도록
+`SIMULATOR GT / NOT MODEL OUTPUT`과 `OUTSIDE FROZEN VALIDATION`을 항상 표시한다.
+
+```bash
+python scripts/fastreflex.py simulate \
+  --terrain sand \
+  --source-terrain concrete \
+  --sink-pattern transition_left \
+  --sink-severity severe \
+  --sink-support-pattern lateral_deformable \
+  --patch-start-x 0.35 \
+  --patch-width 0.71623 \
+  --speed 0.25 \
+  --duration 8 \
+  --policy artifacts/external/unitree_g1/g1_velocity_policy.onnx \
+  --record simulation/outputs/sand_severe_qualitative_demo.mp4 \
+  --playback-speed 0.5
+```
+
+이 recording 경로는 immutable render snapshot만 재생하고 physics를 두 번 진행하지
+않는다. 붉은 `DANGER`는 exact deformable-support sink가 관측된 뒤 persistent pelvis
+posture degradation이 함께 성립한 simulator-only 정성 risk 신호다. 이는 frozen
+Hazard model 판정이나 dataset label 정의가 아니다. Fall이 발생하면 그 첫 sample에서,
+fall이 없으면 첫 risk 뒤 0.75초에서 재생을 끝내고 마지막 frame을 1초 유지한다.
+기존 파일은 덮어쓰지 않는다.
+
 사용 가능한 TRAIN/VALIDATION ID와 canonical representative ID는 다음 명령으로 확인한다. 이 목록에는 HOLDOUT ID가 포함되지 않는다.
 
 ```bash

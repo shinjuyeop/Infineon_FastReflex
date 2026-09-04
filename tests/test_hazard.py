@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 import unittest
 from dataclasses import replace
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -59,9 +57,8 @@ from fastreflex.training.hazard import (
     unified_positive_endpoints,
 )
 from fastreflex.training.trainer import load_checkpoint
+from tests.support import REPOSITORY_ROOT as ROOT, load_json
 
-
-ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/experiment/20260829_unified_hazard_reflex_system.yaml"
 
 
@@ -209,7 +206,9 @@ class HazardTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.document = load_yaml(CONFIG)
 
-    def test_feature_values_dtype_order_and_schema_match_selected_implementation(self) -> None:
+    def test_feature_values_dtype_order_and_schema_match_selected_implementation(
+        self,
+    ) -> None:
         rng = np.random.default_rng(20260831)
         imu = rng.normal(size=(257, 6)).astype(np.float32)
         old_values, old_schema = _reference_features(imu)
@@ -252,9 +251,7 @@ class HazardTest(unittest.TestCase):
             fit_run_ids=("run",),
             epsilon=1.0e-6,
         )
-        windows = build_hazard_windows(
-            {"run": run}, {"run"}, {"run": None}, normalizer
-        )
+        windows = build_hazard_windows({"run": run}, {"run"}, {"run": None}, normalizer)
         self.assertEqual(windows.inputs.shape[1:], (20, 80))
         endpoint = int(windows.endpoint_samples[0])
         expected = extract_hazard_features(imu)[endpoint - 19 : endpoint + 1]
@@ -263,14 +260,12 @@ class HazardTest(unittest.TestCase):
     def test_retained_member_probabilities_average_to_canonical_ensemble(self) -> None:
         torch.manual_seed(20260902)
         models = [
-            torch.nn.Sequential(
-                torch.nn.Flatten(), torch.nn.Linear(20 * 80, 2)
-            )
+            torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(20 * 80, 2))
             for _ in range(3)
         ]
-        windows = np.random.default_rng(20260902).normal(
-            size=(4, 20, 80)
-        ).astype(np.float32)
+        windows = (
+            np.random.default_rng(20260902).normal(size=(4, 20, 80)).astype(np.float32)
+        )
         members = predict_hazard_window_members(models, windows)
         ensemble = predict_hazard_windows(models, windows)
         self.assertEqual(members.shape, (3, 4))
@@ -279,7 +274,9 @@ class HazardTest(unittest.TestCase):
     def test_frozen_design_labels_and_i1_semantics_are_unchanged(self) -> None:
         specifications = generate_hazard_specifications(self.document)
         audit = validate_hazard_design(ROOT, self.document, specifications)
-        self.assertEqual(audit["total_split_counts"], {"train": 152, "validation": 52, "holdout": 52})
+        self.assertEqual(
+            audit["total_split_counts"], {"train": 152, "validation": 52, "holdout": 52}
+        )
         self.assertEqual(split_for_source_index("concrete", 26), "validation")
         self.assertEqual(split_for_source_index("marble", 26), "holdout")
         self.assertEqual(i1_support_precursor_sample(_run(spread_start=120)), 139)
@@ -287,7 +284,9 @@ class HazardTest(unittest.TestCase):
         self.assertEqual(physical_hazard_label(_run(support=220), 150), LABEL_SUPPORT)
         self.assertEqual(physical_hazard_label(_run(), None), LABEL_NO_HAZARD)
         self.assertEqual(physical_hazard_label(_run(), 150), LABEL_PRECURSOR_ONLY)
-        fallen = replace(_run(slip=200), outcome_diagnostic="VALID_FALL", fall_sample_diagnostic=300)
+        fallen = replace(
+            _run(slip=200), outcome_diagnostic="VALID_FALL", fall_sample_diagnostic=300
+        )
         self.assertEqual(physical_hazard_label(fallen, None), LABEL_SLIP)
 
     def test_positive_negative_and_hnm_contracts_are_exact(self) -> None:
@@ -302,7 +301,9 @@ class HazardTest(unittest.TestCase):
         selected = mine_hard_negative_endpoints(candidates, scores)
         self.assertLessEqual(len(selected), 12)
         self.assertTrue(np.all(np.diff(selected) >= 30))
-        self.assertTrue(np.array_equal(selected, mine_hard_negative_endpoints(candidates, scores)))
+        self.assertTrue(
+            np.array_equal(selected, mine_hard_negative_endpoints(candidates, scores))
+        )
 
     def test_five_ms_persistence_timestamp_is_frozen(self) -> None:
         replay = _probability_replay(190)
@@ -311,7 +312,9 @@ class HazardTest(unittest.TestCase):
         self.assertFalse(trace[189])
         self.assertTrue(trace[190])
 
-    def test_frozen_probability_and_event_timestamp_match_preconsolidation_math(self) -> None:
+    def test_frozen_probability_and_event_timestamp_match_preconsolidation_math(
+        self,
+    ) -> None:
         dataset_path = ROOT / "data/raw/unified_hazard_reflex_20260829"
         freeze_path = (
             ROOT
@@ -325,10 +328,10 @@ class HazardTest(unittest.TestCase):
             row for row in manifest["runs"] if row["split"] == "validation"
         )
         selected_manifest = {**manifest, "runs": [validation_row]}
-        run = load_hazard_runs(
-            dataset_path, selected_manifest, ("validation",)
-        )[str(validation_row["run_id"])]
-        selection = json.loads(freeze_path.read_text(encoding="utf-8"))["selection"]
+        run = load_hazard_runs(dataset_path, selected_manifest, ("validation",))[
+            str(validation_row["run_id"])
+        ]
+        selection = load_json(freeze_path)["selection"]
         normalizer = load_hazard_normalizer(ROOT / str(selection["normalizer_path"]))
         models = [
             load_checkpoint(ROOT / relative)[0]
@@ -359,10 +362,14 @@ class HazardTest(unittest.TestCase):
         legacy = HazardReplay(endpoints, np.concatenate(legacy_chunks))
         self.assertTrue(np.array_equal(canonical.endpoints, legacy.endpoints))
         self.assertTrue(
-            np.allclose(canonical.probabilities, legacy.probabilities, rtol=0.0, atol=1.0e-7)
+            np.allclose(
+                canonical.probabilities, legacy.probabilities, rtol=0.0, atol=1.0e-7
+            )
         )
         self.assertTrue(
-            np.array_equal(reflex_onset_samples(canonical), reflex_onset_samples(legacy))
+            np.array_equal(
+                reflex_onset_samples(canonical), reflex_onset_samples(legacy)
+            )
         )
 
     def test_terrain_cannot_change_reflex_or_metrics(self) -> None:
@@ -376,19 +383,28 @@ class HazardTest(unittest.TestCase):
         )
         unknown = evaluate_hazard_replays(terrain={"run": _terrain(0)}, **arguments)
         sand = evaluate_hazard_replays(terrain={"run": _terrain(4)}, **arguments)
-        self.assertEqual(unknown["overall_hazard_recall"], sand["overall_hazard_recall"])
-        self.assertEqual(unknown["rows"][0]["system_first_onset"], sand["rows"][0]["system_first_onset"])
+        self.assertEqual(
+            unknown["overall_hazard_recall"], sand["overall_hazard_recall"]
+        )
+        self.assertEqual(
+            unknown["rows"][0]["system_first_onset"],
+            sand["rows"][0]["system_first_onset"],
+        )
         self.assertFalse(unknown["terrain_used_as_gate"])
 
     def test_no_hazard_and_precursor_only_specificity_boundaries(self) -> None:
         normal = _run(hard=True)
         metrics = evaluate_hazard_replays(
-            {"run": normal}, {"run": _probability_replay(200)}, precursor_samples={"run": None}
+            {"run": normal},
+            {"run": _probability_replay(200)},
+            precursor_samples={"run": None},
         )
         self.assertEqual(metrics["primary_no_hazard_specificity"], 0.0)
         precursor = _run()
         excluded = evaluate_hazard_replays(
-            {"run": precursor}, {"run": _probability_replay(200)}, precursor_samples={"run": 150}
+            {"run": precursor},
+            {"run": _probability_replay(200)},
+            precursor_samples={"run": 150},
         )
         self.assertEqual(excluded["primary_no_hazard_runs"], 0)
         self.assertEqual(excluded["precursor_only_runs_excluded_from_specificity"], 1)
@@ -403,14 +419,26 @@ class HazardTest(unittest.TestCase):
     def test_supported_freeze_and_all_protected_hashes_are_unchanged(self) -> None:
         audit = verify_supported_candidate(ROOT, self.document)
         self.assertTrue(audit["passed"])
-        self.assertEqual(audit["freeze_sha256"], "91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2")
+        self.assertEqual(
+            audit["freeze_sha256"],
+            "91834c88bea3012fb8d3ec049b047017a449f7fbb3b28ce5b4a3b63afcda08c2",
+        )
         self.assertEqual(audit["parameters"], 11_010)
-        self.assertEqual((audit["history_ms"], audit["threshold"], audit["persistence_ms"]), (20, 0.99, 5))
+        self.assertEqual(
+            (audit["history_ms"], audit["threshold"], audit["persistence_ms"]),
+            (20, 0.99, 5),
+        )
         self.assertFalse(audit["holdout_opened"])
 
     def test_cli_fails_closed_for_historical_configs(self) -> None:
         current = subprocess.run(
-            [sys.executable, str(ROOT / "scripts/fastreflex.py"), "evaluate", "--config", str(CONFIG)],
+            [
+                sys.executable,
+                str(ROOT / "scripts/fastreflex.py"),
+                "evaluate",
+                "--config",
+                str(CONFIG),
+            ],
             check=False,
             capture_output=True,
             text=True,
@@ -422,7 +450,10 @@ class HazardTest(unittest.TestCase):
                 str(ROOT / "scripts/fastreflex.py"),
                 "evaluate",
                 "--config",
-                str(ROOT / "configs/experiment/20260828_walking_stability_ground_truth_sanity.yaml"),
+                str(
+                    ROOT
+                    / "configs/experiment/20260828_walking_stability_ground_truth_sanity.yaml"
+                ),
             ],
             check=False,
             capture_output=True,
@@ -430,7 +461,3 @@ class HazardTest(unittest.TestCase):
         )
         self.assertNotEqual(historical.returncode, 0)
         self.assertIn("historical and is not runnable", historical.stderr)
-
-
-if __name__ == "__main__":
-    unittest.main()

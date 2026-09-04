@@ -128,6 +128,22 @@ def build_parser() -> argparse.ArgumentParser:
     mode = simulate.add_mutually_exclusive_group()
     mode.add_argument("--headless", action="store_true")
     mode.add_argument("--viewer", action="store_true")
+    simulate.add_argument(
+        "--record",
+        type=Path,
+        metavar="OUTPUT.mp4",
+        help=(
+            "write a qualitative simulator-diagnostic 1080p MP4; this is not "
+            "frozen model validation"
+        ),
+    )
+    simulate.add_argument(
+        "--playback-speed",
+        type=float,
+        choices=(0.5, 1.0, 2.0),
+        default=0.5,
+        help="recording playback speed (default: 0.5)",
+    )
 
     collect = subparsers.add_parser(
         "collect", help="collect a supported dataset from an explicit config"
@@ -188,6 +204,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     visualize.add_argument("--show-debug", action="store_true")
     visualize.add_argument(
+        "--record",
+        type=Path,
+        metavar="OUTPUT.mp4",
+        help=(
+            "write a deterministic 1080p demo MP4 instead of opening the viewer"
+        ),
+    )
+    visualize.add_argument(
+        "--stop-before-fall",
+        action="store_true",
+        help="end a recording on the last sample before the first fall censor",
+    )
+    visualize.add_argument(
         "--policy",
         type=Path,
         help="verified policy override; canonical frozen path is used by default",
@@ -243,7 +272,13 @@ def _simulate(args: argparse.Namespace) -> int:
 
     config = load_simulation_config(args.config)
     policy = _policy_path(args.policy)
-    headless = False if args.viewer else (True if args.headless else config.headless)
+    if args.record is not None and args.viewer:
+        raise ValueError("--record cannot be combined with --viewer")
+    headless = (
+        True
+        if args.record is not None
+        else (False if args.viewer else (True if args.headless else config.headless))
+    )
     config = replace(
         config,
         terrain=config.terrain if args.terrain is None else args.terrain,
@@ -279,9 +314,18 @@ def _simulate(args: argparse.Namespace) -> int:
         ),
         headless=headless,
     )
-    print(
-        json.dumps(summarize_result(run_simulation(config)), indent=2, sort_keys=True)
-    )
+    result = run_simulation(config, capture_render_trace=args.record is not None)
+    summary = summarize_result(result)
+    if args.record is not None:
+        from fastreflex.visualization import record_qualitative_simulation
+
+        summary["recording"] = record_qualitative_simulation(
+            config,
+            result,
+            args.record,
+            playback_speed=args.playback_speed,
+        )
+    print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
@@ -534,6 +578,7 @@ def _evaluate(args: argparse.Namespace) -> int:
 def _visualize(args: argparse.Namespace) -> int:
     from fastreflex.visualization import (
         prepare_visualization,
+        record_prepared_run,
         representative_validation_runs,
         visualization_run_ids,
         visualize_prepared_run,
@@ -554,6 +599,17 @@ def _visualize(args: argparse.Namespace) -> int:
             )
         )
         return 0
+    if args.record is not None and (
+        args.pause_at is not None
+        or args.pause_on_reflex
+        or args.single_step
+        or args.show_debug
+    ):
+        raise ValueError(
+            "--record cannot be combined with interactive pause/step/debug options"
+        )
+    if args.stop_before_fall and args.record is None:
+        raise ValueError("--stop-before-fall requires --record")
     policy = _policy_path(args.policy)
     prepared = prepare_visualization(REPOSITORY_ROOT, args.run_id, policy)
     first_reflex_s = (
@@ -573,7 +629,11 @@ def _visualize(args: argparse.Namespace) -> int:
                 "sensor_absolute_tolerance": (
                     prepared.parity.sensor_absolute_tolerance
                 ),
-                "status": "PARITY_PASSED_OPENING_VIEWER",
+                "status": (
+                    "PARITY_PASSED_RECORDING_VIDEO"
+                    if args.record is not None
+                    else "PARITY_PASSED_OPENING_VIEWER"
+                ),
                 "pause_at_s": args.pause_at,
                 "pause_on_reflex": args.pause_on_reflex,
                 "first_reflex_s": first_reflex_s,
@@ -592,6 +652,15 @@ def _visualize(args: argparse.Namespace) -> int:
         ),
         flush=True,
     )
+    if args.record is not None:
+        result = record_prepared_run(
+            prepared,
+            args.record,
+            playback_speed=args.speed,
+            stop_before_fall=args.stop_before_fall,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
     result = visualize_prepared_run(
         prepared,
         playback_speed=args.speed,

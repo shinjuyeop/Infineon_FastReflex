@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
+from functools import lru_cache
 from pathlib import Path
 from threading import Lock
 from typing import Any
 
 import mujoco
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 from fastreflex.dataset.hazard import (
     GROUPS,
@@ -68,6 +72,11 @@ TERRAIN_MODEL_PATH = Path(
 SUPPORTED_SPLITS = frozenset(("train", "validation"))
 SENSOR_ABSOLUTE_TOLERANCE = 0.0
 VISUALIZATION_MODES = ("demo", "analysis")
+RECORDING_WIDTH = 1920
+RECORDING_HEIGHT = 1080
+RECORDING_FPS = 60
+RECORDING_END_HOLD_S = 1.0
+RECORDING_POST_HAZARD_S = 0.75
 
 
 class PlaybackState(str, Enum):
@@ -353,6 +362,19 @@ class PreparedVisualization:
     simulation: SimulationResult
     parity: ParityReport
     traces: VisualizationTraces
+
+
+@dataclass(frozen=True)
+class RecordingPlan:
+    """Deterministic mapping from output frames to immutable simulation samples."""
+
+    sample_indices: np.ndarray
+    playback_frame_count: int
+    hold_frame_count: int
+    end_sample: int
+    end_reason: str
+    fps: int
+    playback_speed: float
 
 
 def _experiment_path(root: Path) -> Path:
@@ -835,6 +857,76 @@ def playback_events(prepared: PreparedVisualization) -> PlaybackEvents:
     )
 
 
+def build_recording_plan(
+    prepared: PreparedVisualization,
+    *,
+    playback_speed: float = 1.0,
+    fps: int = RECORDING_FPS,
+    end_hold_s: float = RECORDING_END_HOLD_S,
+    stop_before_fall: bool = False,
+) -> RecordingPlan:
+    """Choose reproducible video frames without advancing simulation physics."""
+    if not np.isfinite(playback_speed) or playback_speed <= 0.0:
+        raise ValueError("recording playback speed must be positive and finite")
+    if fps <= 0:
+        raise ValueError("recording fps must be positive")
+    if not np.isfinite(end_hold_s) or end_hold_s < 0.0:
+        raise ValueError("recording end hold must be finite and non-negative")
+
+    sample_count = len(prepared.resolved.run.timestamp_us)
+    if sample_count <= 0:
+        raise ValueError("recording requires at least one simulation sample")
+    last_sample = sample_count - 1
+    first_fall = prepared.simulation.metadata.get("first_fall_sample")
+    events = playback_events(prepared)
+    tail_samples = int(
+        round(RECORDING_POST_HAZARD_S * prepared.simulation_config.sensor_rate_hz)
+    )
+    if first_fall is not None and stop_before_fall:
+        end_sample = min(max(int(first_fall) - 1, 0), last_sample)
+        end_reason = "pre_first_fall"
+    elif first_fall is not None:
+        end_sample = min(max(int(first_fall), 0) + tail_samples, last_sample)
+        end_reason = "post_first_fall"
+    elif events.physical_hazard is not None:
+        end_sample = min(events.physical_hazard + tail_samples, last_sample)
+        end_reason = "post_physical_hazard"
+    elif events.first_reflex is not None:
+        end_sample = min(events.first_reflex + tail_samples, last_sample)
+        end_reason = "post_reflex"
+    else:
+        end_sample = last_sample
+        end_reason = "full_trace"
+
+    samples_per_frame = (
+        prepared.simulation_config.sensor_rate_hz * playback_speed / fps
+    )
+    playback_frame_count = max(1, int(np.floor(end_sample / samples_per_frame)) + 1)
+    playback_indices = np.rint(
+        np.arange(playback_frame_count, dtype=np.float64) * samples_per_frame
+    ).astype(np.int64)
+    playback_indices = np.clip(playback_indices, 0, end_sample)
+    if playback_indices[-1] != end_sample:
+        playback_indices = np.append(playback_indices, end_sample)
+        playback_frame_count += 1
+    hold_frame_count = int(round(end_hold_s * fps))
+    sample_indices = np.concatenate(
+        (
+            playback_indices,
+            np.full(hold_frame_count, end_sample, dtype=np.int64),
+        )
+    )
+    return RecordingPlan(
+        sample_indices=sample_indices,
+        playback_frame_count=playback_frame_count,
+        hold_frame_count=hold_frame_count,
+        end_sample=end_sample,
+        end_reason=end_reason,
+        fps=fps,
+        playback_speed=float(playback_speed),
+    )
+
+
 def _delta_text(
     run: HazardRun, detector_sample: int | None, reference_sample: int | None
 ) -> str:
@@ -1155,12 +1247,24 @@ def _nearest_sample(run: HazardRun, seconds: float) -> int:
 def _validate_render_trace(
     prepared: PreparedVisualization, model: mujoco.MjModel
 ) -> np.ndarray:
-    trace = prepared.simulation.render_trace
+    return _validate_simulation_render_trace(
+        prepared.simulation,
+        model,
+        len(prepared.resolved.run.timestamp_us),
+    )
+
+
+def _validate_simulation_render_trace(
+    result: SimulationResult,
+    model: mujoco.MjModel,
+    sample_count: int,
+) -> np.ndarray:
+    trace = result.render_trace
     if trace is None:
-        raise RuntimeError("prepared visualization has no render-state snapshots")
+        raise RuntimeError("simulation has no render-state snapshots")
     state_spec = mujoco.mjtState.mjSTATE_INTEGRATION
     expected_shape = (
-        len(prepared.resolved.run.timestamp_us),
+        sample_count,
         mujoco.mj_stateSize(model, state_spec),
     )
     if trace.integration_state.shape != expected_shape:
@@ -1185,6 +1289,812 @@ def _restore_render_snapshot(
     state_spec = mujoco.mjtState.mjSTATE_INTEGRATION
     mujoco.mj_setState(model, data, snapshots[sample], state_spec)
     mujoco.mj_forward(model, data)
+
+
+@lru_cache(maxsize=None)
+def _recording_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
+    names = (
+        "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
+        "NotoSansCJK-Bold.ttc" if bold else "NotoSansCJK-Medium.ttc",
+    )
+    roots = (
+        Path("/usr/share/fonts/truetype/dejavu"),
+        Path("/usr/share/fonts/opentype/noto"),
+    )
+    for root in roots:
+        for name in names:
+            candidate = root / name
+            if candidate.is_file():
+                return ImageFont.truetype(str(candidate), size=size)
+    return ImageFont.load_default()
+
+
+def _latest_hazard_probability(
+    prepared: PreparedVisualization, sample: int
+) -> float | None:
+    endpoints = prepared.traces.hazard.endpoints
+    position = int(np.searchsorted(endpoints, sample, side="right")) - 1
+    if position < 0 or sample >= prepared.resolved.run.censor_sample:
+        return None
+    return float(prepared.traces.hazard.probabilities[position])
+
+
+def _terrain_confidence(
+    prepared: PreparedVisualization, sample: int, terrain_state: int
+) -> float | None:
+    if terrain_state <= 0:
+        return None
+    probabilities = prepared.traces.terrain_probabilities[sample]
+    return float(probabilities[terrain_state - 1])
+
+
+def _recording_scenario_name(prepared: PreparedVisualization) -> str:
+    group = str(prepared.resolved.manifest_row["group"])
+    return {
+        "ICE_SLIP_HAZARD": "ICE / SLIP HAZARD",
+        "SAND_SUPPORT_HAZARD": "SAND / SUPPORT HAZARD",
+        "SAND_BENIGN": "SAND / BENIGN",
+        "HARD_GROUND_NORMAL": "HARD GROUND / NORMAL",
+    }.get(group, group.replace("_", " "))
+
+
+def _draw_recording_card(
+    draw: ImageDraw.ImageDraw,
+    bounds: tuple[int, int, int, int],
+    *,
+    label: str,
+    value: str,
+    detail: str,
+    accent: tuple[int, int, int, int],
+) -> None:
+    left, top, right, bottom = bounds
+    draw.rounded_rectangle(bounds, radius=18, fill=(26, 34, 46, 238))
+    draw.rectangle((left, top, left + 8, bottom), fill=accent)
+    draw.text(
+        (left + 28, top + 20),
+        label,
+        font=_recording_font(22, bold=True),
+        fill=(166, 181, 201, 255),
+    )
+    draw.text(
+        (left + 28, top + 55),
+        value,
+        font=_recording_font(42, bold=True),
+        fill=accent,
+    )
+    draw.text(
+        (left + 28, bottom - 43),
+        detail,
+        font=_recording_font(20),
+        fill=(215, 224, 237, 255),
+    )
+
+
+def compose_recording_frame(
+    rgb_frame: np.ndarray,
+    prepared: PreparedVisualization,
+    sample: int,
+    *,
+    playback_speed: float,
+    recording_ended: bool = False,
+    recording_end_sample: int | None = None,
+) -> np.ndarray:
+    """Add a presentation HUD without changing frozen model or simulator traces."""
+    if rgb_frame.shape != (RECORDING_HEIGHT, RECORDING_WIDTH, 3):
+        raise ValueError(
+            "recording frame must be "
+            f"{RECORDING_WIDTH}x{RECORDING_HEIGHT} RGB"
+        )
+    sample = min(max(int(sample), 0), len(prepared.resolved.run.timestamp_us) - 1)
+    first_reflex = prepared.traces.first_reflex_sample
+    danger = first_reflex is not None and sample >= first_reflex
+    terrain_state = int(prepared.traces.terrain.state[sample])
+    terrain_name = TERRAIN_STATE_NAMES[terrain_state]
+    terrain_confidence = _terrain_confidence(prepared, sample, terrain_state)
+    hazard_probability = _latest_hazard_probability(prepared, sample)
+    _, physical_name, physical_sample = _physical_reference(prepared)
+    physical_reached = physical_sample is not None and sample >= physical_sample
+
+    canvas = Image.fromarray(rgb_frame).convert("RGBA")
+    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    panel_bounds = (36, 36, 520, RECORDING_HEIGHT - 36)
+    draw.rounded_rectangle(panel_bounds, radius=28, fill=(10, 16, 25, 224))
+
+    draw.text(
+        (72, 74),
+        "FASTREFLEX",
+        font=_recording_font(48, bold=True),
+        fill=(244, 248, 255, 255),
+    )
+    draw.text(
+        (72, 135),
+        "HAZARD REFLEX DEMO",
+        font=_recording_font(22, bold=True),
+        fill=(62, 201, 230, 255),
+    )
+    draw.text(
+        (72, 184),
+        _recording_scenario_name(prepared),
+        font=_recording_font(27, bold=True),
+        fill=(224, 232, 243, 255),
+    )
+    simulation_time_s = prepared.resolved.run.timestamp_us[sample] / 1_000_000.0
+    draw.text(
+        (72, 228),
+        f"SIM  {simulation_time_s:05.3f} s     PLAYBACK  {playback_speed:.1f}x",
+        font=_recording_font(18),
+        fill=(167, 181, 201, 255),
+    )
+
+    safe_color = (57, 210, 134, 255)
+    danger_color = (255, 73, 83, 255)
+    status_color = danger_color if danger else safe_color
+    probability_text = (
+        "latest probability unavailable"
+        if hazard_probability is None
+        else f"latest probability {hazard_probability:.3f}"
+    )
+    _draw_recording_card(
+        draw,
+        (64, 284, 492, 478),
+        label="HAZARD STATUS",
+        value="DANGER" if danger else "SAFE",
+        detail=(
+            "REFLEX OCCURRED • display history"
+            if danger
+            else "Monitoring • " + probability_text
+        ),
+        accent=status_color,
+    )
+
+    terrain_color = (93, 207, 240, 255)
+    terrain_detail = (
+        "Waiting for clean touchdown"
+        if terrain_confidence is None
+        else f"Confidence {terrain_confidence * 100.0:.1f}% • advisory only"
+    )
+    _draw_recording_card(
+        draw,
+        (64, 500, 492, 694),
+        label="DETECTED TERRAIN",
+        value=terrain_name,
+        detail=terrain_detail,
+        accent=terrain_color,
+    )
+
+    evidence_color = (245, 180, 67, 255)
+    if physical_name is None:
+        evidence_value = "NO HAZARD"
+        evidence_detail = "No physical hazard reference"
+    else:
+        evidence_value = "DETECTED" if physical_reached else "PENDING"
+        evidence_detail = physical_name
+    _draw_recording_card(
+        draw,
+        (64, 716, 492, 890),
+        label="PHYSICAL REFERENCE",
+        value=evidence_value,
+        detail=evidence_detail,
+        accent=evidence_color,
+    )
+
+    progress_left, progress_right = 72, 484
+    progress_top = 930
+    progress_end = (
+        len(prepared.resolved.run.timestamp_us) - 1
+        if recording_end_sample is None
+        else min(
+            max(int(recording_end_sample), 1),
+            len(prepared.resolved.run.timestamp_us) - 1,
+        )
+    )
+    progress = min(sample / max(progress_end, 1), 1.0)
+    draw.rounded_rectangle(
+        (progress_left, progress_top, progress_right, progress_top + 12),
+        radius=6,
+        fill=(54, 65, 82, 255),
+    )
+    draw.rounded_rectangle(
+        (
+            progress_left,
+            progress_top,
+            progress_left + int((progress_right - progress_left) * progress),
+            progress_top + 12,
+        ),
+        radius=6,
+        fill=status_color,
+    )
+    draw.text(
+        (72, 958),
+        "SIMULATION REPLAY",
+        font=_recording_font(15, bold=True),
+        fill=(139, 153, 173, 255),
+    )
+    draw.text(
+        (72, 980),
+        "NOT REAL-ROBOT VALIDATION",
+        font=_recording_font(15, bold=True),
+        fill=(139, 153, 173, 255),
+    )
+
+    if danger:
+        border_width = 14
+        for offset in range(border_width):
+            draw.rectangle(
+                (
+                    offset,
+                    offset,
+                    RECORDING_WIDTH - 1 - offset,
+                    RECORDING_HEIGHT - 1 - offset,
+                ),
+                outline=(255, 55, 65, 235),
+            )
+        banner_text = (
+            "HAZARD DETECTED — DEMO END"
+            if recording_ended
+            else "HAZARD DETECTED — REFLEX TRIGGERED"
+        )
+        draw.rounded_rectangle(
+            (580, 40, RECORDING_WIDTH - 40, 126),
+            radius=18,
+            fill=(190, 24, 38, 232),
+        )
+        draw.text(
+            (RECORDING_WIDTH // 2 + 250, 83),
+            banner_text,
+            anchor="mm",
+            font=_recording_font(35, bold=True),
+            fill=(255, 255, 255, 255),
+        )
+    composed = Image.alpha_composite(canvas, overlay).convert("RGB")
+    return np.asarray(composed, dtype=np.uint8)
+
+
+def _ffmpeg_recording_command(output_path: Path, fps: int) -> list[str]:
+    executable = shutil.which("ffmpeg")
+    if executable is None:
+        raise RuntimeError("ffmpeg is required to write MP4 recordings")
+    return [
+        executable,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-n",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgb24",
+        "-video_size",
+        f"{RECORDING_WIDTH}x{RECORDING_HEIGHT}",
+        "-framerate",
+        str(fps),
+        "-i",
+        "-",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+
+
+def build_qualitative_recording_plan(
+    config: SimulationConfig,
+    result: SimulationResult,
+    *,
+    playback_speed: float = 0.5,
+    fps: int = RECORDING_FPS,
+    end_hold_s: float = RECORDING_END_HOLD_S,
+) -> RecordingPlan:
+    """Plan a simulator-only diagnostic recording over immutable snapshots."""
+    if not np.isfinite(playback_speed) or playback_speed <= 0.0:
+        raise ValueError("recording playback speed must be positive and finite")
+    if fps <= 0:
+        raise ValueError("recording fps must be positive")
+    if not np.isfinite(end_hold_s) or end_hold_s < 0.0:
+        raise ValueError("recording end hold must be finite and non-negative")
+
+    sample_count = len(result.runtime.timestamp_us)
+    if sample_count <= 0:
+        raise ValueError("recording requires at least one simulation sample")
+    last_sample = sample_count - 1
+    first_fall = result.metadata.get("first_fall_sample")
+    first_risk = _first_boolean_sample(_qualitative_risk_trace(result))
+    tail_samples = int(round(RECORDING_POST_HAZARD_S * config.sensor_rate_hz))
+    if first_fall is not None:
+        end_sample = min(max(int(first_fall), 0), last_sample)
+        end_reason = "at_first_fall"
+    elif first_risk is not None:
+        end_sample = min(first_risk + tail_samples, last_sample)
+        end_reason = "post_simulator_risk"
+    else:
+        end_sample = last_sample
+        end_reason = "full_trace"
+
+    samples_per_frame = config.sensor_rate_hz * playback_speed / fps
+    playback_frame_count = max(1, int(np.floor(end_sample / samples_per_frame)) + 1)
+    playback_indices = np.rint(
+        np.arange(playback_frame_count, dtype=np.float64) * samples_per_frame
+    ).astype(np.int64)
+    playback_indices = np.clip(playback_indices, 0, end_sample)
+    if playback_indices[-1] != end_sample:
+        playback_indices = np.append(playback_indices, end_sample)
+        playback_frame_count += 1
+    hold_frame_count = int(round(end_hold_s * fps))
+    sample_indices = np.concatenate(
+        (
+            playback_indices,
+            np.full(hold_frame_count, end_sample, dtype=np.int64),
+        )
+    )
+    return RecordingPlan(
+        sample_indices=sample_indices,
+        playback_frame_count=playback_frame_count,
+        hold_frame_count=hold_frame_count,
+        end_sample=end_sample,
+        end_reason=end_reason,
+        fps=fps,
+        playback_speed=float(playback_speed),
+    )
+
+
+def _first_boolean_sample(values: np.ndarray) -> int | None:
+    indices = np.flatnonzero(np.asarray(values, dtype=bool))
+    return None if indices.size == 0 else int(indices[0])
+
+
+def _qualitative_risk_trace(result: SimulationResult) -> np.ndarray:
+    """Combine exact deformable support and persistent posture degradation."""
+    diagnostics = result.diagnostics
+    sink_seen = np.logical_or.accumulate(
+        np.any(diagnostics.deformable_sink_onset, axis=1)
+    )
+    return sink_seen & diagnostics.sink_degradation_active
+
+
+def compose_qualitative_recording_frame(
+    rgb_frame: np.ndarray,
+    config: SimulationConfig,
+    result: SimulationResult,
+    sample: int,
+    *,
+    playback_speed: float,
+    recording_ended: bool = False,
+    recording_end_sample: int | None = None,
+) -> np.ndarray:
+    """Add an explicitly simulator-only HUD to a qualitative scenario frame."""
+    if rgb_frame.shape != (RECORDING_HEIGHT, RECORDING_WIDTH, 3):
+        raise ValueError(
+            "recording frame must be "
+            f"{RECORDING_WIDTH}x{RECORDING_HEIGHT} RGB"
+        )
+    timestamps = result.runtime.timestamp_us
+    sample = min(max(int(sample), 0), len(timestamps) - 1)
+    diagnostics = result.diagnostics
+    first_sink = _first_boolean_sample(
+        np.any(diagnostics.deformable_sink_onset, axis=1)
+    )
+    first_risk = _first_boolean_sample(_qualitative_risk_trace(result))
+    first_fall_value = result.metadata.get("first_fall_sample")
+    first_fall = None if first_fall_value is None else int(first_fall_value)
+    sink_reached = first_sink is not None and sample >= first_sink
+    risk_reached = first_risk is not None and sample >= first_risk
+    fall_reached = first_fall is not None and sample >= first_fall
+
+    if fall_reached:
+        status, status_detail = "FALL", "Non-foot contact / fall censor reached"
+    elif risk_reached:
+        status, status_detail = "DANGER", "Sink + persistent posture degradation"
+    elif sink_reached:
+        status, status_detail = "SINKING", "Deformable support displacement detected"
+    else:
+        status, status_detail = "APPROACH", "Walking toward the deformable Sand lane"
+
+    danger = risk_reached or fall_reached
+    status_color = (255, 73, 83, 255) if danger else (245, 180, 67, 255)
+    current_sink_mm = float(
+        np.max(diagnostics.support_surface_displacement_m[sample]) * 1000.0
+    )
+    current_tilt_deg = float(np.degrees(diagnostics.pelvis_tilt_rad[sample]))
+    current_drop_m = float(diagnostics.pelvis_z_drop_from_pre_event_m[sample])
+    current_drop_mm = (
+        0.0
+        if not np.isfinite(current_drop_m)
+        else max(0.0, current_drop_m) * 1000.0
+    )
+
+    canvas = Image.fromarray(rgb_frame).convert("RGBA")
+    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    draw.rounded_rectangle(
+        (36, 36, 520, RECORDING_HEIGHT - 36),
+        radius=28,
+        fill=(10, 16, 25, 224),
+    )
+    draw.text(
+        (72, 74),
+        "FASTREFLEX",
+        font=_recording_font(48, bold=True),
+        fill=(244, 248, 255, 255),
+    )
+    draw.text(
+        (72, 135),
+        "QUALITATIVE ENGINEERING DEMO",
+        font=_recording_font(20, bold=True),
+        fill=(245, 180, 67, 255),
+    )
+    draw.text(
+        (72, 184),
+        f"{config.terrain.upper()} / {config.sink_severity.upper()} SUPPORT",
+        font=_recording_font(27, bold=True),
+        fill=(224, 232, 243, 255),
+    )
+    simulation_time_s = timestamps[sample] / 1_000_000.0
+    draw.text(
+        (72, 228),
+        f"SIM  {simulation_time_s:05.3f} s     PLAYBACK  {playback_speed:.1f}x",
+        font=_recording_font(18),
+        fill=(167, 181, 201, 255),
+    )
+    _draw_recording_card(
+        draw,
+        (64, 284, 492, 478),
+        label="PHYSICAL STATUS",
+        value=status,
+        detail=status_detail,
+        accent=status_color,
+    )
+    _draw_recording_card(
+        draw,
+        (64, 500, 492, 694),
+        label="SURFACE DISPLACEMENT",
+        value=f"{current_sink_mm:04.1f} mm",
+        detail="Simulator joint state • affected support cells",
+        accent=(234, 98, 188, 255),
+    )
+    _draw_recording_card(
+        draw,
+        (64, 716, 492, 890),
+        label="ROBOT RESPONSE",
+        value=f"{current_tilt_deg:04.1f}° TILT",
+        detail=f"Pelvis drop from pre-event  {current_drop_mm:04.1f} mm",
+        accent=(93, 207, 240, 255),
+    )
+
+    progress_end = (
+        len(timestamps) - 1
+        if recording_end_sample is None
+        else min(max(int(recording_end_sample), 1), len(timestamps) - 1)
+    )
+    progress = min(sample / max(progress_end, 1), 1.0)
+    draw.rounded_rectangle(
+        (72, 930, 484, 942), radius=6, fill=(54, 65, 82, 255)
+    )
+    draw.rounded_rectangle(
+        (72, 930, 72 + int(412 * progress), 942),
+        radius=6,
+        fill=status_color,
+    )
+    draw.text(
+        (72, 958),
+        "SIMULATOR GT • NOT MODEL OUTPUT",
+        font=_recording_font(15, bold=True),
+        fill=(245, 180, 67, 255),
+    )
+    draw.text(
+        (72, 980),
+        "OUTSIDE FROZEN VALIDATION",
+        font=_recording_font(15, bold=True),
+        fill=(245, 180, 67, 255),
+    )
+
+    draw.rounded_rectangle(
+        (1295, 888, 1880, 1038), radius=18, fill=(10, 16, 25, 210)
+    )
+    draw.text(
+        (1325, 916),
+        "TERRAIN COLORS",
+        font=_recording_font(18, bold=True),
+        fill=(224, 232, 243, 255),
+    )
+    draw.text(
+        (1325, 952),
+        "ORANGE  source lane     GREEN  reference cells",
+        font=_recording_font(16),
+        fill=(215, 224, 237, 255),
+    )
+    draw.text(
+        (1325, 982),
+        "PINK  deformable Sand cells",
+        font=_recording_font(16),
+        fill=(215, 224, 237, 255),
+    )
+
+    if danger:
+        for offset in range(14):
+            draw.rectangle(
+                (
+                    offset,
+                    offset,
+                    RECORDING_WIDTH - 1 - offset,
+                    RECORDING_HEIGHT - 1 - offset,
+                ),
+                outline=(255, 55, 65, 235),
+            )
+        banner_text = (
+            "SIMULATOR DANGER — DEMO END"
+            if recording_ended
+            else "PHYSICAL RISK — SIMULATOR GT"
+        )
+        draw.rounded_rectangle(
+            (580, 40, RECORDING_WIDTH - 40, 126),
+            radius=18,
+            fill=(190, 24, 38, 232),
+        )
+        draw.text(
+            (RECORDING_WIDTH // 2 + 250, 83),
+            banner_text,
+            anchor="mm",
+            font=_recording_font(35, bold=True),
+            fill=(255, 255, 255, 255),
+        )
+    composed = Image.alpha_composite(canvas, overlay).convert("RGB")
+    return np.asarray(composed, dtype=np.uint8)
+
+
+def record_qualitative_simulation(
+    config: SimulationConfig,
+    result: SimulationResult,
+    output_path: Path,
+    *,
+    playback_speed: float = 0.5,
+) -> dict[str, object]:
+    """Record a clearly labeled simulator diagnostic outside frozen validation."""
+    output = output_path.expanduser().resolve()
+    if output.suffix.lower() != ".mp4":
+        raise ValueError("recording output must use the .mp4 extension")
+    if output.exists():
+        raise FileExistsError(f"recording output already exists: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    plan = build_qualitative_recording_plan(
+        config,
+        result,
+        playback_speed=playback_speed,
+    )
+    model, _ = load_g1_model(
+        terrain_name=config.terrain,
+        sink_pattern=config.sink_pattern,
+        sink_severity=config.sink_severity,
+        slip_pattern=config.slip_pattern,
+        patch_start_x_m=config.patch_start_x_m,
+        patch_width_m=config.patch_width_m,
+        sink_support_pattern=config.sink_support_pattern,
+        source_terrain=config.source_terrain,
+    )
+    snapshots = _validate_simulation_render_trace(
+        result,
+        model,
+        len(result.runtime.timestamp_us),
+    )
+    model.vis.global_.offwidth = RECORDING_WIDTH
+    model.vis.global_.offheight = RECORDING_HEIGHT
+    data = mujoco.MjData(model)
+    camera = mujoco.MjvCamera()
+    mujoco.mjv_defaultCamera(camera)
+    camera.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+    camera.trackbodyid = model.body("pelvis").id
+    camera.distance = 2.5
+    camera.azimuth = -130.0
+    camera.elevation = -20.0
+
+    process = subprocess.Popen(
+        _ffmpeg_recording_command(output, plan.fps),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    renderer: mujoco.Renderer | None = None
+    try:
+        renderer = mujoco.Renderer(
+            model,
+            height=RECORDING_HEIGHT,
+            width=RECORDING_WIDTH,
+        )
+        assert process.stdin is not None
+        for frame_number, sample_value in enumerate(plan.sample_indices):
+            sample = int(sample_value)
+            _restore_render_snapshot(model, data, snapshots, sample)
+            renderer.update_scene(data, camera=camera)
+            frame = compose_qualitative_recording_frame(
+                renderer.render(),
+                config,
+                result,
+                sample,
+                playback_speed=playback_speed,
+                recording_ended=frame_number >= plan.playback_frame_count,
+                recording_end_sample=plan.end_sample,
+            )
+            process.stdin.write(frame.tobytes())
+        process.stdin.close()
+        error_output = b"" if process.stderr is None else process.stderr.read()
+        return_code = process.wait()
+        if return_code != 0:
+            message = error_output.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"ffmpeg failed to write recording: {message}")
+    except BaseException:
+        if process.stdin is not None and not process.stdin.closed:
+            process.stdin.close()
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+        if output.exists():
+            output.unlink()
+        raise
+    finally:
+        if renderer is not None:
+            renderer.close()
+
+    first_risk = _first_boolean_sample(_qualitative_risk_trace(result))
+    first_fall_value = result.metadata.get("first_fall_sample")
+    return {
+        "output_path": str(output),
+        "width": RECORDING_WIDTH,
+        "height": RECORDING_HEIGHT,
+        "fps": plan.fps,
+        "playback_speed": plan.playback_speed,
+        "frame_count": len(plan.sample_indices),
+        "duration_s": len(plan.sample_indices) / plan.fps,
+        "end_sample": plan.end_sample,
+        "end_reason": plan.end_reason,
+        "end_hold_s": plan.hold_frame_count / plan.fps,
+        "simulator_ground_truth": True,
+        "frozen_model_inference": False,
+        "outside_frozen_validation": True,
+        "first_simulator_risk_s": (
+            None
+            if first_risk is None
+            else float(result.runtime.timestamp_us[first_risk] / 1_000_000.0)
+        ),
+        "first_fall_s": (
+            None
+            if first_fall_value is None
+            else float(
+                result.runtime.timestamp_us[int(first_fall_value)] / 1_000_000.0
+            )
+        ),
+        "file_size_bytes": output.stat().st_size,
+    }
+
+
+def record_prepared_run(
+    prepared: PreparedVisualization,
+    output_path: Path,
+    *,
+    playback_speed: float = 1.0,
+    stop_before_fall: bool = False,
+) -> dict[str, object]:
+    """Render a deterministic 1080p MP4 from parity-approved snapshots."""
+    require_parity(prepared.parity)
+    output = output_path.expanduser().resolve()
+    if output.suffix.lower() != ".mp4":
+        raise ValueError("recording output must use the .mp4 extension")
+    if output.exists():
+        raise FileExistsError(f"recording output already exists: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    plan = build_recording_plan(
+        prepared,
+        playback_speed=playback_speed,
+        stop_before_fall=stop_before_fall,
+    )
+    config = prepared.simulation_config
+    model, _ = load_g1_model(
+        terrain_name=config.terrain,
+        sink_pattern=config.sink_pattern,
+        sink_severity=config.sink_severity,
+        slip_pattern=config.slip_pattern,
+        patch_start_x_m=config.patch_start_x_m,
+        patch_width_m=config.patch_width_m,
+        sink_support_pattern=config.sink_support_pattern,
+        source_terrain=config.source_terrain,
+    )
+    snapshots = _validate_render_trace(prepared, model)
+    model.vis.global_.offwidth = RECORDING_WIDTH
+    model.vis.global_.offheight = RECORDING_HEIGHT
+    data = mujoco.MjData(model)
+    camera = mujoco.MjvCamera()
+    mujoco.mjv_defaultCamera(camera)
+    camera.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+    camera.trackbodyid = model.body("pelvis").id
+    camera.distance = 2.5
+    camera.azimuth = -130.0
+    camera.elevation = -20.0
+
+    command = _ffmpeg_recording_command(output, plan.fps)
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    renderer: mujoco.Renderer | None = None
+    try:
+        renderer = mujoco.Renderer(
+            model,
+            height=RECORDING_HEIGHT,
+            width=RECORDING_WIDTH,
+        )
+        assert process.stdin is not None
+        for frame_number, sample_value in enumerate(plan.sample_indices):
+            sample = int(sample_value)
+            _restore_render_snapshot(model, data, snapshots, sample)
+            renderer.update_scene(data, camera=camera)
+            rgb_frame = renderer.render()
+            composed = compose_recording_frame(
+                rgb_frame,
+                prepared,
+                sample,
+                playback_speed=playback_speed,
+                recording_ended=frame_number >= plan.playback_frame_count,
+                recording_end_sample=plan.end_sample,
+            )
+            process.stdin.write(composed.tobytes())
+        process.stdin.close()
+        error_output = b"" if process.stderr is None else process.stderr.read()
+        return_code = process.wait()
+        if return_code != 0:
+            message = error_output.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"ffmpeg failed to write recording: {message}")
+    except BaseException:
+        if process.stdin is not None and not process.stdin.closed:
+            process.stdin.close()
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+        if output.exists():
+            output.unlink()
+        raise
+    finally:
+        if renderer is not None:
+            renderer.close()
+
+    first_reflex = prepared.traces.first_reflex_sample
+    _, _, physical_sample = _physical_reference(prepared)
+    run = prepared.resolved.run
+    return {
+        "run_id": run.run_id,
+        "split": run.split,
+        "stored_resimulation_parity": prepared.parity.passed,
+        "snapshot_recording": True,
+        "viewer_physics_executed": False,
+        "holdout_opened": False,
+        "output_path": str(output),
+        "width": RECORDING_WIDTH,
+        "height": RECORDING_HEIGHT,
+        "fps": plan.fps,
+        "playback_speed": plan.playback_speed,
+        "stop_before_fall": stop_before_fall,
+        "frame_count": len(plan.sample_indices),
+        "duration_s": len(plan.sample_indices) / plan.fps,
+        "end_sample": plan.end_sample,
+        "end_reason": plan.end_reason,
+        "end_hold_s": plan.hold_frame_count / plan.fps,
+        "first_reflex_s": None
+        if first_reflex is None
+        else float(run.timestamp_us[first_reflex] / 1_000_000.0),
+        "physical_hazard_s": None
+        if physical_sample is None
+        else float(run.timestamp_us[physical_sample] / 1_000_000.0),
+        "file_size_bytes": output.stat().st_size,
+    }
 
 
 def _set_viewer_overlay(

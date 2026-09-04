@@ -21,8 +21,8 @@ from fastreflex.dataset.generation import (
     validate_model_v2_design,
 )
 from fastreflex.dataset.loader import sha256_file
+from tests.support import REPOSITORY_ROOT as ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
 DESIGN = ROOT / "configs/experiment/20260901_model_v2_dataset_design.yaml"
 
 
@@ -94,9 +94,7 @@ class GenerationTest(unittest.TestCase):
         with patch.object(Path, "glob", design_time_glob):
             audit = validate_model_v2_design(ROOT, document, specifications)
         self.assertEqual(len(specifications), 412)
-        self.assertEqual(
-            audit["split_counts"], {"V2_TRAIN": 310, "V2_VALIDATION": 102}
-        )
+        self.assertEqual(audit["split_counts"], {"V2_TRAIN": 310, "V2_VALIDATION": 102})
         self.assertEqual(audit["unique_run_ids"], 412)
         self.assertEqual(audit["unique_physical_signatures"], 412)
         self.assertEqual(audit["internal_duplicate_signatures"], 0)
@@ -176,7 +174,3 @@ class GenerationTest(unittest.TestCase):
         self.assertEqual(summary["confirmed_no_hazard"], 1)
         self.assertEqual(summary["i1_only"], 1)
         self.assertEqual(summary["ambiguous_or_censored"], 2)
-
-
-if __name__ == "__main__":
-    unittest.main()

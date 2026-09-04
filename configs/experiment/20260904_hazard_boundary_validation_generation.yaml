@@ -1,0 +1,336 @@
+schema_version: 1
+
+experiment:
+  id: HAZARD_BOUNDARY_VALIDATION_GENERATION
+  milestone: HAZARD_BOUNDARY_RESOLUTION
+  date: 2026-09-04
+  timezone: Asia/Seoul
+  scientific_base_commit: f32f6056f23ba05ed447fff7771ee63f789be7b6
+  source_commit: fdb6beae67b7bd39bd5e293de2433fa4a93a02dc
+  config_path: configs/experiment/20260904_hazard_boundary_validation_generation.yaml
+  model_blind: true
+  candidate_training_completed: false
+
+root_cause:
+  primary: TRAINING_OBJECTIVE_SAMPLING_TENSION
+  decision_path: artifacts/runs/20260904_hazard_boundary_failure_audit/root_cause_decision.json
+  decision_sha256: f28fc2232d5527fe324b5106c11746de0eab2245a8e774e107ee016212c93730
+  frozen_before_generation: true
+  frozen_before_candidate_training: true
+
+parameter_domain:
+  source_terrain: [concrete, marble]
+  speed_mps: [0.20, 0.25, 0.30]
+  target_terrain: sand
+  mild_sand:
+    standard_topologies: [transition_left, transition_right]
+    concrete_0.25_topology: [transition_left]
+    mechanics: balanced_deformable
+  moderate_sand:
+    topology: transition_left
+    mechanics: balanced_deformable
+    role: boundary_adjacent_diagnostic
+  ordinary_support:
+    mechanics: lateral_deformable
+    standard_sides: [LEFT, RIGHT]
+    concrete_0.30_side: [RIGHT]
+  delayed_support:
+    mechanics: staged_lateral_deformable
+    topology: transition_left
+    side: LEFT
+  history_or_model_output_used: false
+
+scenario_matrix:
+  run_id_prefix: hbv
+  expansion_order: source_speed_then_mild_moderate_ordinary_delayed
+  source_speed_cells:
+    - {source_terrain: concrete, speed_mps: 0.20}
+    - {source_terrain: concrete, speed_mps: 0.25}
+    - {source_terrain: concrete, speed_mps: 0.30}
+    - {source_terrain: marble, speed_mps: 0.20}
+    - {source_terrain: marble, speed_mps: 0.25}
+    - {source_terrain: marble, speed_mps: 0.30}
+  profiles:
+    concrete_020:
+      sand_benign_mild:
+        - {id: mla01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.350, patch_width_m: 0.809}
+        - {id: mla02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.356, patch_width_m: 0.805}
+        - {id: mla03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.349, patch_width_m: 0.800}
+        - {id: mla04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.345, patch_width_m: 0.808}
+        - {id: mlc01, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.795}
+        - {id: mlc02, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.341, patch_width_m: 0.794}
+        - {id: mlc03, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.344, patch_width_m: 0.789}
+        - {id: mlc04, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.339, patch_width_m: 0.790}
+      sand_benign_moderate:
+        - {id: md01, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.352, patch_width_m: 0.805}
+        - {id: md02, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.344, patch_width_m: 0.790}
+      ordinary_support_control:
+        - {id: ol01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.336, patch_width_m: 0.746}
+        - {id: ol02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.348, patch_width_m: 0.710}
+        - {id: ol03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.340, patch_width_m: 0.741}
+        - {id: or01, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.337, patch_width_m: 0.746}
+        - {id: or02, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.351, patch_width_m: 0.710}
+        - {id: or03, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.343, patch_width_m: 0.742}
+        - {id: or04, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.336, patch_width_m: 0.735}
+      delayed_support_control:
+        - {id: dl01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.833}
+        - {id: dl02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.325, patch_width_m: 0.833}
+        - {id: dl03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.330, patch_width_m: 0.825}
+    concrete_025:
+      sand_benign_mild:
+        - {id: mla01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.350, patch_width_m: 0.777}
+        - {id: mla02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.350, patch_width_m: 0.769}
+        - {id: mla03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.354, patch_width_m: 0.782}
+        - {id: mla04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.352, patch_width_m: 0.791}
+        - {id: mlex01, sink_pattern: transition_left, factor_manifold: CONCRETE_025_EXCEPTION, patch_start_x_m: 0.354, patch_width_m: 0.785}
+        - {id: mlex02, sink_pattern: transition_left, factor_manifold: CONCRETE_025_EXCEPTION, patch_start_x_m: 0.350, patch_width_m: 0.778}
+        - {id: mlex03, sink_pattern: transition_left, factor_manifold: CONCRETE_025_EXCEPTION, patch_start_x_m: 0.354, patch_width_m: 0.781}
+        - {id: mlex04, sink_pattern: transition_left, factor_manifold: CONCRETE_025_EXCEPTION, patch_start_x_m: 0.354, patch_width_m: 0.783}
+      sand_benign_moderate:
+        - {id: md01, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.340, patch_width_m: 0.858}
+        - {id: md02, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.337, patch_width_m: 0.853}
+      ordinary_support_control:
+        - {id: ol01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.336, patch_width_m: 0.746}
+        - {id: ol02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.340, patch_width_m: 0.741}
+        - {id: ol03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.344, patch_width_m: 0.732}
+        - {id: or01, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.337, patch_width_m: 0.746}
+        - {id: or02, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.343, patch_width_m: 0.742}
+        - {id: or03, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.336, patch_width_m: 0.735}
+        - {id: or04, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.346, patch_width_m: 0.735}
+      delayed_support_control:
+        - {id: dl01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.829}
+        - {id: dl02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.325, patch_width_m: 0.833}
+        - {id: dl03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.833}
+    concrete_030:
+      sand_benign_mild:
+        - {id: mla01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.350, patch_width_m: 0.809}
+        - {id: mla02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.356, patch_width_m: 0.805}
+        - {id: mla03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.349, patch_width_m: 0.800}
+        - {id: mla04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.345, patch_width_m: 0.808}
+        - {id: mlc01, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.795}
+        - {id: mlc02, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.341, patch_width_m: 0.794}
+        - {id: mlc03, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.344, patch_width_m: 0.789}
+        - {id: mlc04, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.339, patch_width_m: 0.790}
+      sand_benign_moderate:
+        - {id: md01, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.346, patch_width_m: 0.805}
+        - {id: md02, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.352, patch_width_m: 0.805}
+      ordinary_support_control:
+        - {id: or01, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.351, patch_width_m: 0.710}
+        - {id: or02, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.343, patch_width_m: 0.743}
+        - {id: or03, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.347, patch_width_m: 0.736}
+        - {id: or04, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.336, patch_width_m: 0.738}
+        - {id: or05, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.348, patch_width_m: 0.715}
+        - {id: or06, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.336, patch_width_m: 0.730}
+        - {id: or07, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.339, patch_width_m: 0.740}
+      delayed_support_control:
+        - {id: dl01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.829}
+        - {id: dl02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.325, patch_width_m: 0.833}
+        - {id: dl03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.833}
+    marble_020:
+      sand_benign_mild:
+        - {id: mla01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.350, patch_width_m: 0.809}
+        - {id: mla02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.356, patch_width_m: 0.805}
+        - {id: mla03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.349, patch_width_m: 0.800}
+        - {id: mla04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.345, patch_width_m: 0.808}
+        - {id: mlc01, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.795}
+        - {id: mlc02, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.341, patch_width_m: 0.794}
+        - {id: mlc03, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.344, patch_width_m: 0.789}
+        - {id: mlc04, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.339, patch_width_m: 0.790}
+      sand_benign_moderate:
+        - {id: md01, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.346, patch_width_m: 0.805}
+        - {id: md02, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.352, patch_width_m: 0.805}
+      ordinary_support_control:
+        - {id: ol01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.336, patch_width_m: 0.746}
+        - {id: ol02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.348, patch_width_m: 0.710}
+        - {id: ol03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.340, patch_width_m: 0.741}
+        - {id: or01, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.337, patch_width_m: 0.746}
+        - {id: or02, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.351, patch_width_m: 0.710}
+        - {id: or03, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.343, patch_width_m: 0.742}
+        - {id: or04, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.336, patch_width_m: 0.735}
+      delayed_support_control:
+        - {id: dl01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.833}
+        - {id: dl02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.325, patch_width_m: 0.833}
+        - {id: dl03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.330, patch_width_m: 0.825}
+    marble_025:
+      sand_benign_mild:
+        - {id: mla01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.350, patch_width_m: 0.809}
+        - {id: mla02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.356, patch_width_m: 0.805}
+        - {id: mla03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.349, patch_width_m: 0.800}
+        - {id: mla04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.345, patch_width_m: 0.808}
+        - {id: mlc01, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.795}
+        - {id: mlc02, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.341, patch_width_m: 0.794}
+        - {id: mlc03, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.344, patch_width_m: 0.789}
+        - {id: mlc04, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.339, patch_width_m: 0.790}
+      sand_benign_moderate:
+        - {id: md01, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.352, patch_width_m: 0.805}
+        - {id: md02, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.344, patch_width_m: 0.790}
+      ordinary_support_control:
+        - {id: ol01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.336, patch_width_m: 0.746}
+        - {id: ol02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.340, patch_width_m: 0.741}
+        - {id: ol03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.344, patch_width_m: 0.732}
+        - {id: or01, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.337, patch_width_m: 0.746}
+        - {id: or02, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.343, patch_width_m: 0.742}
+        - {id: or03, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.336, patch_width_m: 0.735}
+        - {id: or04, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.346, patch_width_m: 0.735}
+      delayed_support_control:
+        - {id: dl01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.829}
+        - {id: dl02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.325, patch_width_m: 0.833}
+        - {id: dl03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.833}
+    marble_030:
+      sand_benign_mild:
+        - {id: mla01, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.350, patch_width_m: 0.809}
+        - {id: mla02, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.356, patch_width_m: 0.805}
+        - {id: mla03, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.349, patch_width_m: 0.800}
+        - {id: mla04, sink_pattern: transition_left, factor_manifold: ADVERSE_DIRECTION, patch_start_x_m: 0.345, patch_width_m: 0.808}
+        - {id: mlc01, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.346, patch_width_m: 0.795}
+        - {id: mlc02, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.341, patch_width_m: 0.794}
+        - {id: mlc03, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.344, patch_width_m: 0.789}
+        - {id: mlc04, sink_pattern: transition_right, factor_manifold: COMPARISON_DIRECTION, patch_start_x_m: 0.339, patch_width_m: 0.790}
+      sand_benign_moderate:
+        - {id: md01, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.352, patch_width_m: 0.805}
+        - {id: md02, sink_pattern: transition_left, factor_manifold: MODERATE_DIAGNOSTIC, patch_start_x_m: 0.344, patch_width_m: 0.790}
+      ordinary_support_control:
+        - {id: ol01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.336, patch_width_m: 0.746}
+        - {id: ol02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.348, patch_width_m: 0.710}
+        - {id: ol03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.340, patch_width_m: 0.741}
+        - {id: or01, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.337, patch_width_m: 0.746}
+        - {id: or02, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.351, patch_width_m: 0.710}
+        - {id: or03, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.343, patch_width_m: 0.742}
+        - {id: or04, sink_pattern: transition_right, designed_side: RIGHT, patch_start_x_m: 0.336, patch_width_m: 0.735}
+      delayed_support_control:
+        - {id: dl01, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.829}
+        - {id: dl02, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.325, patch_width_m: 0.833}
+        - {id: dl03, sink_pattern: transition_left, designed_side: LEFT, patch_start_x_m: 0.329, patch_width_m: 0.833}
+  counts:
+    sand_benign_mild: 48
+    sand_benign_moderate: 12
+    ordinary_support_control: 42
+    delayed_support_control: 18
+    sand_factor_manifolds: {ADVERSE_DIRECTION: 24, COMPARISON_DIRECTION: 20, CONCRETE_025_EXCEPTION: 4, MODERATE_DIAGNOSTIC: 12}
+    designed_support_sides: {LEFT: 33, RIGHT: 27}
+    per_source_speed: {sand_benign_mild: 8, sand_benign_moderate: 2, ordinary_support_control: 7, delayed_support_control: 3, total: 20}
+    total: 120
+
+physical_label_contract:
+  authority: censor_aware_actual_physical_oracle_never_design_intent
+  strict_benign: [target_contact_before_censor, no_established_Slip, no_I1, no_established_Support, finite_complete_trace, at_least_1000ms_after_last_target_contact]
+  mild: [strict_benign, actual_displacement_below_0.030m]
+  moderate: [strict_benign, actual_displacement_0.030_to_0.0525m]
+  ordinary_support: [target_contact_before_censor, I1_not_after_established_Support, no_Slip, expected_side, at_least_1000ms_after_Support]
+  delayed_support: [two_clean_target_touchdowns_before_I1, I1_not_after_established_Support, no_Slip, LEFT_ONLY, at_least_1000ms_after_Support]
+  slip_or_dual: retain_provenance_exclude_from_primary_membership
+  invalid: retain_provenance_exclude_from_model_evaluation
+
+generation_gates:
+  complete_execution: 120
+  objective_valid_min: 115
+  strict_sand_min: 58
+  mild_sand_min: 46
+  moderate_sand_min: 11
+  ordinary_support_min: 40
+  delayed_support_min: 17
+  invalid_max: 5
+  slip_dual_max: 2
+  per_source_speed: {strict_sand_min: 9, ordinary_support_min: 6, delayed_support_min: 2}
+  sand_factor_manifold_min: {ADVERSE_DIRECTION: 23, COMPARISON_DIRECTION: 19, CONCRETE_025_EXCEPTION: 3, MODERATE_DIAGNOSTIC: 11}
+  ordinary_support_side_min: {LEFT_ONLY: 14, RIGHT_ONLY: 26}
+  physical_signature_uniqueness_fraction_min: 0.80
+  overlap: {historical_exact: 0, historical_near: 0, all_prior_factor: 0, pilot: 0, cross_role: 0, run_id_reuse: 0}
+  adaptive_backfill: 0
+  replacement: 0
+  rerun: 0
+  model_output: 0
+  failure_action: stop_before_model_evaluation
+
+anti_contamination:
+  near_signature_policy: {patch_start_difference_m_exclusive: 0.002, patch_width_difference_m_exclusive: 0.004}
+  historical_manifests:
+    - {path: data/raw/fall_risk_dense_20260828/manifest.json, sha256: 6c452caebdbc1a6f5b2feb639d15aa3627c1c3e4e6e343dbf9adff3b60b39207}
+    - {path: data/raw/generalization_hazard_reflex_20260831/manifest.json, sha256: 72f5dd300bb5be78b22b9a8c1ad9788cdf45e7cda9b4f46d79eb290140146f53}
+    - {path: data/raw/generalization_scenario_calibration_20260831/manifest.json, sha256: 8a09ab1c68da68ad44f9fffeb58d8b59c84c2afdc0e882418c20475fa233dea6}
+    - {path: data/raw/ice_generalization_gap_resolution_20260831/manifest.json, sha256: 5dbe5fbc5895e0440fc8061953c5cc5561dfc1444ea8ad40da67439171ce47dd}
+    - {path: data/raw/ice_near_hazard_semantics_20260901/manifest.json, sha256: 6a472d4b26e724355c6f2d88d0668c4f91c925037c63ad8e1838f83a53e15759}
+    - {path: data/raw/model_v2_hazard_reflex_20260901/manifest.json, sha256: 7a036d3485bb19a3570a3dd4a41cc990375028f7e153e85525bd4bf19cff8b25}
+    - {path: data/raw/reflex_event_20260828/manifest.json, sha256: 64f86ffcb6b3291c8f37537a4a732ff61aa700e135b09c60590bff48e83df936}
+    - {path: data/raw/reflex_event_foot_imu_20260828/manifest.json, sha256: c206e05dec4f6bb63a667a5fe8f0c1fd0e9c4d45f4c4e8901a571c81c0dba234}
+    - {path: data/raw/unified_hazard_reflex_20260829/manifest.json, sha256: d023384aaaac22076a2be7c2fa242acac91a548d82102640c39868990cb0e9d6}
+    - {path: data/raw/sand_benign_generalization_study_20260902/manifest.json, sha256: 70a619e35dba72478b298fb5082c68c07bc577e7536ba48b2ce9a52665f9834f}
+    - {path: data/raw/sand_benign_phase_geometry_calibration_20260902/manifest.json, sha256: a30f96943593c2322dde1898060919eab3ec9929167e358743335f1a809c4d77}
+    - {path: data/raw/sand_benign_severity_calibration_20260902/manifest.json, sha256: ab481ddaa38f6fb84c9d3a7d0f0ac2a148463b4aa3eb341b4f8c3a29e9a37415}
+    - {path: data/raw/sand_benign_domain_control_calibration_20260902/manifest.json, sha256: 28274d1bad4f3bc42dd55b6cd4772feed6b6dde9ce48c536d775a640f12fba4a}
+    - {path: data/raw/sand_benign_generalization_redesigned_study_20260902/manifest.json, sha256: 90970438abb9eced3742d387697cf3f3ff4bd8b905b3554ea01f6766a38e501b}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_a_20260903/manifest.json, sha256: 1f5f7fe0e83a55a7e4be8240c3ff4ab2282e00194d6151c3ac909ac1a697c14f}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_b_20260903/manifest.json, sha256: b57603925da065f01657d65bacaf93d9bebd0859e319c32f9973ce7c22c6335a}
+    - {path: data/raw/sand_benign_mild_domain_calibration_pilot_c_20260903/manifest.json, sha256: 90bb0ce2cd9fb2e52f57bc45ad247a64e1217d477e4b098d016fe3393d1dcb50}
+    - {path: data/raw/sand_benign_generalization_mild_recalibrated_study_20260903/manifest.json, sha256: f19ec527cb9faac0d8f3a385a1a63e8a951ced7f275c7cfc3dd459cc42f375d1}
+    - {path: data/raw/sand_factor_conditioned_development_20260903/manifest.json, sha256: d4ec98b5c2bec6c9009b5da958195935c46dd57489c8f0f15e08258ae84d6998}
+    - {path: data/raw/sand_factor_conditioned_physical_domain_calibration_20260903/manifest.json, sha256: 0017716c3a779e96b4ce2d0df569ce47fbfe892ab84c3daeb5025d4c857812bd}
+    - {path: data/raw/sand_factor_conditioned_concrete_025_calibration_20260903/manifest.json, sha256: 78377d3a3be41714e2852d7d043afd5ed04538da0a43ae4178ed92d96f033753}
+    - {path: data/raw/sand_factor_conditioned_development_recalibrated_20260903/manifest.json, sha256: 776c2a22c8963d5ddcdad49d2f36c109a21af4dfa1c0b5d2a924112b1fb6b19c}
+    - {path: data/raw/sand_factor_conditioned_delayed_support_calibration_20260903/manifest.json, sha256: 6c69a4aaecdb5e09b095976109a7a88b50802a45de7aaf02e29ef04257468850}
+    - {path: data/raw/sand_factor_conditioned_development_support_recalibrated_20260903/manifest.json, sha256: bda6961f79525df237d440086057aea71a03afc5134a49c50f5e4d4a2193be67}
+    - {path: data/raw/sand_factor_conditioned_development_controls_recalibrated_20260903/manifest.json, sha256: 70f850f22507384a50c81bdd065c7d485f2e37cd7e181fda20431ed2fede2d50}
+
+validation_protocol:
+  split: BOUNDARY_RESOLUTION_VALIDATION
+  one_shot_open: true
+  candidate_freeze_required: true
+  all_candidate_families_frozen_before_open: true
+  reference_v2: true
+  failed_candidate_diagnostic_comparator: true
+  candidate_a: true
+  candidate_b: false
+  threshold: 0.99
+  persistence_ms: 5
+  training_use: false
+  hnm_use: false
+  no_adaptive_retraining: true
+  final_evidence: false
+
+design_freeze:
+  component_hashes:
+    BOUNDARY_PARAMETER_DOMAIN_SHA: 5ea247256ab6fc3c37f64dd128c9f6be0f739d9811ab5a74e0ea6e98d1eed72e
+    BOUNDARY_SCENARIO_MATRIX_SHA: 70be310e2e61e47f16cdcede9975442f230dc1b723111ca1a2fc48a820230c67
+    BOUNDARY_PHYSICAL_LABEL_CONTRACT_SHA: d8ae9a0705367cb95cf3670b76d61561c2c519562e7fbe32ebbdbfe8dccbcd40
+    BOUNDARY_GENERATION_GATES_SHA: 6859221d932a2d27cc680de1bca7d40f3fda80e9cf8b3783ba75592bf0b2aa9c
+    BOUNDARY_ANTI_CONTAMINATION_SHA: a9f9746e96c1463a2bb0aee6dc85a8e295f36a0601ec1e02a7d00aaad92f3911
+    BOUNDARY_VALIDATION_PROTOCOL_SHA: 05d37be8d698a48560cf19ff533cc9f756a63736556e9b2f30b4c4ea821d8cac
+  scenario_matrix_sha256: 78d0ad6d3bc5c2232da0b499db25f3153758f367c2c0208aaedfef4ddb746f74
+  scenario_signature_sha256: e9da061898ec99c76d98e4d13e81b836862db6e8628e3a0b4ce2e1774896d9e1
+
+generation:
+  source_commit: fdb6beae67b7bd39bd5e293de2433fa4a93a02dc
+  generation_start: "2026-09-04T16:30:00+09:00"
+  dataset_id: hazard_boundary_resolution_validation_20260904
+  dataset_path: data/raw/hazard_boundary_resolution_validation_20260904
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  simulation_duration_s: 9.0
+  label_execution:
+    precontact_phase_lookback_ms: 20
+    benign_post_target_followup_ms: 1000
+    support_post_event_followup_ms: 1000
+    expected_samples: 9000
+  protected_artifacts:
+    - {path: src/fastreflex/dataset/sand_factor_conditioned.py, sha256: f75f3bb9d2edb11512be686e3aab8a69cc543e32b1c5434f48e3f68d03dcd7ce}
+    - {path: src/fastreflex/dataset/sand_calibration.py, sha256: f52dab56e8abda499f4b0cb462f9d3d4554522287762947ee2c877658ff9f756}
+    - {path: src/fastreflex/dataset/generation.py, sha256: 435ffa6b29b7559e11efb13bb743c16491f41dcc06916e903771e947d5f70bdc}
+    - {path: src/fastreflex/simulation/g1.py, sha256: d41308b6801aa648284ea05b22ce0c304fd97078cf47f6cd56b1f3b0d715bee2}
+    - {path: configs/simulator/g1.yaml, sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d}
+    - {path: artifacts/runs/20260904_hazard_boundary_failure_audit/audit_result.json, sha256: cd44a433a65a670f1fe914d025600be35fc7f18cc59277610dc6374d2f424c10}
+    - {path: artifacts/runs/20260904_hazard_boundary_failure_audit/root_cause_decision.json, sha256: f28fc2232d5527fe324b5106c11746de0eab2245a8e774e107ee016212c93730}
+  consumed_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  consumed_holdout_guard_sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154
+
+counters:
+  planned_new_validation_simulations: 120
+  planned_new_training_simulations: 0
+  model_inference_during_generation: 0
+  historical_holdout_reads: 0
+  consumed_factor_validation_inference: 0
+  generalization_validation_inference: 0
+  adaptive_backfill: 0
+  replacement: 0
+  rerun: 0

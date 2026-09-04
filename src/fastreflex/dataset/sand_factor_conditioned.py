@@ -52,6 +52,9 @@ FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_GENERATION_ID = (
 FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_DATASET_ID = (
     "sand_factor_conditioned_development_controls_recalibrated_20260903"
 )
+BOUNDARY_VALIDATION_GENERATION_ID = "HAZARD_BOUNDARY_VALIDATION_GENERATION"
+BOUNDARY_VALIDATION_DATASET_ID = "hazard_boundary_resolution_validation_20260904"
+BOUNDARY_VALIDATION_SPLIT = "BOUNDARY_RESOLUTION_VALIDATION"
 
 
 def _factor_conditioned_eligible(row: Mapping[str, Any]) -> bool:
@@ -1791,6 +1794,7 @@ def load_factor_conditioned_manifest(dataset_path: Path) -> Mapping[str, Any]:
         FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID,
         FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_DATASET_ID,
         FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_DATASET_ID,
+        BOUNDARY_VALIDATION_DATASET_ID,
     }:
         raise ValueError("unexpected factor-conditioned dataset identity")
     return manifest
@@ -2528,6 +2532,574 @@ def collect_factor_conditioned_recalibrated_dataset(
         "model_inference_runs": 0,
         "old_holdout_payload_reads": 0,
         "new_pilot_runs": 0,
+    }
+    _write_json(output_path / "generation_summary.json", summary)
+    return output_path, summary
+
+
+def boundary_validation_component_hashes(
+    document: Mapping[str, Any],
+) -> dict[str, str]:
+    """Hash every model-blind scientific boundary fixed before generation."""
+    sections = {
+        "BOUNDARY_PARAMETER_DOMAIN_SHA": "parameter_domain",
+        "BOUNDARY_SCENARIO_MATRIX_SHA": "scenario_matrix",
+        "BOUNDARY_PHYSICAL_LABEL_CONTRACT_SHA": "physical_label_contract",
+        "BOUNDARY_GENERATION_GATES_SHA": "generation_gates",
+        "BOUNDARY_ANTI_CONTAMINATION_SHA": "anti_contamination",
+        "BOUNDARY_VALIDATION_PROTOCOL_SHA": "validation_protocol",
+    }
+    return {
+        name: canonical_sha256(document[section]) for name, section in sections.items()
+    }
+
+
+def expand_boundary_validation_design(
+    document: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Expand the independent one-shot boundary validation matrix."""
+    if document["experiment"]["id"] != BOUNDARY_VALIDATION_GENERATION_ID:
+        raise ValueError("unsupported Hazard boundary validation config")
+    matrix = document["scenario_matrix"]
+    group_codes = {
+        "sand_benign_mild": "sml",
+        "sand_benign_moderate": "smd",
+        "ordinary_support_control": "osp",
+        "delayed_support_control": "dsp",
+    }
+    rows: list[dict[str, Any]] = []
+    for cell in matrix["source_speed_cells"]:
+        source = str(cell["source_terrain"])
+        speed = float(cell["speed_mps"])
+        cell_key = f"{source}_{int(round(speed * 100)):03d}"
+        for group, profiles in matrix["profiles"][cell_key].items():
+            for index, profile in enumerate(profiles, start=1):
+                support = group.endswith("support_control")
+                delayed = group == "delayed_support_control"
+                side = str(profile.get("designed_side", "LEFT"))
+                rows.append(
+                    {
+                        "run_id": (
+                            f"{matrix['run_id_prefix']}_{group_codes[group]}_"
+                            f"{'c' if source == 'concrete' else 'm'}_"
+                            f"{int(round(speed * 100)):03d}_{index:02d}"
+                        ),
+                        "split": BOUNDARY_VALIDATION_SPLIT,
+                        "group": group,
+                        "scenario_family": group,
+                        "factor_manifold_intent": str(
+                            profile.get(
+                                "factor_manifold",
+                                "CONTROL" if support else "ADVERSE_DIRECTION",
+                            )
+                        ),
+                        "source_terrain": source,
+                        "target_terrain": "sand",
+                        "speed_mps": speed,
+                        "nominal_speed_mps": speed,
+                        "designed_role": "HAZARD" if support else "NORMAL",
+                        "designed_event_type": "SUPPORT" if support else "NONE",
+                        "designed_side": side,
+                        "designed_side_topology": (
+                            f"{side}_ONLY" if support else "NONE"
+                        ),
+                        "patch_start_x_m": float(profile["patch_start_x_m"]),
+                        "patch_width_m": float(profile["patch_width_m"]),
+                        "slip_pattern": "uniform",
+                        "sink_pattern": str(profile["sink_pattern"]),
+                        "sink_severity": (
+                            "mild" if group == "sand_benign_mild" else "moderate"
+                        ),
+                        "support_pattern": (
+                            "staged_lateral_deformable"
+                            if delayed
+                            else "lateral_deformable"
+                            if support
+                            else "balanced_deformable"
+                        ),
+                        "severity_intent": (
+                            "LOW"
+                            if group == "sand_benign_mild"
+                            else "BOUNDARY_ADJACENT"
+                            if group == "sand_benign_moderate"
+                            else "SUPPORT_CONTROL"
+                        ),
+                        "realization_id": str(profile["id"]),
+                    }
+                )
+    return rows
+
+
+def validate_boundary_validation_design(
+    root: Path, document: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Prove count, balance, uniqueness, and prior-evidence exclusion."""
+    rows = expand_boundary_validation_design(document)
+    matrix = document["scenario_matrix"]
+    counts = matrix["counts"]
+    if len(rows) != int(counts["total"]) or not 96 <= len(rows) <= 144:
+        raise ValueError("boundary validation run count changed")
+    ids = [str(row["run_id"]) for row in rows]
+    signatures = [_signature(row) for row in rows]
+    if len(set(ids)) != len(ids) or len(set(signatures)) != len(signatures):
+        raise ValueError("boundary validation has duplicate IDs or signatures")
+    groups = Counter(str(row["group"]) for row in rows)
+    for name in (
+        "sand_benign_mild",
+        "sand_benign_moderate",
+        "ordinary_support_control",
+        "delayed_support_control",
+    ):
+        if groups[name] != int(counts[name]):
+            raise ValueError(f"boundary validation {name} count changed")
+    cells: dict[str, dict[str, int]] = {}
+    for cell in matrix["source_speed_cells"]:
+        source = str(cell["source_terrain"])
+        speed = float(cell["speed_mps"])
+        key = f"{source}_{int(round(speed * 100)):03d}"
+        selected = [
+            row
+            for row in rows
+            if row["source_terrain"] == source and row["speed_mps"] == speed
+        ]
+        cell_groups = Counter(str(row["group"]) for row in selected)
+        expected = counts["per_source_speed"]
+        if len(selected) != int(expected["total"]) or any(
+            cell_groups[name] != int(expected[name])
+            for name in (
+                "sand_benign_mild",
+                "sand_benign_moderate",
+                "ordinary_support_control",
+                "delayed_support_control",
+            )
+        ):
+            raise ValueError(f"boundary validation cell changed: {key}")
+        cells[key] = dict(sorted(cell_groups.items()))
+    sand = [row for row in rows if str(row["group"]).startswith("sand_benign")]
+    manifolds = Counter(str(row["factor_manifold_intent"]) for row in sand)
+    if dict(manifolds) != dict(counts["sand_factor_manifolds"]):
+        raise ValueError("boundary validation Sand factor balance changed")
+    support = [row for row in rows if str(row["group"]).endswith("support_control")]
+    designed_sides = Counter(str(row["designed_side"]) for row in support)
+    if dict(designed_sides) != dict(counts["designed_support_sides"]):
+        raise ValueError("boundary validation Support side balance changed")
+    anti = document["anti_contamination"]
+    historical = _historical_overlap_audit(
+        root,
+        anti["historical_manifests"],
+        rows,
+        anti["near_signature_policy"],
+    )
+    if (
+        historical["exact_total"]
+        or historical["near_total"]
+        or historical["run_id_reuse_total"]
+    ):
+        raise ValueError("boundary validation overlaps protected evidence")
+    sand_signatures = {_signature(row) for row in sand}
+    support_signatures = {_signature(row) for row in support}
+    cross_role_overlap = len(sand_signatures & support_signatures)
+    if cross_role_overlap:
+        raise ValueError("boundary validation roles overlap")
+    hashes = boundary_validation_component_hashes(document)
+    matrix_sha = canonical_sha256(rows)
+    signature_sha = canonical_sha256([list(value) for value in signatures])
+    frozen = document.get("design_freeze", {})
+    expected_hashes = frozen.get("component_hashes", {})
+    if expected_hashes and "TO_BE_FROZEN" not in expected_hashes.values():
+        if dict(expected_hashes) != hashes:
+            raise ValueError("boundary validation component hash changed")
+    for name, actual in (
+        ("scenario_matrix_sha256", matrix_sha),
+        ("scenario_signature_sha256", signature_sha),
+    ):
+        expected = frozen.get(name)
+        if expected not in (None, "TO_BE_FROZEN") and expected != actual:
+            raise ValueError(f"boundary validation {name} changed")
+    return {
+        "run_count": len(rows),
+        "group_counts": dict(sorted(groups.items())),
+        "source_speed_counts": cells,
+        "sand_factor_manifold_counts": dict(sorted(manifolds.items())),
+        "designed_support_side_counts": dict(sorted(designed_sides.items())),
+        "unique_run_ids": len(set(ids)),
+        "unique_scenario_signatures": len(set(signatures)),
+        "cross_role_exact_overlap": cross_role_overlap,
+        "historical_contamination": historical,
+        "scenario_matrix_sha256": matrix_sha,
+        "scenario_signature_sha256": signature_sha,
+        "component_hashes": hashes,
+        "model_output_fields": [],
+    }
+
+
+def _boundary_validation_physical_audit(
+    manifest: Mapping[str, Any],
+    document: Mapping[str, Any],
+    design_audit: Mapping[str, Any],
+) -> dict[str, Any]:
+    rows = list(manifest["runs"])
+    eligible = [row for row in rows if _factor_conditioned_eligible(row)]
+    strict = [
+        row for row in eligible if row["objective_physical_outcome"] == "STRICT_BENIGN"
+    ]
+    ordinary = [
+        row
+        for row in eligible
+        if row["group"] == "ordinary_support_control"
+        and row["objective_physical_outcome"] == "SUPPORT"
+    ]
+    delayed = [
+        row
+        for row in eligible
+        if row["group"] == "delayed_support_control"
+        and row["objective_physical_outcome"] == "SUPPORT"
+    ]
+    mild = [row for row in strict if row["actual_benign_severity"] == "LOW"]
+    moderate = [row for row in strict if row["actual_benign_severity"] == "MEDIUM"]
+    outcomes = Counter(str(row["objective_physical_outcome"]) for row in rows)
+    actual_sides = Counter(str(row["support_event_summary"]["side"]) for row in ordinary)
+    manifolds = Counter(str(row["factor_manifold_intent"]) for row in strict)
+    per_cell: dict[str, dict[str, int]] = {}
+    for source in ("concrete", "marble"):
+        for speed in (0.20, 0.25, 0.30):
+            key = f"{source}_{int(round(speed * 100)):03d}"
+            selected = [
+                row
+                for row in eligible
+                if row["source_terrain"] == source
+                and float(row["speed_mps"]) == speed
+            ]
+            per_cell[key] = {
+                "strict_sand": sum(
+                    row["objective_physical_outcome"] == "STRICT_BENIGN"
+                    for row in selected
+                ),
+                "ordinary_support": sum(
+                    row["group"] == "ordinary_support_control"
+                    and row["objective_physical_outcome"] == "SUPPORT"
+                    for row in selected
+                ),
+                "delayed_support": sum(
+                    row["group"] == "delayed_support_control"
+                    and row["objective_physical_outcome"] == "SUPPORT"
+                    for row in selected
+                ),
+            }
+    signatures = [canonical_sha256(row["physical_signature"]) for row in rows]
+    uniqueness = len(set(signatures)) / len(signatures)
+    gates = document["generation_gates"]
+    gate_results = {
+        "complete_execution": len(rows) == int(gates["complete_execution"]),
+        "objective_valid": len(eligible) >= int(gates["objective_valid_min"]),
+        "strict_sand": len(strict) >= int(gates["strict_sand_min"]),
+        "mild_sand": len(mild) >= int(gates["mild_sand_min"]),
+        "moderate_sand": len(moderate) >= int(gates["moderate_sand_min"]),
+        "ordinary_support": len(ordinary) >= int(gates["ordinary_support_min"]),
+        "delayed_support": len(delayed) >= int(gates["delayed_support_min"]),
+        "invalid_ceiling": sum(not bool(row["valid"]) for row in rows)
+        <= int(gates["invalid_max"]),
+        "slip_dual_ceiling": outcomes["SLIP"] + outcomes["DUAL_HAZARD"]
+        <= int(gates["slip_dual_max"]),
+        "source_speed_cells": all(
+            value["strict_sand"] >= int(gates["per_source_speed"]["strict_sand_min"])
+            and value["ordinary_support"]
+            >= int(gates["per_source_speed"]["ordinary_support_min"])
+            and value["delayed_support"]
+            >= int(gates["per_source_speed"]["delayed_support_min"])
+            for value in per_cell.values()
+        ),
+        "factor_manifold_coverage": all(
+            manifolds[name] >= int(minimum)
+            for name, minimum in gates["sand_factor_manifold_min"].items()
+        ),
+        "support_side_coverage": all(
+            actual_sides[name] >= int(minimum)
+            for name, minimum in gates["ordinary_support_side_min"].items()
+        ),
+        "physical_signature_uniqueness": uniqueness
+        >= float(gates["physical_signature_uniqueness_fraction_min"]),
+        "historical_overlap": design_audit["historical_contamination"]["exact_total"]
+        == 0,
+        "historical_near_overlap": design_audit["historical_contamination"]["near_total"]
+        == 0,
+        "run_id_reuse": design_audit["historical_contamination"]["run_id_reuse_total"]
+        == 0,
+        "cross_role_overlap": design_audit["cross_role_exact_overlap"] == 0,
+        "model_blind": manifest["model_inference_runs"] == 0,
+        "no_backfill_replacement_rerun": all(
+            manifest[name] == 0
+            for name in (
+                "adaptive_backfill_count",
+                "replacement_run_count",
+                "rerun_count",
+            )
+        ),
+    }
+    return {
+        "schema_version": 1,
+        "dataset_id": manifest["dataset_id"],
+        "completed_runs": len(rows),
+        "objective_valid": len(eligible),
+        "strict_sand": len(strict),
+        "mild_sand": len(mild),
+        "moderate_sand": len(moderate),
+        "ordinary_support": len(ordinary),
+        "delayed_support": len(delayed),
+        "actual_outcome_counts": dict(sorted(outcomes.items())),
+        "ordinary_support_side_counts": dict(sorted(actual_sides.items())),
+        "strict_sand_factor_manifold_counts": dict(sorted(manifolds.items())),
+        "source_speed": per_cell,
+        "physical_signature_unique_count": len(set(signatures)),
+        "physical_signature_uniqueness_fraction": uniqueness,
+        "invalid_runs": [
+            {
+                "run_id": row["run_id"],
+                "group": row["group"],
+                "outcome": row["objective_physical_outcome"],
+                "reason": row["invalid_reason"],
+            }
+            for row in rows
+            if not _factor_conditioned_eligible(row)
+        ],
+        "generation_gates": gate_results,
+        "gate_count": len(gate_results),
+        "gate_pass_count": sum(gate_results.values()),
+        "gate_fail_count": sum(not value for value in gate_results.values()),
+        "all_gates_passed": all(gate_results.values()),
+        "historical_contamination": design_audit["historical_contamination"],
+        "model_inference_runs": 0,
+        "training_use": 0,
+        "hnm_use": 0,
+    }
+
+
+def verify_boundary_validation_dataset(dataset_path: Path) -> dict[str, Any]:
+    """Verify the independent boundary-validation freeze without model access."""
+    manifest = load_factor_conditioned_manifest(dataset_path)
+    if manifest["dataset_id"] != BOUNDARY_VALIDATION_DATASET_ID:
+        raise ValueError("unexpected boundary validation dataset")
+    freeze_path = dataset_path / "dataset_freeze.json"
+    freeze = json.loads(freeze_path.read_text(encoding="utf-8"))
+    semantic = dict(freeze)
+    expected_semantic = semantic.pop("BOUNDARY_DATASET_FREEZE_SHA")
+    npz_hashes = {
+        str(row["file"]): sha256_file(dataset_path / str(row["file"]))
+        for row in manifest["runs"]
+    }
+    checks = {
+        "dataset_id": freeze["dataset_id"] == manifest["dataset_id"],
+        "manifest": sha256_file(dataset_path / "manifest.json")
+        == freeze["BOUNDARY_MANIFEST_SHA"],
+        "physical_audit": sha256_file(dataset_path / "physical_audit.json")
+        == freeze["BOUNDARY_PHYSICAL_AUDIT_SHA"],
+        "validation_seal": sha256_file(dataset_path / "validation_seal.json")
+        == freeze["validation_seal_sha256"],
+        "npz_hashes": npz_hashes
+        == {str(row["file"]): str(row["file_sha256"]) for row in manifest["runs"]},
+        "npz_aggregate": canonical_sha256(npz_hashes)
+        == freeze["BOUNDARY_NPZ_AGGREGATE_SHA"],
+        "semantic_freeze": canonical_sha256(semantic) == expected_semantic,
+        "freeze_file": sha256_file(freeze_path)
+        == (dataset_path / "dataset_freeze.sha256")
+        .read_text(encoding="utf-8")
+        .split()[0],
+    }
+    return {
+        "passed": all(checks.values()),
+        "checks": checks,
+        "run_count": len(manifest["runs"]),
+        "dataset_freeze_file_sha256": sha256_file(freeze_path),
+        "dataset_freeze_semantic_sha256": expected_semantic,
+    }
+
+
+def collect_boundary_validation_dataset(
+    root: Path,
+    config_path: Path,
+    policy_override: Path | None = None,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    """Generate, physically audit, and seal the fresh validation exactly once."""
+    document = _load_yaml(config_path)
+    audit = validate_boundary_validation_design(root, document)
+    generation = document["generation"]
+    if str(generation["dataset_id"]) != BOUNDARY_VALIDATION_DATASET_ID:
+        raise RuntimeError("boundary validation dataset identity changed")
+    configured_policy = root / str(generation["policy_path"])
+    policy_path = configured_policy if policy_override is None else policy_override
+    if sha256_file(policy_path) != str(generation["policy_sha256"]):
+        raise RuntimeError("walking policy differs from boundary freeze")
+    for record in generation["protected_artifacts"]:
+        if sha256_file(root / str(record["path"])) != str(record["sha256"]):
+            raise RuntimeError(f"protected boundary artifact changed: {record['path']}")
+    guard_path = root / str(generation["consumed_holdout_guard_path"])
+    guard = json.loads(guard_path.read_text(encoding="utf-8"))
+    if (
+        sha256_file(guard_path) != str(generation["consumed_holdout_guard_sha256"])
+        or guard["guard_after"] != 1
+        or guard["scientific_open_count"] != 1
+    ):
+        raise RuntimeError("consumed historical HOLDOUT state changed")
+    specifications = expand_boundary_validation_design(document)
+    output_path = root / str(generation["dataset_path"])
+    partial_path = output_path.with_name(f"{output_path.name}_partial")
+    if output_path.exists() or partial_path.exists():
+        raise RuntimeError(f"boundary validation output already exists: {output_path}")
+    partial_path.mkdir(parents=True)
+    rows: list[dict[str, Any]] = []
+    started = time.monotonic()
+    try:
+        pre_simulation = {
+            "schema_version": 1,
+            "status": "FROZEN_BEFORE_FIRST_SIMULATION",
+            "dataset_id": BOUNDARY_VALIDATION_DATASET_ID,
+            "source_commit": str(generation["source_commit"]),
+            "config_path": str(config_path.relative_to(root)),
+            "config_sha256": sha256_file(config_path),
+            "component_hashes": audit["component_hashes"],
+            "scenario_matrix_sha256": audit["scenario_matrix_sha256"],
+            "scenario_signature_sha256": audit["scenario_signature_sha256"],
+            "planned_run_count": len(specifications),
+            "model_inference": False,
+            "adaptive_backfill": False,
+            "replacement": False,
+            "rerun": False,
+        }
+        _write_json(partial_path / "pre_simulation_freeze.json", pre_simulation)
+        for index, specification in enumerate(specifications, start=1):
+            row, arrays = _simulate_factor_conditioned_record(
+                specification, generation, policy_path
+            )
+            row["training_eligible"] = False
+            row["validation_eligible"] = False
+            row["boundary_validation_eligible"] = _factor_conditioned_eligible(row)
+            filename = f"{specification['run_id']}.npz"
+            run_path = partial_path / filename
+            _write_deterministic_npz(run_path, arrays)
+            row["file"] = filename
+            row["file_sha256"] = sha256_file(run_path)
+            row["size_bytes"] = run_path.stat().st_size
+            rows.append(row)
+            if progress is not None and (index == 1 or index % 5 == 0):
+                progress(f"generated {index}/{len(specifications)}: {row['run_id']}")
+        manifest = {
+            "schema_version": 1,
+            "dataset_id": BOUNDARY_VALIDATION_DATASET_ID,
+            "created_at": str(generation["generation_start"]),
+            "generation_source_commit": str(generation["source_commit"]),
+            "intervention_config_path": str(config_path.relative_to(root)),
+            "intervention_config_sha256": sha256_file(config_path),
+            "component_hashes": audit["component_hashes"],
+            "scenario_matrix_sha256": audit["scenario_matrix_sha256"],
+            "scenario_signature_sha256": audit["scenario_signature_sha256"],
+            "design_audit": audit,
+            "policy_sha256": str(generation["policy_sha256"]),
+            "model_blind": True,
+            "model_inference_runs": 0,
+            "model_output_fields": [],
+            "attempted_run_count": len(specifications),
+            "run_count": len(rows),
+            "adaptive_backfill_count": 0,
+            "replacement_run_count": 0,
+            "rerun_count": 0,
+            "generation_order": [str(row["run_id"]) for row in rows],
+            "runs": rows,
+        }
+        manifest_path = partial_path / "manifest.json"
+        _write_json(manifest_path, manifest)
+        manifest_sha = sha256_file(manifest_path)
+        (partial_path / "manifest.sha256").write_text(
+            f"{manifest_sha}  manifest.json\n", encoding="utf-8"
+        )
+        physical = _boundary_validation_physical_audit(manifest, document, audit)
+        _write_json(partial_path / "physical_audit.json", physical)
+        status = (
+            "SEALED_FOR_BOUNDARY_RESOLUTION_VALIDATION"
+            if physical["all_gates_passed"]
+            else "SEALED_FAILED_PHYSICAL_EVIDENCE"
+        )
+        seal = {
+            "schema_version": 1,
+            "dataset_id": BOUNDARY_VALIDATION_DATASET_ID,
+            "split": BOUNDARY_VALIDATION_SPLIT,
+            "status": status,
+            "generated": True,
+            "model_inference": False,
+            "training_use": False,
+            "hnm": False,
+            "requires_all_candidate_freezes": True,
+            "one_shot_open": True,
+        }
+        _write_json(partial_path / "validation_seal.json", seal)
+        npz_hashes = {str(row["file"]): str(row["file_sha256"]) for row in rows}
+        physical_signatures = [
+            {"run_id": row["run_id"], **row["physical_signature"]} for row in rows
+        ]
+        freeze = {
+            "schema_version": 1,
+            "dataset_id": BOUNDARY_VALIDATION_DATASET_ID,
+            "generation_source_commit": str(generation["source_commit"]),
+            "intervention_config_sha256": sha256_file(config_path),
+            "run_count": len(rows),
+            "boundary_validation_eligible_count": len(
+                [row for row in rows if row["boundary_validation_eligible"]]
+            ),
+            "BOUNDARY_MANIFEST_SHA": manifest_sha,
+            "BOUNDARY_SCENARIO_MATRIX_SHA": audit["scenario_matrix_sha256"],
+            "BOUNDARY_SCENARIO_SIGNATURE_SHA": audit["scenario_signature_sha256"],
+            "BOUNDARY_PHYSICAL_SIGNATURE_SHA": canonical_sha256(
+                physical_signatures
+            ),
+            "BOUNDARY_NPZ_AGGREGATE_SHA": canonical_sha256(npz_hashes),
+            "BOUNDARY_PHYSICAL_AUDIT_SHA": sha256_file(
+                partial_path / "physical_audit.json"
+            ),
+            "pre_simulation_freeze_sha256": sha256_file(
+                partial_path / "pre_simulation_freeze.json"
+            ),
+            "validation_seal_sha256": sha256_file(
+                partial_path / "validation_seal.json"
+            ),
+            "validation_status": status,
+            "model_inference_runs": 0,
+            "adaptive_backfill_count": 0,
+            "replacement_run_count": 0,
+            "rerun_count": 0,
+        }
+        freeze["BOUNDARY_DATASET_FREEZE_SHA"] = canonical_sha256(freeze)
+        _write_json(partial_path / "dataset_freeze.json", freeze)
+        freeze_file_sha = sha256_file(partial_path / "dataset_freeze.json")
+        (partial_path / "dataset_freeze.sha256").write_text(
+            f"{freeze_file_sha}  dataset_freeze.json\n", encoding="utf-8"
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        partial_path.rename(output_path)
+    except Exception:
+        shutil.rmtree(partial_path, ignore_errors=True)
+        raise
+    summary = {
+        "dataset_id": BOUNDARY_VALIDATION_DATASET_ID,
+        "output_path": str(output_path),
+        "planned_runs": len(specifications),
+        "attempted_runs": len(specifications),
+        "completed_runs": len(rows),
+        "eligible_runs": physical["objective_valid"],
+        "generation_seconds": round(time.monotonic() - started, 3),
+        "manifest_sha256": manifest_sha,
+        "physical_audit_sha256": sha256_file(output_path / "physical_audit.json"),
+        "validation_seal_sha256": sha256_file(output_path / "validation_seal.json"),
+        "dataset_freeze_file_sha256": freeze_file_sha,
+        "dataset_freeze_semantic_sha256": freeze["BOUNDARY_DATASET_FREEZE_SHA"],
+        "validation_status": status,
+        "gate_count": physical["gate_count"],
+        "gate_pass_count": physical["gate_pass_count"],
+        "gate_fail_count": physical["gate_fail_count"],
+        "model_inference_runs": 0,
+        "adaptive_backfill_count": 0,
+        "replacement_run_count": 0,
+        "rerun_count": 0,
     }
     _write_json(output_path / "generation_summary.json", summary)
     return output_path, summary

@@ -39,6 +39,7 @@ SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID = (
 )
 SAND_FACTOR_CONDITIONED_MODEL_TRAINING_ID = "SAND_FACTOR_CONDITIONED_MODEL_TRAINING"
 HAZARD_BOUNDARY_FAILURE_AUDIT_ID = "HAZARD_BOUNDARY_FAILURE_AUDIT"
+HAZARD_BOUNDARY_VALIDATION_GENERATION_ID = "HAZARD_BOUNDARY_VALIDATION_GENERATION"
 SAND_FACTOR_CONDITIONED_RECALIBRATED_GENERATION_ID = (
     "SAND_FACTOR_CONDITIONED_DEVELOPMENT_RECALIBRATED_GENERATION"
 )
@@ -62,6 +63,7 @@ SUPPORTED_EXPERIMENT_IDS = frozenset(
         SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID,
         SAND_FACTOR_CONDITIONED_MODEL_TRAINING_ID,
         HAZARD_BOUNDARY_FAILURE_AUDIT_ID,
+        HAZARD_BOUNDARY_VALIDATION_GENERATION_ID,
         SAND_FACTOR_CONDITIONED_RECALIBRATED_GENERATION_ID,
         SAND_FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_GENERATION_ID,
         SAND_FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_GENERATION_ID,
@@ -293,6 +295,25 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         )
     if experiment_id == SAND_FACTOR_CONDITIONED_MODEL_TRAINING_ID:
         parser.error("The factor-conditioned model milestone does not generate data.")
+    if experiment_id == HAZARD_BOUNDARY_VALIDATION_GENERATION_ID:
+        from fastreflex.dataset.sand_factor_conditioned import (
+            collect_boundary_validation_dataset,
+        )
+
+        output_path, summary = collect_boundary_validation_dataset(
+            REPOSITORY_ROOT,
+            args.config.resolve(),
+            policy.resolve(),
+            progress=lambda message: print(message, file=sys.stderr, flush=True),
+        )
+        print(
+            json.dumps(
+                {"output_path": str(output_path), **summary},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
     if experiment_id == MODEL_V2_GENERATION_ID:
         from fastreflex.dataset.generation import collect_model_v2_dataset
 

@@ -1,0 +1,320 @@
+schema_version: 1
+
+experiment:
+  id: DEPLOYMENT_AWARE_QAT
+  milestone: DEPLOYMENT_AWARE_QAT_ENGINEERING_DERIVATIVE
+  date: 2026-09-04
+  timezone: Asia/Seoul
+  protocol_source_commit: 8616590a37fd82e12f0821597c198a30a2d2d6ba
+  purpose: preserve_exact_frozen_v2_float_behavior_while_reducing_e84_recurrent_int8_perturbation
+  candidate_family_count: 1
+  hyperparameter_sweep: false
+
+candidate:
+  id: model_v2_anchor_refined_gru20_qat_20260904
+  role: DEPLOYMENT_QAT_ENGINEERING_CANDIDATE
+  scientific_candidate: false
+  scientific_release: false
+  deployment_only: true
+  real_robot_supported: false
+  safety_certified: false
+  generalization_supported: false
+  requires_e84_int8_revalidation: true
+  source_candidate_id: model_v2_anchor_refined_gru20_20260902
+  source_release_manifest:
+    path: artifacts/releases/model_v2_anchor_refined_gru20_20260902/release_manifest.json
+    sha256: d5d4e7225a35d7547e373b0ac62dbaf552d45c1a3290f214882a032355589dc7
+  source_checkpoints:
+    - seed: 20260828
+      path: artifacts/releases/model_v2_anchor_refined_gru20_20260902/models/member_seed20260828.pt
+      sha256: 7094a2dca40e8d3c84554619652d69c17920c8e82765460ff8621c13ef494cb9
+    - seed: 20260829
+      path: artifacts/releases/model_v2_anchor_refined_gru20_20260902/models/member_seed20260829.pt
+      sha256: 3ad298eea4c35eca896afd31f860fd6b44ce35d7d9978e2546bb40b693e62c39
+    - seed: 20260830
+      path: artifacts/releases/model_v2_anchor_refined_gru20_20260902/models/member_seed20260830.pt
+      sha256: fe96dfeb8461871044de0f8672190680ce46164a1c28efbe6738d22f9d439bbd
+
+scientific_boundary:
+  immutable_verdicts:
+    - MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED
+    - SIMULATION_GENERALIZATION_EVIDENCE_NOT_SUPPORTED
+    - SUPPORT_SIMULATION_GENERALIZATION_SUPPORTED
+    - BOUNDARY_RESOLUTION_INVALID
+    - TRAINING_OBJECTIVE_SAMPLING_TENSION
+  prohibited_data_sources:
+    - Generalization_HOLDOUT
+    - Generalization_VALIDATION
+    - Unified_HOLDOUT
+    - consumed_FACTOR_VALIDATION
+    - protected_Generalization_payload
+    - BOUNDARY_RESOLUTION_VALIDATION
+    - failed_boundary_resolution_payload
+    - sand_scientific_intervention_corpora
+  historical_holdout_operations:
+    waveform_open: 0
+    inference: 0
+    feature_reconstruction: 0
+    visualization: 0
+    training: 0
+    hard_negative_mining: 0
+    qat: 0
+
+source_contract:
+  architecture:
+    model_family: gru
+    input_size: 80
+    hidden_size: 32
+    layers: 1
+    bidirectional: false
+    dropout: 0.0
+    classifier: linear_32_to_2
+    parameters_per_member: 11010
+    architecture_sha256: ae4753699399aa7e4a93639935e085156ef28ed100a77058d7308eb1549aa897
+  sensor:
+    name: PELVIS_IMU6
+    sample_rate_hz: 1000
+    channels: [accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z]
+    additional_sensor_inputs: false
+  preprocessing:
+    input_shape: [1, 20, 80]
+    input_dtype: float32
+    feature_dimension: 80
+    feature_schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb
+    normalizer:
+      path: artifacts/releases/model_v2_anchor_refined_gru20_20260902/normalizer.json
+      sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a
+      refit_count: 0
+  runtime:
+    stateless_window: true
+    zero_hidden_each_window: true
+    stride_ms: 1
+    ensemble_seeds: [20260828, 20260829, 20260830]
+    threshold: 0.99
+    comparison: greater_than_or_equal
+    persistence_ms: 5
+    output_classes: [NORMAL, HAZARD_REFLEX_REQUIRED]
+
+data:
+  source_training_config:
+    path: configs/experiment/20260902_model_v2_anchor_refined_training.yaml
+    sha256: 2da935d96c80452d69108ac14aa8a4df8edae297672cf25fd1945eb4deb64dbe
+  effective_train:
+    strategy: reuse_exact_anchor_refined_round3_fit_and_train_monitor_endpoint_identities
+    run_count: 442
+    unified_train_run_count: 152
+    valid_v2_train_run_count: 290
+    effective_run_ids_sha256: 0466ea84871d178856ffb10d8b1c0cec730286b35b589c73ff1b5fb1065aa5ab
+    source_hnm_provenance:
+      path: artifacts/runs/20260902_model_v2_anchor_refined_training/hnm_provenance.json
+      sha256: cd69a67c6ec21ac44f5980998b11751bc117fe5aeaa8bcc98ac72f17a74c1db7
+    new_hard_negative_mining: false
+  calibration:
+    path: artifacts/releases/model_v2_anchor_refined_gru20_20260902/calibration_inputs/int8_representative.npz
+    sha256: cd82304d34b2cdc60a0feb3de3e84ca7bc7f45e73223e2df389bd695cddbab5f
+    window_count: 2597
+    shape: [2597, 20, 80]
+    selection_uses_model_output: false
+    auxiliary_role: fake_quant_range_calibration_and_train_only_fidelity_audit
+  allowed_sources:
+    - Unified_TRAIN
+    - valid_V2_TRAIN
+    - frozen_TRAIN_monitor
+    - frozen_TRAIN_derived_int8_calibration_windows
+
+fake_quantization:
+  implementation: explicit_unrolled_pytorch_reset_after_gru_with_ste
+  equation: n_plus_z_times_h_minus_n
+  timesteps: 20
+  projection_partition:
+    block_width: 16
+    blocks_per_gate: 2
+    mathematical_change: none_projection_rows_only_partitioned
+    provenance: e84_m3_1_train_selected_ptq_representation
+  rounding: round_to_nearest_ties_to_even
+  clamp: true
+  input:
+    dtype: int8
+    qmin: -128
+    qmax: 127
+    scale: 0.03241445869207382
+    zero_point: 0
+    source_range_policy: frozen_train_absolute_p99
+    source_bound: 4.132843623161313
+  weights:
+    dtype: int8
+    qmin: -127
+    qmax: 127
+    scheme: symmetric_per_output_channel
+    scale_policy: current_weight_max_abs_divided_by_127_each_forward
+    zero_point: 0
+  biases:
+    dtype: int32
+    scheme: per_output_channel_input_scale_times_weight_scale
+    scale_policy: derived_from_quantized_linear_inputs_and_weights
+  activations:
+    dtype: int8
+    qmin: -128
+    qmax: 127
+    scheme: affine_per_tensor
+    range_policy: one_model_blind_minmax_observer_pass_on_all_2597_train_calibration_windows_before_optimizer_step_1
+    observer_updates_during_training: false
+    observer_scope: each_unrolled_timestep_and_partitioned_operation_output
+  nonlinear:
+    sigmoid: {scale: 0.00390625, zero_point: -128, qmin: -128, qmax: 127}
+    tanh: {scale: 0.0078125, zero_point: 0, qmin: -128, qmax: 127}
+    softmax: {scale: 0.00390625, zero_point: -128, qmin: -128, qmax: 127}
+  recurrent_hidden:
+    scheme: affine_per_tensor_per_unrolled_timestep
+    feedback_uses_fake_quantized_hidden: true
+  float_bypass:
+    fake_quant_disabled: exact_explicit_float_equation
+    parity_absolute_tolerance: 1.0e-6
+    parity_relative_tolerance: 1.0e-6
+  limitation: research_fake_quant_is_not_actual_tflite_or_vela_acceptance
+
+objective:
+  terms:
+    supervised_inverse_frequency_cross_entropy:
+      forward: fake_quant
+      coefficient: 0.2
+    teacher_logit_smooth_l1_fake_quant:
+      teacher: exact_frozen_source_member
+      coefficient: 1.0
+    teacher_logit_smooth_l1_float_bypass:
+      teacher: exact_frozen_source_member
+      coefficient: 1.0
+    teacher_hidden_mean_squared_error_fake_quant:
+      teacher: exact_frozen_source_member_all_20_hidden_states
+      coefficient: 0.25
+  scientific_loss_redesign: false
+  within_class_domain_balanced_loss_mass: false
+
+training:
+  initialization: exact_corresponding_frozen_round3_member
+  seeds: [20260828, 20260829, 20260830]
+  optimizer: Adam
+  learning_rate: 0.0001
+  weight_decay: 0.0
+  batch_size: 128
+  maximum_epochs: 12
+  patience: 3
+  epoch_selection: minimum_composite_objective_on_frozen_train_monitor
+  shuffle: deterministic_each_epoch
+  gradient_clipping: none
+  fake_quant_active_from_optimizer_step: 1
+  checkpoint_policy: one_best_train_monitor_checkpoint_per_seed
+  architecture_search: false
+  threshold_search: false
+  persistence_search: false
+  seed_search: false
+
+pre_optimizer_gates:
+  protocol_config_committed: true
+  source_identity_verified: true
+  architecture_verified: true
+  normalizer_verified: true
+  feature_schema_verified: true
+  effective_train_verified: true
+  calibration_verified: true
+  protected_data_rejection_verified: true
+  explicit_float_bypass_parity_verified: true
+  activation_observers_frozen: true
+
+train_only_acceptance:
+  reference: exact_frozen_v2_float_member_and_ensemble
+  comparisons:
+    - original_weights_ptq_style_fake_quant
+    - qat_weights_float_bypass
+    - qat_weights_full_int8_fake_quant
+  probability_contract:
+    every_member_maximum_absolute_error_maximum: 0.10
+    every_member_p95_absolute_error_maximum: 0.05
+    ensemble_maximum_absolute_error_maximum: 0.10
+    ensemble_p95_absolute_error_maximum: 0.05
+    ensemble_absolute_bias_maximum: 0.01
+  material_improvement:
+    worst_member_maximum_error_ratio_to_original_ptq_maximum: 0.50
+    ensemble_p95_error_ratio_to_original_ptq_p95: 0.75
+  decision_contract:
+    threshold_crossing_exact: true
+    persistence_exact: true
+    reflex_onset_exact: true
+  recurrent_diagnostics:
+    - first_projection_error
+    - hidden_error_by_timestep
+    - timestep_19_hidden_error
+    - classifier_logit_error
+  all_three_seeds_required: true
+
+candidate_freeze:
+  required_before_post_training_development_evaluation: true
+  requires_train_only_acceptance_pass: true
+  artifact_path: artifacts/runs/20260904_deployment_aware_qat/candidate_freeze.json
+  required_identity:
+    - three_checkpoint_sha256
+    - source_v2_identity
+    - architecture
+    - feature_schema
+    - normalizer
+    - qat_protocol
+    - training_ledger
+    - quantization_specification
+    - calibration_artifact
+    - decision_contract
+
+post_freeze_evaluation:
+  allowed_only_after_candidate_freeze: true
+  sources:
+    - frozen_non_protected_V2_VALIDATION_behavior_preservation
+    - frozen_non_protected_deployment_golden_runtime_chain
+  prohibited_for_retraining_or_parameter_changes: true
+  behavior_preservation:
+    v2_validation_minimum_correct:
+      overall_hazard: 59
+      slip: 30
+      support: 30
+      confirmed_no_hazard: 26
+    v2_validation_maximum_premature: 5
+    golden_qat_float_vs_source_member_probability_maximum: 0.02
+    golden_qat_float_vs_source_ensemble_probability_maximum: 0.01
+    golden_threshold_crossing_exact: true
+    golden_persistence_exact: true
+    golden_reflex_onset_exact: true
+    golden_shape_dtype_exact: true
+
+handoff:
+  export_only_if_train_and_behavior_gates_pass: true
+  path: artifacts/releases/model_v2_anchor_refined_gru20_qat_20260904
+  overwrite_existing: false
+  flags:
+    scientific_release: false
+    real_robot_supported: false
+    safety_certified: false
+    generalization_supported: false
+    deployment_qat_candidate: true
+    requires_e84_int8_revalidation: true
+  required_e84_action: actual_tflite_full_int8_conversion_parity_and_vela_revalidation
+
+fail_closed:
+  no_handoff_on_failure: true
+  existing_v2_release_immutable: true
+  scientific_verdict_immutable: true
+  no_follow_on_intervention_in_this_milestone: true
+  prohibited_first_cycle_interventions:
+    - jacobian_penalty
+    - hidden_size_change
+    - recurrent_clipping_architecture
+    - lstm
+    - gru_gate_redesign
+    - additional_sensor
+    - feature_redesign
+    - normalizer_redesign
+    - threshold_or_persistence_tuning
+    - member_removal
+    - seed_cherry_picking
+
+artifacts:
+  run_path: artifacts/runs/20260904_deployment_aware_qat
+  report_path: reports/20260904_deployment_aware_qat.md
+

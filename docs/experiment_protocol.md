@@ -104,6 +104,28 @@ Dated configs, reports and Git history preserve the research path. This does not
 
 Research completion does not authorize quantization, export, E84 integration, HIL, Recovery or sensor freeze. Those actions require a reviewed deployment milestone and explicit artifact provenance. For the frozen non-final V2 engineering reference, deployment Float comparison uses one independent batch-1 `[1,20,80]` invocation per endpoint. Continuous parity follows the reviewed layer-specific contract in the handoff while tensor shape/dtype, `>=0.99`, five-sample persistence, state transitions, and final decisions remain exact. The historical batch-121 golden is preserved but is not the canonical deployment execution. This repository's supported result is a Float research candidate and behavior contract, not a target-runtime claim.
 
+The single deployment-aware QAT engineering milestone is frozen in
+`configs/experiment/20260904_deployment_aware_qat.yaml`. It is an explicit,
+deployment-only exception for training a derivative of the exact V2 Round-3
+weights; it does not move the scientific model boundary or add conversion,
+Vela, firmware, or HIL ownership to Research. The only independent variable is
+recurrent fake-quant training. It reuses the 442-run effective TRAIN, frozen
+Round-3 endpoint identities, frozen normalizer, 2,597 TRAIN-derived calibration
+windows, architecture, three seeds, threshold, and persistence. No new HNM,
+normalizer fit, simulator run, scientific loss redesign, candidate family,
+hyperparameter search, or protected/development evaluation occurs before the
+TRAIN-only candidate freeze.
+
+The QAT forward is the explicit PyTorch reset-after equation unrolled for 20
+steps with the E84 TRAIN-selected 16-channel projection partition, INT8
+per-axis weights, INT8 per-tensor recurrent activations, fake-quantized hidden
+feedback, and frozen p99 input scale. Its observers are calibrated once from
+the model-blind TRAIN artifact and frozen before optimizer step 1. Standard
+PyTorch GRU QAT is not substituted because it would not demonstrate parity to
+the static E84 lowering. Passing Research emulation is only a handoff condition;
+actual TFLite full-INT8 conversion and Vela acceptance remain exclusively E84
+authority and require a new deployment revalidation.
+
 ## 11. Redesigned Sand generalization protocol
 
 The redesigned Sand study is a development study, not a replacement final HOLDOUT. Its 176-run matrix is frozen before generation and creates fresh `REDESIGNED_DISCOVERY` and `REDESIGNED_CONFIRMATION` runs together under one domain. Invalid outcomes remain in their original split; adaptive replacement, backfill, split movement, and result-driven deletion are prohibited.

@@ -26,6 +26,7 @@ from fastreflex.models.checkpoint import load_checkpoint
 from fastreflex.training.hazard import (
     EVENT_CLASS_NAMES,
     _merge_endpoint_maps,
+    _mine_training_round,
     _train_monitor_partition,
     _training_recipe,
     build_hazard_windows,
@@ -585,9 +586,46 @@ def _load_training_windows(
         raise RuntimeError("frozen source training ledger changed")
     training_record = json.loads(training_path.read_text(encoding="utf-8"))
     accumulated: dict[str, tuple[int, ...]] = {}
+    reconstructed_hnm: list[dict[str, object]] = []
     for row in training_record["candidate"]["rounds"][:3]:
-        accumulated = _merge_endpoint_maps(
-            accumulated, row["hard_negative_mining"]["selected_by_run"]
+        round_id = int(row["round"])
+        checkpoint_records = row["checkpoint_sha256"]
+        checkpoint_paths: list[Path] = []
+        for seed in (20260828, 20260829, 20260830):
+            relative = (
+                "artifacts/runs/20260902_model_v2_anchor_refined_training/"
+                f"checkpoints/model_v2_anchor_refined_gru_history20_round{round_id}_"
+                f"seed{seed}.pt"
+            )
+            path = root / relative
+            if sha256_file(path) != str(checkpoint_records[relative]):
+                raise RuntimeError("frozen source HNM checkpoint changed")
+            checkpoint_paths.append(path)
+        selected, reconstruction = _mine_training_round(
+            data.runs,
+            data.precursor_samples,
+            normalizer,
+            checkpoint_paths,
+            accumulated,
+            data.annotations,
+        )
+        expected = row["hard_negative_mining"]
+        comparable = {
+            key: value
+            for key, value in reconstruction.items()
+            if key != "selected_by_run"
+        }
+        if comparable != expected:
+            raise RuntimeError(f"frozen source HNM round {round_id} did not reproduce")
+        accumulated = _merge_endpoint_maps(accumulated, selected)
+        reconstructed_hnm.append(
+            {
+                "round": round_id + 1,
+                "selected_endpoint_sha256": reconstruction[
+                    "selected_endpoint_sha256"
+                ],
+                "mined_windows": reconstruction["mined_windows"],
+            }
         )
     recipe = _training_recipe(source_document)
     fit = build_hazard_windows(
@@ -655,6 +693,7 @@ def _load_training_windows(
         },
         "normalizer_fits": 0,
         "new_hard_negative_mining_rounds": 0,
+        "frozen_source_hnm_reconstruction": reconstructed_hnm,
     }
 
 

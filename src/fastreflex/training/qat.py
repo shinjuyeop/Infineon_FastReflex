@@ -610,13 +610,20 @@ def _load_training_windows(
             data.annotations,
         )
         expected = row["hard_negative_mining"]
-        comparable = {
-            key: value
-            for key, value in reconstruction.items()
-            if key != "selected_by_run"
-        }
-        if comparable != expected:
-            raise RuntimeError(f"frozen source HNM round {round_id} did not reproduce")
+        identity_fields = (
+            "selected_endpoint_sha256",
+            "mined_windows",
+            "runs_contributing",
+            "duplicate_mined_windows",
+            "spacing_violations",
+            "forbidden_mask_violations",
+        )
+        if any(reconstruction[name] != expected[name] for name in identity_fields):
+            raise RuntimeError(
+                f"frozen source HNM round {round_id} identity did not reproduce: "
+                f"expected {expected['selected_endpoint_sha256']}, observed "
+                f"{reconstruction['selected_endpoint_sha256']}"
+            )
         accumulated = _merge_endpoint_maps(accumulated, selected)
         reconstructed_hnm.append(
             {

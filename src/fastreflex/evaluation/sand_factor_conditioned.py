@@ -168,8 +168,10 @@ def evaluate_factor_conditioned_validation(
         == "ADVERSE_DIRECTION",
         "comparison_direction_manifold": lambda row: row["factor_manifold"]
         == "COMPARISON_DIRECTION",
-        "concrete_025_exception": lambda row: row["factor_manifold"]
-        == "CONCRETE_025_ADVERSE_EXCEPTION",
+        "concrete_025_exception": lambda row: row["source"] == "concrete"
+        and row["speed_mps"] == 0.25
+        and row["severity"] == "LOW"
+        and row["topology"] == "transition_left",
         "transition_left_right_single": lambda row: row["topology"]
         == "transition_left"
         and row["precontact_phase"] == "RIGHT_SINGLE_SUPPORT",

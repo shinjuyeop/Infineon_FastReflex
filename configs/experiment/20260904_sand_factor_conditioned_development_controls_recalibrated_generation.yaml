@@ -1,0 +1,126 @@
+schema_version: 1
+
+experiment:
+  id: SAND_FACTOR_CONDITIONED_DEVELOPMENT_CONTROLS_RECALIBRATED_GENERATION
+  milestone: SAND_FACTOR_CONDITIONED_DEVELOPMENT_CONTROLS_RECALIBRATED_GENERATION
+  date: 2026-09-04
+  timezone: Asia/Seoul
+  source_commit: 48e21858f777bac52876848ddff2df9448f08413
+  mode: exact_frozen_generation_and_model_blind_physical_audit
+
+generation:
+  source_commit: 48e21858f777bac52876848ddff2df9448f08413
+  generation_start: "2026-09-04T11:38:00+09:00"
+  redesign_config_path: configs/experiment/20260903_sand_factor_conditioned_development_controls_recalibrated.yaml
+  redesign_config_sha256: b18be44668f1d0e2c07b6a127c7fe626d42636a002ad023e48721af7c2443fb5
+  readiness_artifact_path: configs/experiment/20260903_sand_factor_conditioned_ordinary_support_failure_review.yaml
+  readiness_artifact_sha256: 2e01a24771de138442e30afce3967f63dbbbc45e06e3b8057d8fb87f96c81ee5
+  readiness_contract_sha256: 3518bb4b8cdeec8b47b59f9ed2bd8ccaadc02243c27fe17f54f04648a2c88deb
+  expected_design_freeze:
+    component_hashes:
+      RECALIBRATED_PARAMETER_DOMAIN_SHA: 282566e64e9473e9b30649942fcccf81b9ab801523ed6d4c36a68a9b9bdd2262
+      RECALIBRATED_SCENARIO_MATRIX_SHA: 89ad45c953594f198dd76bd07d181ec33d88b44988cbeb574e8afa879d515e83
+      RECALIBRATED_SPLIT_PLAN_SHA: a104be1c13030cc0fa8f3c915b7d86ecf01bbfae7fbd18574af02fb835a9b8ad
+      RECALIBRATED_PHYSICAL_LABEL_CONTRACT_SHA: 57ed709b014990148adf5dfeecaf0d3beb52dfbbfe742f0967dcd8bdd99ad7aa
+      RECALIBRATED_GENERATION_GATES_SHA: ada3bb726b662aed61d76f4939dc64d6dd83701be81dd07fa018afee66bf364a
+      RECALIBRATED_ANTI_CONTAMINATION_SHA: c6d6f9e9787cd61c96b6e79de02cd4afa68365c8bb06860033fbef5c221707dc
+    scenario_matrix_sha256: bdc01be11f6d6f300f41eb9ca658546e2f35bc7ba4aa12d8cc824b05c81532a9
+    scenario_signature_sha256: 8f279599fc1379138e38784a1e609275249741ac38d6b2406f58a8c307a5dacc
+    split_sha256:
+      FACTOR_TRAIN: 039725f3231b2f48daae3f9e0d5f768613fdb71c3b6c15050e4f62308cef45c2
+      FACTOR_VALIDATION: 8e4a915347781d1654a9a05ec0e78754a7b7515284abfb6433197978ecce72e0
+  dataset_id: sand_factor_conditioned_development_controls_recalibrated_20260903
+  dataset_path: data/raw/sand_factor_conditioned_development_controls_recalibrated_20260903
+  planned_total_runs: 198
+  planned_factor_train_runs: 132
+  planned_factor_validation_runs: 66
+  planned_mild_runs: 108
+  planned_moderate_runs: 36
+  planned_ordinary_support_runs: 36
+  planned_delayed_support_runs: 18
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  policy_sha256: 2a66ca6336eadb3c0b34b557763f3e06d01ff8fcf6260dd4cedbd69d6093fc28
+  simulator_config_path: configs/simulator/g1.yaml
+  simulator_config_sha256: 516580bf91d69ae53ab1b74d0f1021615979ead486f7d85afd8df57ad036fa8d
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  simulation_duration_s: 9.0
+  label_execution:
+    precontact_phase_lookback_ms: 20
+    benign_post_target_followup_ms: 1000
+    support_post_event_followup_ms: 1000
+    expected_samples: 9000
+  environment_provenance:
+    python: 3.10.12
+    platform: Linux 6.8.0-136-generic x86_64
+    repository_root: /d/shin/Infineon_FastReflex
+    timezone: Asia/Seoul
+  implementation_artifacts:
+    - {path: src/fastreflex/dataset/sand_factor_conditioned.py, sha256: 689764d12891ff3153ba6e3b4a294349b0af3e1baf34f6ee48ba62bd23f02da3}
+    - {path: src/fastreflex/dataset/sand_calibration.py, sha256: f52dab56e8abda499f4b0cb462f9d3d4554522287762947ee2c877658ff9f756}
+    - {path: src/fastreflex/dataset/generation.py, sha256: 435ffa6b29b7559e11efb13bb743c16491f41dcc06916e903771e947d5f70bdc}
+    - {path: src/fastreflex/simulation/g1.py, sha256: d41308b6801aa648284ea05b22ce0c304fd97078cf47f6cd56b1f3b0d715bee2}
+    - {path: src/fastreflex/simulation/stability.py, sha256: 16de6f9fedc62b9fe50d2651f49192acc1ad255c30408356eca0c947330b398e}
+    - {path: src/fastreflex/simulation/hazards.py, sha256: 97d26ff789eea5ba2c4e0a6bba57108fd5ffab59ec8bbd373fe028fba97391a7}
+    - {path: src/fastreflex/simulation/terrain.py, sha256: 70816edeed3377b940cfaf2a4de089158343b03068604003329b44e50b58ed43}
+    - {path: scripts/fastreflex.py, sha256: f178669ffb635e6ae82ccdb004678f0049dd701f31b41186ea7ea0b7e1172298}
+  protected_artifacts:
+    - {path: configs/experiment/20260903_sand_factor_conditioned_development_controls_recalibrated.yaml, sha256: b18be44668f1d0e2c07b6a127c7fe626d42636a002ad023e48721af7c2443fb5}
+    - {path: configs/experiment/20260903_sand_factor_conditioned_ordinary_support_failure_review.yaml, sha256: 2e01a24771de138442e30afce3967f63dbbbc45e06e3b8057d8fb87f96c81ee5}
+    - {path: reports/20260903_sand_factor_conditioned_ordinary_support_failure_review.md, sha256: 8644ecfbe6c0cdcc89d96823d918d46adcf47649ece7806df419da5fc19db18c}
+    - {path: configs/experiment/20260903_sand_factor_conditioned_development_support_recalibrated.yaml, sha256: b1f09effbb90313ef8c883db8e0ef376c5f4eb8e83ec66d8ed5fe52ca95ef775}
+    - {path: reports/20260903_sand_factor_conditioned_delayed_support_physical_review.md, sha256: bbce45717c08bf350c6dfb3b0e24c6c4e3da7028aeebde4c1bbacc3dfa644529}
+    - {path: reports/20260903_sand_factor_conditioned_development_support_recalibrated_generation.md, sha256: 9ff9159abfa4718300ea08edd8a9c585d62a2f9425d3be26481b484b2d4200cf}
+    - {path: reports/20260903_data_intervention_failure_audit.md, sha256: cfbfd0fb7fe2b4943c025db194cfabb44fa806aac63c24518c61f1cf1c23f420}
+    - {path: data/raw/sand_factor_conditioned_development_support_recalibrated_20260903/manifest.json, sha256: bda6961f79525df237d440086057aea71a03afc5134a49c50f5e4d4a2193be67}
+    - {path: data/raw/sand_factor_conditioned_development_support_recalibrated_20260903/physical_audit.json, sha256: f4861dc18456da28f76caf38257de03abef90e184879378bcbe844301490f9a3}
+    - {path: data/raw/sand_factor_conditioned_development_support_recalibrated_20260903/dataset_freeze.json, sha256: fb575566574ef87bdc6ca8c161cb770c6d16e530b18fda3df0b65d213ad59922}
+    - {path: configs/model/final_generalization_candidate.yaml, sha256: 52644d3efb0e756002bd43a7f94aea0a16a65eb2ff014c72548f2b3b138b7bc2}
+    - {path: artifacts/runs/20260902_model_v2_anchor_refined_training/candidate_freeze.json, sha256: 95dab53275aa77ded36b479c3633ab879a1331cb2c96bd0eb014de2be99bd85f}
+    - {path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json, sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154}
+  consumed_holdout_guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  consumed_holdout_guard_sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154
+
+protocol_guards:
+  no_model_inference: true
+  no_training: true
+  no_hnm: true
+  no_normalizer_fit: true
+  no_threshold_search: true
+  no_persistence_search: true
+  no_architecture_search: true
+  no_sensor_fusion: true
+  old_holdout_access_forbidden: true
+  factor_validation_model_access_forbidden: true
+  new_calibration_pilots: false
+  adaptive_backfill: false
+  adaptive_replacement: false
+  adaptive_rerun: false
+  no_protocol_mutation_after_generation_start: true
+  no_outcome_driven_regeneration: true
+
+counters:
+  new_full_study_simulation_runs: 198
+  new_pilot_runs: 0
+  replacement: 0
+  backfill: 0
+  adaptive_rerun: 0
+  v1_inference: 0
+  v2_inference: 0
+  terrain_inference: 0
+  hazard_probability_calculation: 0
+  model_80d_analysis: 0
+  training: 0
+  optimizer_steps: 0
+  checkpoint_writes: 0
+  normalizer_fits: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  architecture_searches: 0
+  seed_searches: 0
+  sensor_fusion: 0
+  old_holdout_payload_reads: 0
+  old_holdout_inference: 0
+  factor_validation_model_inference: 0
+  factor_validation_training_use: 0

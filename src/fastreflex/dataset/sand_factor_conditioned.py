@@ -46,6 +46,12 @@ FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_GENERATION_ID = (
 FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_DATASET_ID = (
     "sand_factor_conditioned_development_support_recalibrated_20260903"
 )
+FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_GENERATION_ID = (
+    "SAND_FACTOR_CONDITIONED_DEVELOPMENT_CONTROLS_RECALIBRATED_GENERATION"
+)
+FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_DATASET_ID = (
+    "sand_factor_conditioned_development_controls_recalibrated_20260903"
+)
 
 
 def _factor_conditioned_eligible(row: Mapping[str, Any]) -> bool:
@@ -1151,9 +1157,13 @@ def _factor_conditioned_recalibrated_audit(
     """Evaluate every pre-frozen recalibrated physical-generation gate."""
     rows = list(manifest["runs"])
     gates = design["generation_gates"]
-    support_recalibrated = (
-        design["dataset_plan"]["dataset_id"]
-        == FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_DATASET_ID
+    dataset_id = str(design["dataset_plan"]["dataset_id"])
+    support_recalibrated = dataset_id in {
+        FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_DATASET_ID,
+        FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_DATASET_ID,
+    }
+    controls_recalibrated = (
+        dataset_id == FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_DATASET_ID
     )
     checks: dict[str, dict[str, Any]] = {}
 
@@ -1680,7 +1690,13 @@ def _factor_conditioned_recalibrated_audit(
         )
 
     all_gates_passed = all(value["passed"] for value in checks.values())
-    if support_recalibrated:
+    if controls_recalibrated:
+        verdict = (
+            "SAND_FACTOR_CONDITIONED_DEVELOPMENT_CONTROLS_RECALIBRATED_GENERATION_READY"
+            if all_gates_passed
+            else "SAND_FACTOR_CONDITIONED_DEVELOPMENT_CONTROLS_RECALIBRATED_GENERATION_INSUFFICIENT"
+        )
+    elif support_recalibrated:
         verdict = (
             "SAND_FACTOR_CONDITIONED_DEVELOPMENT_SUPPORT_RECALIBRATED_GENERATION_READY"
             if all_gates_passed
@@ -1774,6 +1790,7 @@ def load_factor_conditioned_manifest(dataset_path: Path) -> Mapping[str, Any]:
         FACTOR_CONDITIONED_DATASET_ID,
         FACTOR_CONDITIONED_RECALIBRATED_DATASET_ID,
         FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_DATASET_ID,
+        FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_DATASET_ID,
     }:
         raise ValueError("unexpected factor-conditioned dataset identity")
     return manifest
@@ -2109,6 +2126,9 @@ def collect_factor_conditioned_recalibrated_dataset(
         FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_GENERATION_ID: (
             FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_DATASET_ID
         ),
+        FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_GENERATION_ID: (
+            FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_DATASET_ID
+        ),
     }
     if experiment_id not in dataset_ids:
         raise ValueError(
@@ -2135,7 +2155,30 @@ def collect_factor_conditioned_recalibrated_dataset(
     readiness_path = root / str(generation["readiness_artifact_path"])
     if sha256_file(readiness_path) != str(generation["readiness_artifact_sha256"]):
         raise RuntimeError("factor-conditioned redesign readiness artifact changed")
-    if readiness_path.suffix == ".yaml":
+    if (
+        readiness_path.suffix == ".yaml"
+        and experiment_id == FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_GENERATION_ID
+    ):
+        readiness = _load_yaml(readiness_path)
+        future = readiness.get("future_design", {})
+        counters = readiness.get("counters", {})
+        readiness_valid = (
+            readiness.get("decision", {}).get("verdict")
+            == "ORDINARY_SUPPORT_PHYSICAL_RECALIBRATION_READY"
+            and future.get("path") == str(generation["redesign_config_path"])
+            and future.get("sha256") == str(generation["redesign_config_sha256"])
+            and future.get("dataset_id") == dataset_id
+            and future.get("generated_now") is False
+            and readiness.get("review_freeze", {}).get(
+                "readiness_contract_sha256"
+            )
+            == str(generation["readiness_contract_sha256"])
+            and counters.get("new_pilot_simulations") == 0
+            and counters.get("V1_inference") == 0
+            and counters.get("V2_inference") == 0
+            and counters.get("historical_HOLDOUT_access") == 0
+        )
+    elif readiness_path.suffix == ".yaml":
         readiness = _load_yaml(readiness_path)
         future = readiness.get("future_complete_corpus", {})
         counters = readiness.get("counters", {})

@@ -21,14 +21,27 @@ EPSILON = 1.0e-8
 def _validation_distribution(values: Sequence[float | int]) -> dict[str, float | None]:
     array = np.asarray(values, dtype=np.float64)
     if not len(array):
-        return {key: None for key in ("minimum", "median", "p90", "p95", "maximum")}
+        return {
+            key: None
+            for key in ("minimum", "median", "p75", "p90", "p95", "maximum")
+        }
     return {
         "minimum": float(np.min(array)),
         "median": float(np.median(array)),
+        "p75": float(np.percentile(array, 75)),
         "p90": float(np.percentile(array, 90)),
         "p95": float(np.percentile(array, 95)),
         "maximum": float(np.max(array)),
     }
+
+
+def _longest_threshold_streak(probability: np.ndarray, threshold: float) -> int:
+    longest = 0
+    current = 0
+    for above in np.asarray(probability) >= threshold:
+        current = current + 1 if bool(above) else 0
+        longest = max(longest, current)
+    return longest
 
 
 def evaluate_factor_conditioned_validation(
@@ -69,7 +82,11 @@ def evaluate_factor_conditioned_validation(
                 "severity": row["actual_benign_severity"],
                 "factor_manifold": row["factor_manifold"],
                 "support_side": row["support_event_summary"]["side"],
+                "physical_outcome": row["objective_physical_outcome"],
                 "max_probability": maximum,
+                "longest_threshold_streak": _longest_threshold_streak(
+                    probability, threshold
+                ),
                 "adverse_margin": maximum >= adverse_threshold,
                 "reflex": bool(len(onsets)),
                 "first_reflex": None if not len(onsets) else int(onsets[0]),
@@ -83,11 +100,18 @@ def evaluate_factor_conditioned_validation(
         row
         for row in detailed
         if row["group"] in {"sand_benign_mild", "sand_benign_moderate"}
+        and row["physical_outcome"] == "STRICT_BENIGN"
     ]
     support = [
         row
         for row in detailed
         if row["group"] in {"ordinary_support_control", "delayed_support_control"}
+        and row["physical_outcome"] == "SUPPORT"
+    ]
+    actual_slip = [
+        row
+        for row in detailed
+        if row["physical_outcome"] in {"SLIP", "DUAL_HAZARD"}
     ]
 
     def sand_summary(selected: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -144,19 +168,54 @@ def evaluate_factor_conditioned_validation(
         == "ADVERSE_DIRECTION",
         "comparison_direction_manifold": lambda row: row["factor_manifold"]
         == "COMPARISON_DIRECTION",
+        "concrete_025_exception": lambda row: row["factor_manifold"]
+        == "CONCRETE_025_ADVERSE_EXCEPTION",
+        "transition_left_right_single": lambda row: row["topology"]
+        == "transition_left"
+        and row["precontact_phase"] == "RIGHT_SINGLE_SUPPORT",
+        "transition_right_left_single": lambda row: row["topology"]
+        == "transition_right"
+        and row["precontact_phase"] == "LEFT_SINGLE_SUPPORT",
     }
     factors = {
         name: sand_summary([row for row in sand if predicate(row)])
         for name, predicate in factor_definitions.items()
     }
+    source_speed = {
+        f"{source}_{speed:.2f}": sand_summary(
+            [
+                row
+                for row in sand
+                if row["source"] == source and row["speed_mps"] == speed
+            ]
+        )
+        for source in ("concrete", "marble")
+        for speed in (0.20, 0.25, 0.30)
+    }
 
     def support_summary(selected: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         detected = sum(bool(row["valid_detection"]) for row in selected)
+        i1_to_reflex = [
+            int(row["first_reflex"]) - int(row["support_precursor_sample"])
+            for row in selected
+            if row["valid_detection"]
+            and row["first_reflex"] is not None
+            and row["support_precursor_sample"] is not None
+        ]
+        reflex_to_support = [
+            int(row["support_sample"]) - int(row["first_reflex"])
+            for row in selected
+            if row["valid_detection"]
+            and row["first_reflex"] is not None
+            and row["support_sample"] is not None
+        ]
         return {
             "runs": len(selected),
             "detected": detected,
             "recall": 0.0 if not selected else detected / len(selected),
             "pre_i1_false_response": sum(bool(row["premature"]) for row in selected),
+            "i1_to_reflex_ms": _validation_distribution(i1_to_reflex),
+            "reflex_to_support_ms": _validation_distribution(reflex_to_support),
         }
 
     support_groups = {
@@ -180,22 +239,18 @@ def evaluate_factor_conditioned_validation(
             [row for row in support if row["support_side"] == "RIGHT_ONLY"]
         ),
     }
-    i1_to_reflex: list[int] = []
-    reflex_to_support: list[int] = []
-    for row in support:
-        if not row["valid_detection"] or row["first_reflex"] is None:
-            continue
-        first = int(row["first_reflex"])
-        i1 = row["support_precursor_sample"]
-        support_sample = row["support_sample"]
-        if i1 is not None:
-            i1_to_reflex.append(first - int(i1))
-        if support_sample is not None:
-            reflex_to_support.append(int(support_sample) - first)
-    support_groups["timing"] = {
-        "i1_to_reflex_ms": _validation_distribution(i1_to_reflex),
-        "reflex_to_support_ms": _validation_distribution(reflex_to_support),
+    support_groups["by_speed"] = {
+        f"{speed:.2f}": support_summary(
+            [row for row in support if row["speed_mps"] == speed]
+        )
+        for speed in (0.20, 0.25, 0.30)
     }
+    all_manifest_rows = list(manifest_rows.values())
+    invalid = [
+        row
+        for row in all_manifest_rows
+        if row["split"] == "FACTOR_VALIDATION" and not bool(row["valid"])
+    ]
     return {
         "schema_version": 1,
         "split": "FACTOR_VALIDATION",
@@ -210,8 +265,18 @@ def evaluate_factor_conditioned_validation(
             ),
             "margin_bins": bins,
             "factors": factors,
+            "source_speed": source_speed,
         },
         "support": support_groups,
+        "actual_slip": {
+            **support_summary(actual_slip),
+            "interpretation": "secondary_descriptive_tiny_denominator",
+        },
+        "provenance_only": {
+            "invalid_or_censored_runs": len(invalid),
+            "run_ids": sorted(str(row["run_id"]) for row in invalid),
+            "excluded_from_primary_metrics": True,
+        },
         "run_results": detailed,
         "terrain_used_as_gate": False,
     }

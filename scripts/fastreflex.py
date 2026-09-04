@@ -37,6 +37,9 @@ MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_ID = (
 SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID = (
     "SAND_FACTOR_CONDITIONED_DATA_INTERVENTION"
 )
+SAND_FACTOR_CONDITIONED_MODEL_TRAINING_ID = (
+    "SAND_FACTOR_CONDITIONED_MODEL_TRAINING"
+)
 SAND_FACTOR_CONDITIONED_RECALIBRATED_GENERATION_ID = (
     "SAND_FACTOR_CONDITIONED_DEVELOPMENT_RECALIBRATED_GENERATION"
 )
@@ -58,6 +61,7 @@ SUPPORTED_EXPERIMENT_IDS = frozenset(
         MODEL_V2_FINAL_CANDIDATE_HOLDOUT_READINESS_REVIEW_ID,
         MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_ID,
         SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID,
+        SAND_FACTOR_CONDITIONED_MODEL_TRAINING_ID,
         SAND_FACTOR_CONDITIONED_RECALIBRATED_GENERATION_ID,
         SAND_FACTOR_CONDITIONED_SUPPORT_RECALIBRATED_GENERATION_ID,
         SAND_FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_GENERATION_ID,
@@ -287,6 +291,8 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             "The supported Unified Hazard corpus is frozen; this consolidated "
             "milestone does not regenerate it."
         )
+    if experiment_id == SAND_FACTOR_CONDITIONED_MODEL_TRAINING_ID:
+        parser.error("The factor-conditioned model milestone does not generate data.")
     if experiment_id == MODEL_V2_GENERATION_ID:
         from fastreflex.dataset.generation import collect_model_v2_dataset
 
@@ -359,7 +365,10 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
 def _train(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     experiment_id = _require_supported(args.config)
-    if experiment_id == SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID:
+    if experiment_id in {
+        SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID,
+        SAND_FACTOR_CONDITIONED_MODEL_TRAINING_ID,
+    }:
         from fastreflex.training.hazard import (
             run_factor_conditioned_data_intervention,
         )
@@ -416,7 +425,10 @@ def _train(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
 def _evaluate(args: argparse.Namespace) -> int:
     experiment_id = _require_supported(args.config)
-    if experiment_id == SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID:
+    if experiment_id in {
+        SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID,
+        SAND_FACTOR_CONDITIONED_MODEL_TRAINING_ID,
+    }:
         from fastreflex.training.hazard import (
             verify_factor_conditioned_intervention_result,
         )

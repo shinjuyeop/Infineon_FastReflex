@@ -8,7 +8,9 @@ import math
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import yaml
@@ -1729,6 +1731,14 @@ def train_hazard_candidate(
                     ).items()
                 )
             ),
+            "fit_window_exposure_by_scenario_family": dict(
+                sorted(
+                    Counter(
+                        annotations[str(run_id)].scenario_family
+                        for run_id in fit_windows.run_ids
+                    ).items()
+                )
+            ),
             "positive_batch_exposure_by_seed": {
                 str(seed): {
                     name: int(count) * int(epochs_completed[index])
@@ -2727,6 +2737,7 @@ def _load_factor_conditioned_runs(
     split: str,
     *,
     candidate_freeze_path: Path | None = None,
+    validation_authorization_path: Path | None = None,
 ) -> tuple[
     dict[str, HazardRun],
     dict[str, HazardRunAnnotations],
@@ -2735,7 +2746,6 @@ def _load_factor_conditioned_runs(
 ]:
     """Open only the authorized fresh split and adapt it to canonical Hazard data."""
     from fastreflex.dataset.sand_factor_conditioned import (
-        FACTOR_CONDITIONED_DATASET_ID,
         verify_factor_conditioned_dataset,
     )
     from fastreflex.evaluation.sand import hazard_run_from_discovery
@@ -2747,9 +2757,17 @@ def _load_factor_conditioned_runs(
         raise RuntimeError("factor-conditioned dataset integrity failed")
     manifest_path = dataset_path / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest["dataset_id"] != FACTOR_CONDITIONED_DATASET_ID or manifest[
-        "intervention_config_sha256"
-    ] != sha256_file(root / str(document["experiment"]["config_path"])):
+    dataset_id = str(dataset["dataset_id"])
+    if (
+        manifest["dataset_id"] != dataset_id
+        or manifest["intervention_config_sha256"]
+        != str(
+            dataset.get(
+                "generation_config_sha256",
+                sha256_file(root / str(document["experiment"]["config_path"])),
+            )
+        )
+    ):
         raise RuntimeError("factor-conditioned dataset provenance changed")
     if split == "FACTOR_VALIDATION":
         if candidate_freeze_path is None or not candidate_freeze_path.is_file():
@@ -2760,20 +2778,64 @@ def _load_factor_conditioned_runs(
             and freeze.get("factor_validation_evaluated") is False
         ):
             raise RuntimeError("candidate freeze does not authorize factor validation")
+        if (
+            validation_authorization_path is None
+            or not validation_authorization_path.is_file()
+        ):
+            raise RuntimeError("FACTOR_VALIDATION requires one-shot authorization")
+        authorization = json.loads(
+            validation_authorization_path.read_text(encoding="utf-8")
+        )
+        if not (
+            authorization.get("authorized") is True
+            and authorization.get("open_count_before") == 0
+            and authorization.get("open_count_after") == 1
+            and authorization.get("candidate_freeze_sha256")
+            == sha256_file(candidate_freeze_path)
+            and authorization.get("validation_seal_sha256")
+            == str(dataset["validation_seal_sha256"])
+        ):
+            raise RuntimeError("FACTOR_VALIDATION authorization is invalid")
     elif split != "FACTOR_TRAIN":
         raise ValueError(f"unsupported factor split: {split}")
-    eligibility = (
-        "training_eligible" if split == "FACTOR_TRAIN" else "validation_eligible"
-    )
-    rows = {
+    all_rows = {
         str(row["run_id"]): row
         for row in manifest["runs"]
-        if row["split"] == split and bool(row[eligibility])
+        if row["split"] == split
     }
+    selected_rows = {
+        run_id: row
+        for run_id, row in all_rows.items()
+        if (
+            bool(row["training_eligible"])
+            if split == "FACTOR_TRAIN"
+            else bool(row["validation_eligible"])
+            or (
+                bool(row["valid"])
+                and row["objective_physical_outcome"] in {"SLIP", "DUAL_HAZARD"}
+            )
+        )
+    }
+    expected = dataset.get("expected", {})
+    expected_all = expected.get(
+        "factor_train" if split == "FACTOR_TRAIN" else "factor_validation"
+    )
+    expected_selected = expected.get(
+        "factor_train_eligible"
+        if split == "FACTOR_TRAIN"
+        else "payload_records_expected",
+        document.get("validation_protocol", {}).get("payload_records_expected")
+        if split == "FACTOR_VALIDATION"
+        else None,
+    )
+    if expected_all is not None and len(all_rows) != int(expected_all):
+        raise RuntimeError(f"factor-conditioned {split} identity changed")
+    if expected_selected is not None and len(selected_rows) != int(expected_selected):
+        raise RuntimeError(f"factor-conditioned {split} eligibility changed")
     runs: dict[str, HazardRun] = {}
     annotations: dict[str, HazardRunAnnotations] = {}
     precursors: dict[str, int | None] = {}
-    for run_id, row in sorted(rows.items()):
+    for run_id, row in sorted(selected_rows.items()):
         path = dataset_path / str(row["file"])
         if sha256_file(path) != str(row["file_sha256"]):
             raise RuntimeError(f"factor-conditioned run changed: {run_id}")
@@ -2784,7 +2846,7 @@ def _load_factor_conditioned_runs(
             adapted, split="train" if split == "FACTOR_TRAIN" else "validation"
         )
         annotations[run_id] = HazardRunAnnotations(
-            dataset_id=FACTOR_CONDITIONED_DATASET_ID,
+            dataset_id=dataset_id,
             scenario_family=str(row["scenario_family"]),
             nominal_speed_mps=float(row["nominal_speed_mps"]),
             actual_side=str(row["support_event_summary"]["side"]),
@@ -2803,7 +2865,7 @@ def _load_factor_conditioned_runs(
         )
         value = row["i1_summary"]["first_sample"]
         precursors[run_id] = None if value is None else int(value)
-    return runs, annotations, rows, precursors
+    return runs, annotations, all_rows, precursors
 
 
 def _frozen_normalizer_diagnostic(
@@ -2881,6 +2943,11 @@ def _factor_validation_comparison(
         "speed_0.30",
         "mild",
         "moderate",
+        "adverse_direction_manifold",
+        "comparison_direction_manifold",
+        "concrete_025_exception",
+        "transition_left_right_single",
+        "transition_right_left_single",
     )
     factors = {}
     for name in factor_names:
@@ -2897,7 +2964,70 @@ def _factor_validation_comparison(
             "improved": int(new["adverse"]) < int(ref["adverse"])
             and int(new["false_reflex"]) <= int(ref["false_reflex"]),
         }
-    return {"metrics": metrics, "factors": factors}
+    source_speed = {}
+    for name, ref in reference["sand"]["source_speed"].items():  # type: ignore[union-attr]
+        new = candidate["sand"]["source_speed"][name]  # type: ignore[index]
+        source_speed[name] = {
+            "runs": int(new["runs"]),
+            "reference_specific": int(ref["specific"]),
+            "candidate_specific": int(new["specific"]),
+            "reference_false_reflex": int(ref["false_reflex"]),
+            "candidate_false_reflex": int(new["false_reflex"]),
+            "reference_adverse": int(ref["adverse"]),
+            "candidate_adverse": int(new["adverse"]),
+            "reference_median_probability": ref["max_probability"]["median"],
+            "candidate_median_probability": new["max_probability"]["median"],
+            "improved": int(new["adverse"]) < int(ref["adverse"])
+            and int(new["false_reflex"]) <= int(ref["false_reflex"]),
+        }
+    return {"metrics": metrics, "factors": factors, "source_speed": source_speed}
+
+
+def _validate_factor_conditioned_training_contract(
+    document: Mapping[str, object],
+) -> None:
+    """Reject any second intervention or evidence-boundary drift pre-training."""
+    expected_sources = ["Unified_TRAIN", "V2_TRAIN", "FACTOR_TRAIN"]
+    if document["training_protocol"]["data_sources"] != expected_sources:  # type: ignore[index]
+        raise RuntimeError("factor-conditioned training-source whitelist changed")
+    if document["training_source_contract"]["authorized"] != expected_sources:  # type: ignore[index]
+        raise RuntimeError("authorized factor-conditioned sources changed")
+    if document["training"]["seeds"] != [20260828, 20260829, 20260830]:  # type: ignore[index]
+        raise RuntimeError("factor-conditioned seed family changed")
+    runtime = document["runtime_decision"]
+    if runtime != {  # type: ignore[comparison-overlap]
+        "ensemble": "mean_probability_all_three_predeclared_seeds",
+        "threshold": 0.99,
+        "persistence_ms": 5,
+    }:
+        raise RuntimeError("factor-conditioned runtime decision changed")
+    hnm = document["hnm"]
+    if not (  # type: ignore[index]
+        hnm["enabled"]
+        and hnm["rounds"] == HNM_ROUNDS
+        and hnm["source"] == "effective_TRAIN_only"
+        and hnm["validation_access"] == "prohibited"
+    ):
+        raise RuntimeError("factor-conditioned HNM policy changed")
+    architecture = document["architecture"]
+    if architecture != {  # type: ignore[comparison-overlap]
+        "model_family": "gru",
+        "input": "pelvis_imu6",
+        "input_shape": [20, 80],
+        "hidden_size": 32,
+        "layers": 1,
+        "bidirectional": False,
+        "dropout": 0.0,
+        "output_classes": ["NORMAL", "HAZARD_REFLEX_REQUIRED"],
+        "parameters": 11010,
+    }:
+        raise RuntimeError("factor-conditioned architecture changed")
+    if (
+        document["features"]["schema_sha256"] != feature_schema_hash()  # type: ignore[index]
+        or document["normalizer"]["policy"] != "reuse_frozen_v2_no_refit"  # type: ignore[index]
+        or not document["legacy_regression"]["enabled"]  # type: ignore[index]
+    ):
+        raise RuntimeError("feature, normalizer, or regression contract changed")
 
 
 def run_factor_conditioned_data_intervention(
@@ -2917,27 +3047,61 @@ def run_factor_conditioned_data_intervention(
     )
 
     document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    if document["experiment"]["id"] != "SAND_FACTOR_CONDITIONED_DATA_INTERVENTION":
+    experiment_id = document["experiment"]["id"]
+    supported_ids = {
+        "SAND_FACTOR_CONDITIONED_DATA_INTERVENTION",
+        "SAND_FACTOR_CONDITIONED_MODEL_TRAINING",
+    }
+    if experiment_id not in supported_ids:
         raise ValueError("unsupported factor-conditioned training config")
     config_sha = sha256_file(config_path)
     if str(document["experiment"]["config_path"]) != str(config_path.relative_to(root)):
         raise RuntimeError("factor-conditioned config path changed")
-    validate_factor_conditioned_design(root, document)
+    if experiment_id == "SAND_FACTOR_CONDITIONED_DATA_INTERVENTION":
+        validate_factor_conditioned_design(root, document)
+    else:
+        _validate_factor_conditioned_training_contract(document)
     dataset_path = root / str(document["factor_dataset"]["path"])
     dataset_verification = verify_factor_conditioned_dataset(dataset_path)
     if not dataset_verification["passed"]:
         raise RuntimeError("factor-conditioned dataset failed freeze verification")
     dataset_freeze_path = dataset_path / "dataset_freeze.json"
     dataset_freeze = json.loads(dataset_freeze_path.read_text(encoding="utf-8"))
-    if (
-        dataset_freeze["generation_verdict"]
-        != "FACTOR_CONDITIONED_DATASET_GENERATION_READY"
-    ):
+    factor_dataset = document["factor_dataset"]
+    expected_verdict = str(
+        factor_dataset.get(
+            "generation_verdict", "FACTOR_CONDITIONED_DATASET_GENERATION_READY"
+        )
+    )
+    if dataset_freeze["generation_verdict"] != expected_verdict:
         raise RuntimeError("physical-generation gates failed; training is prohibited")
+    protected_factor_hashes = {
+        "dataset_freeze_file_sha256": sha256_file(dataset_freeze_path),
+        "dataset_freeze_semantic_sha256": dataset_freeze["FACTOR_DATASET_FREEZE_SHA"],
+        "manifest_sha256": sha256_file(dataset_path / "manifest.json"),
+        "physical_audit_sha256": sha256_file(dataset_path / "physical_audit.json"),
+        "validation_seal_sha256": sha256_file(dataset_path / "validation_seal.json"),
+        "npz_aggregate_sha256": dataset_freeze["FACTOR_NPZ_AGGREGATE_SHA"],
+        "factor_train_split_sha256": dataset_freeze["FACTOR_TRAIN_SPLIT_SHA"],
+        "factor_validation_split_sha256": dataset_freeze[
+            "FACTOR_VALIDATION_SPLIT_SHA"
+        ],
+    }
+    for name, actual in protected_factor_hashes.items():
+        expected = factor_dataset.get(name)
+        if expected is not None and actual != expected:
+            raise RuntimeError(f"factor-conditioned protected hash changed: {name}")
     guard = document["historical_evidence_boundary"]
     guard_path = root / str(guard["holdout_guard_path"])
     if sha256_file(guard_path) != str(guard["holdout_guard_sha256"]):
         raise RuntimeError("historical HOLDOUT guard changed")
+    guard_state = json.loads(guard_path.read_text(encoding="utf-8"))
+    if (
+        int(guard_state["guard_after"]) != int(guard["guard"])
+        or int(guard_state["scientific_open_count"])
+        != int(guard["scientific_opens"])
+    ):
+        raise RuntimeError("historical HOLDOUT consumed state changed")
     normalizer_path = root / str(document["normalizer"]["path"])
     if sha256_file(normalizer_path) != str(document["normalizer"]["sha256"]):
         raise RuntimeError("frozen V2 normalizer changed")
@@ -2990,6 +3154,42 @@ def run_factor_conditioned_data_intervention(
     if not normalizer_usable:
         raise RuntimeError("frozen normalizer is unusable for FACTOR_TRAIN")
     artifact_path = root / str(document["artifacts"]["path"])
+    source_ledger_path = artifact_path / "training_source_ledger.json"
+    source_ledger = {
+        "schema_version": 1,
+        "intervention_config_sha256": config_sha,
+        "authorized_sources": list(
+            document["training_source_contract"]["authorized"]
+        ),
+        "forbidden_sources": list(
+            document["training_source_contract"]["forbidden"]
+        ),
+        "entries": list(document["training_source_contract"]["ledger"]),
+        "actual_training_run_counts": {
+            "Unified_TRAIN": int(
+                document["effective_train"]["unified"]["run_count"]
+            ),
+            "V2_TRAIN": int(
+                document["effective_train"]["augmentation"]["run_count"]
+            ),
+            "FACTOR_TRAIN": len(factor_runs),
+        },
+        "actual_training_run_total": len(runs),
+        "factor_train_physical_outcomes": dict(
+            sorted(
+                Counter(
+                    str(row["objective_physical_outcome"])
+                    for row in factor_rows.values()
+                ).items()
+            )
+        ),
+        "forbidden_training_or_hnm_use_count": 0,
+        "factor_validation_payload_reads": 0,
+        "historical_holdout_payload_reads": 0,
+    }
+    if len(runs) != int(document["effective_train"]["combined_run_count"]):
+        raise RuntimeError("combined factor-conditioned TRAIN identity changed")
+    _write_json(source_ledger_path, source_ledger)
     pretraining_path = artifact_path / "pretraining_audit.json"
     effective_identity = [
         {"dataset_id": annotations[run_id].dataset_id, "run_id": run_id}
@@ -3006,6 +3206,7 @@ def run_factor_conditioned_data_intervention(
         "effective_train_run_count": len(runs),
         "effective_train_ids_sha256": canonical_sha256(effective_identity),
         "factor_train_ids_sha256": canonical_sha256(sorted(factor_runs)),
+        "training_source_ledger_sha256": sha256_file(source_ledger_path),
         "factor_train_composition": dict(
             sorted(Counter(str(row["group"]) for row in factor_rows.values()).items())
         ),
@@ -3022,6 +3223,7 @@ def run_factor_conditioned_data_intervention(
         "v2_validation_opened": False,
         "old_holdout_payload_reads": 0,
         "optimizer_steps": 0,
+        "protocol_frozen_before_optimizer_step_1": True,
     }
     if dry_run:
         _write_json(pretraining_path, pretraining)
@@ -3029,6 +3231,7 @@ def run_factor_conditioned_data_intervention(
             "status": "FACTOR_CONDITIONED_PRETRAINING_READY",
             "intervention_config_sha256": config_sha,
             "pretraining_audit_sha256": sha256_file(pretraining_path),
+            "training_source_ledger_sha256": sha256_file(source_ledger_path),
             "effective_train_run_count": len(runs),
             "factor_train_run_count": len(factor_runs),
             "normalizer_usable": normalizer_usable,
@@ -3040,6 +3243,8 @@ def run_factor_conditioned_data_intervention(
         raise RuntimeError("run and preserve the factor pretraining dry-run first")
     forbidden_existing = (
         artifact_path / "candidate_freeze.json",
+        artifact_path / "factor_validation_authorization.json",
+        artifact_path / "factor_validation_paired_sand.json",
         artifact_path / "factor_validation_comparison.json",
         artifact_path / "historical_v2_validation_regression.json",
         artifact_path / "final_intervention_decision.json",
@@ -3077,6 +3282,7 @@ def run_factor_conditioned_data_intervention(
         "dataset_freeze_sha256": dataset_freeze["FACTOR_DATASET_FREEZE_SHA"],
         "effective_train_ids_sha256": pretraining["effective_train_ids_sha256"],
         "factor_train_ids_sha256": pretraining["factor_train_ids_sha256"],
+        "training_source_ledger_sha256": sha256_file(source_ledger_path),
         "candidate": candidate.record,
         "normalizer_fits": 0,
         "threshold_searches": 0,
@@ -3098,6 +3304,9 @@ def run_factor_conditioned_data_intervention(
                 "fit_window_exposure_by_dataset": row["fit_window_exposure_by_dataset"],
                 "fit_window_exposure_by_design_role": row[
                     "fit_window_exposure_by_design_role"
+                ],
+                "fit_window_exposure_by_scenario_family": row[
+                    "fit_window_exposure_by_scenario_family"
                 ],
             }
             for row in candidate.record["rounds"]
@@ -3165,11 +3374,17 @@ def run_factor_conditioned_data_intervention(
     candidate_freeze = {
         "schema_version": 1,
         "candidate_id": document["artifacts"]["candidate_id"],
-        "role": "FROZEN_FACTOR_INTERVENTION_EVALUATION_CANDIDATE",
+        "role": "DEVELOPMENT_FACTOR_CONDITIONED_CANDIDATE",
         "source_commit": document["experiment"]["source_commit"],
         "intervention_config_sha256": config_sha,
         "dataset_freeze_sha256": dataset_freeze["FACTOR_DATASET_FREEZE_SHA"],
         "training_split_sha256": pretraining["factor_train_ids_sha256"],
+        "factor_train_split_sha256": factor_dataset[
+            "factor_train_split_sha256"
+        ],
+        "factor_validation_split_sha256": factor_dataset[
+            "factor_validation_split_sha256"
+        ],
         "effective_train_ids_sha256": pretraining["effective_train_ids_sha256"],
         "normalizer_sha256": candidate.record["normalizer_sha256"],
         "feature_schema_sha256": candidate.record["feature_schema_sha256"],
@@ -3179,6 +3394,8 @@ def run_factor_conditioned_data_intervention(
         "ensemble_membership": list(document["training"]["seeds"]),
         "hnm_provenance_sha256": sha256_file(hnm_path),
         "training_exposure_sha256": sha256_file(exposure_path),
+        "training_record_sha256": sha256_file(training_record_path),
+        "training_source_ledger_sha256": sha256_file(source_ledger_path),
         "threshold": document["runtime_decision"]["threshold"],
         "persistence_ms": document["runtime_decision"]["persistence_ms"],
         "candidate_frozen_before_factor_validation": True,
@@ -3189,10 +3406,58 @@ def run_factor_conditioned_data_intervention(
         "generalization_holdout_guard_count": 0,
         "final_generalization_established": False,
         "old_holdout_payload_reads": 0,
+        "optimizer_training_provenance": {
+            "optimizer": document["training"]["optimizer"],
+            "learning_rate": document["training"]["learning_rate"],
+            "weight_decay": document["training"]["weight_decay"],
+            "loss": document["training"]["loss"],
+            "batch_size": document["training"]["batch_size"],
+            "max_epochs": document["training"]["max_epochs"],
+            "patience": document["training"]["patience"],
+            "train_only_monitor": document["training"]["epoch_selection"],
+        },
     }
     candidate_freeze_path = artifact_path / "candidate_freeze.json"
     _write_json(candidate_freeze_path, candidate_freeze)
     candidate_freeze_sha = sha256_file(candidate_freeze_path)
+
+    validation_seal_path = dataset_path / "validation_seal.json"
+    validation_seal = json.loads(validation_seal_path.read_text(encoding="utf-8"))
+    if (
+        sha256_file(validation_seal_path)
+        != str(factor_dataset["validation_seal_sha256"])
+        or validation_seal["status"] != "SEALED_FOR_FUTURE_FACTOR_VALIDATION"
+        or not validation_seal["requires_frozen_future_candidate"]
+    ):
+        raise RuntimeError("FACTOR_VALIDATION seal cannot be authorized")
+    validation_authorization = {
+        "schema_version": 1,
+        "authorized": True,
+        "authorization_timestamp": datetime.now(
+            ZoneInfo(str(document["experiment"]["timezone"]))
+        ).isoformat(timespec="seconds"),
+        "candidate_id": candidate_freeze["candidate_id"],
+        "candidate_freeze_sha256": candidate_freeze_sha,
+        "reference_candidate_id": document["reference_model"]["candidate_id"],
+        "dataset_id": factor_dataset["dataset_id"],
+        "dataset_freeze_sha256": dataset_freeze["FACTOR_DATASET_FREEZE_SHA"],
+        "validation_split_sha256": factor_dataset[
+            "factor_validation_split_sha256"
+        ],
+        "validation_seal_sha256": sha256_file(validation_seal_path),
+        "validation_seal_before_state": validation_seal["status"],
+        "validation_seal_after_state": (
+            "AUTHORIZED_ONCE_FOR_FROZEN_FACTOR_CONDITIONED_CANDIDATE"
+        ),
+        "evaluation_config_sha256": config_sha,
+        "open_count_before": 0,
+        "open_count_after": 1,
+        "candidate_mutation_after_authorization": False,
+    }
+    validation_authorization_path = (
+        artifact_path / "factor_validation_authorization.json"
+    )
+    _write_json(validation_authorization_path, validation_authorization)
 
     validation_runs, _, validation_rows, validation_precursors = (
         _load_factor_conditioned_runs(
@@ -3200,6 +3465,7 @@ def run_factor_conditioned_data_intervention(
             document,
             "FACTOR_VALIDATION",
             candidate_freeze_path=candidate_freeze_path,
+            validation_authorization_path=validation_authorization_path,
         )
     )
     reference_paths = tuple(
@@ -3233,9 +3499,57 @@ def run_factor_conditioned_data_intervention(
     candidate_validation_path = artifact_path / "factor_validation_candidate.json"
     _write_json(reference_validation_path, reference_validation)
     _write_json(candidate_validation_path, candidate_validation)
+    reference_by_run = {
+        str(row["run_id"]): row for row in reference_validation["run_results"]
+    }
+    candidate_by_run = {
+        str(row["run_id"]): row for row in candidate_validation["run_results"]
+    }
+    paired_rows = []
+    for run_id in sorted(reference_by_run):
+        reference_row = reference_by_run[run_id]
+        candidate_row = candidate_by_run[run_id]
+        if reference_row["physical_outcome"] != "STRICT_BENIGN":
+            continue
+        paired_rows.append(
+            {
+                "run_id": run_id,
+                "source": reference_row["source"],
+                "speed_mps": reference_row["speed_mps"],
+                "severity": reference_row["severity"],
+                "topology": reference_row["topology"],
+                "precontact_phase": reference_row["precontact_phase"],
+                "factor_manifold": reference_row["factor_manifold"],
+                "reference_max_probability": reference_row["max_probability"],
+                "candidate_max_probability": candidate_row["max_probability"],
+                "probability_delta": float(candidate_row["max_probability"])
+                - float(reference_row["max_probability"]),
+                "reference_longest_threshold_streak": reference_row[
+                    "longest_threshold_streak"
+                ],
+                "candidate_longest_threshold_streak": candidate_row[
+                    "longest_threshold_streak"
+                ],
+                "reference_reflex": reference_row["reflex"],
+                "candidate_reflex": candidate_row["reflex"],
+            }
+        )
+    paired_sand = {
+        "schema_version": 1,
+        "candidate_freeze_sha256": candidate_freeze_sha,
+        "validation_authorization_sha256": sha256_file(
+            validation_authorization_path
+        ),
+        "run_count": len(paired_rows),
+        "rows": paired_rows,
+        "tuning_after_view": False,
+    }
+    paired_path = artifact_path / "factor_validation_paired_sand.json"
+    _write_json(paired_path, paired_sand)
     comparison = _factor_validation_comparison(
         reference_validation, candidate_validation
     )
+    comparison["paired_sand_sha256"] = sha256_file(paired_path)
     comparison_path = artifact_path / "factor_validation_comparison.json"
     _write_json(comparison_path, comparison)
 
@@ -3300,6 +3614,15 @@ def run_factor_conditioned_data_intervention(
         for value in comparison["factors"].values()
         if int(value["reference_adverse"]) > 0
     )
+    source_speed_cells_improved = sum(
+        bool(value["improved"])
+        for value in comparison["source_speed"].values()
+        if int(value["reference_adverse"]) > 0
+    )
+    adverse_manifold = comparison["factors"]["adverse_direction_manifold"]
+    adverse_manifold_rate_reduction = -float(
+        adverse_manifold["adverse_rate_delta"]
+    )
     fresh_support_preserved = bool(
         candidate_validation["support"]["overall"]["recall"]
         >= float(rules["support"]["overall_recall_min"])
@@ -3324,10 +3647,18 @@ def run_factor_conditioned_data_intervention(
         - float(rules["legacy_regression"]["slip_recall_drop_max"])
     )
     effective = bool(
-        specificity_gain >= float(rules["effective"]["specificity_gain_min"])
+        candidate_validation["sand"]["overall"]["specificity"]
+        >= float(rules["effective"]["candidate_specificity_min"])
+        and specificity_gain >= float(rules["effective"]["specificity_gain_min"])
         and fp_reduction >= int(rules["effective"]["false_reflex_reduction_min"])
         and adverse_reduction >= float(rules["effective"]["adverse_rate_reduction_min"])
+        and adverse_manifold_rate_reduction
+        >= float(
+            rules["effective"]["adverse_manifold_adverse_rate_reduction_min"]
+        )
         and improved_factors >= int(rules["effective"]["factor_groups_improved_min"])
+        and source_speed_cells_improved
+        >= int(rules["effective"]["source_speed_cells_improved_min"])
         and fresh_support_preserved
         and legacy_support_preserved
     )
@@ -3344,21 +3675,20 @@ def run_factor_conditioned_data_intervention(
         if partial
         else "FACTOR_CONDITIONED_DATA_INTERVENTION_NOT_EFFECTIVE"
     )
+    if effective:
+        next_milestone = str(rules["effective_next"])
+    else:
+        next_milestone = str(rules["otherwise_next"])
     residual_factor_count = sum(
         int(value["candidate_adverse"]) > 0 for value in comparison["factors"].values()
     )
-    if effective:
-        next_milestone = "NEW_FACTOR_CONDITIONED_EXTERNAL_VALIDATION_DESIGN"
-    elif not fresh_support_preserved or not legacy_support_preserved:
-        next_milestone = "DATA_INTERVENTION_FAILURE_AUDIT"
-    elif float(candidate_validation["sand"]["overall"]["adverse_rate"]) >= float(
-        rules["failure_routing"]["widespread_adverse_rate_min"]
-    ) and residual_factor_count >= int(
-        rules["failure_routing"]["widespread_factor_count_min"]
-    ):
-        next_milestone = "PELVIS_REPRESENTATION_HETEROGENEITY_STUDY_DESIGN"
-    else:
-        next_milestone = "MODEL_BOUNDARY_GENERALIZATION_STUDY_DESIGN"
+    hypothesis_status = (
+        "FACTOR_CONDITIONED_DATA_DOMAIN_HYPOTHESIS_DEVELOPMENT_SUPPORTED"
+        if effective
+        else "FACTOR_CONDITIONED_DATA_DOMAIN_HYPOTHESIS_PARTIALLY_SUPPORTED"
+        if partial
+        else "FACTOR_CONDITIONED_DATA_DOMAIN_HYPOTHESIS_NOT_SUPPORTED_BY_DEVELOPMENT"
+    )
     decision = {
         "schema_version": 1,
         "intervention_verdict": verdict,
@@ -3367,10 +3697,16 @@ def run_factor_conditioned_data_intervention(
         "false_reflex_reduction": fp_reduction,
         "adverse_rate_reduction": adverse_reduction,
         "factor_groups_improved": improved_factors,
+        "source_speed_cells_improved": source_speed_cells_improved,
+        "adverse_manifold_adverse_rate_reduction": (
+            adverse_manifold_rate_reduction
+        ),
         "fresh_support_preserved": fresh_support_preserved,
         "legacy_regression_preserved": legacy_support_preserved,
+        "hypothesis_status": hypothesis_status,
+        "frozen_decision_rules": rules,
         "historical_final_model_verdict": "MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED",
-        "new_candidate_final_generalization": "NOT_YET_ESTABLISHED",
+        "new_candidate_final_generalization": "NOT_ESTABLISHED",
         "new_independent_external_and_final_evidence_required": True,
         "historical_holdout_reuse": False,
         "no_retraining_after_validation": True,
@@ -3421,6 +3757,10 @@ def run_factor_conditioned_data_intervention(
             "role": "DEVELOPMENT_FACTOR_CONDITIONED_CANDIDATE",
             "pre_evaluation_candidate_freeze_sha256": candidate_freeze_sha,
             "factor_validation_comparison_sha256": sha256_file(comparison_path),
+            "factor_validation_authorization_sha256": sha256_file(
+                validation_authorization_path
+            ),
+            "factor_validation_paired_sand_sha256": sha256_file(paired_path),
             "historical_v2_validation_regression_sha256": sha256_file(legacy_path),
             "final_intervention_decision_sha256": sha256_file(decision_path),
             "factor_validation_evaluated": True,
@@ -3435,8 +3775,12 @@ def run_factor_conditioned_data_intervention(
         "schema_version": 1,
         "candidate_id": candidate_freeze["candidate_id"],
         "candidate_freeze_sha256": candidate_freeze_sha,
+        "factor_validation_authorization_sha256": sha256_file(
+            validation_authorization_path
+        ),
         "factor_validation_reference_sha256": sha256_file(reference_validation_path),
         "factor_validation_candidate_sha256": sha256_file(candidate_validation_path),
+        "factor_validation_paired_sand_sha256": sha256_file(paired_path),
         "factor_validation_comparison_sha256": sha256_file(comparison_path),
         "historical_v2_validation_regression_sha256": sha256_file(legacy_path),
         "final_intervention_decision_sha256": sha256_file(decision_path),
@@ -3453,6 +3797,9 @@ def run_factor_conditioned_data_intervention(
         "old_holdout_payload_reads": 0,
         "old_holdout_inference": 0,
         "fresh_validation_training_use": 0,
+        "factor_validation_open_count": 1,
+        "factor_validation_state": "CONSUMED_DEVELOPMENT_VALIDATION",
+        "candidate_mutation_after_authorization": False,
     }
     evaluation_freeze_path = artifact_path / "evaluation_freeze.json"
     _write_json(evaluation_freeze_path, evaluation_freeze)
@@ -3463,10 +3810,17 @@ def run_factor_conditioned_data_intervention(
         "intervention_config_sha256": config_sha,
         "dataset_freeze_sha256": dataset_freeze["FACTOR_DATASET_FREEZE_SHA"],
         "training_record_sha256": sha256_file(training_record_path),
+        "training_source_ledger_sha256": sha256_file(source_ledger_path),
         "training_exposure_sha256": sha256_file(exposure_path),
         "hnm_provenance_sha256": sha256_file(hnm_path),
         "candidate_freeze_sha256": candidate_freeze_sha,
+        "factor_validation_authorization_sha256": sha256_file(
+            validation_authorization_path
+        ),
         "evaluation_freeze_sha256": sha256_file(evaluation_freeze_path),
+        "factor_validation_reference_sha256": sha256_file(reference_validation_path),
+        "factor_validation_candidate_sha256": sha256_file(candidate_validation_path),
+        "factor_validation_paired_sand_sha256": sha256_file(paired_path),
         "factor_validation_comparison_sha256": sha256_file(comparison_path),
         "historical_v2_validation_regression_sha256": sha256_file(legacy_path),
         "final_intervention_decision_sha256": sha256_file(decision_path),
@@ -3491,6 +3845,15 @@ def run_factor_conditioned_data_intervention(
         "old_holdout_inference": 0,
         "old_sand_confirmation_training_use": 0,
         "fresh_validation_training_use": 0,
+        "new_simulation_runs": 0,
+        "new_pilot_runs": 0,
+        "candidate_families_trained": 1,
+        "seeds_trained": len(document["training"]["seeds"]),
+        "v1_inference": 0,
+        "reference_v2_factor_validation_inference": 1,
+        "candidate_factor_validation_inference": 1,
+        "factor_validation_open_count": 1,
+        "generalization_validation_candidate_inference": 0,
     }
     result_path = artifact_path / "training_result.json"
     _write_json(result_path, result)
@@ -3510,18 +3873,38 @@ def verify_factor_conditioned_intervention_result(
         == result["intervention_config_sha256"],
         "training_record": sha256_file(artifact_path / "training_record.json")
         == result["training_record_sha256"],
+        "training_source_ledger": sha256_file(
+            artifact_path / "training_source_ledger.json"
+        )
+        == result["training_source_ledger_sha256"],
         "training_exposure": sha256_file(artifact_path / "training_exposure.json")
         == result["training_exposure_sha256"],
         "hnm_provenance": sha256_file(artifact_path / "hnm_provenance.json")
         == result["hnm_provenance_sha256"],
         "candidate_freeze": sha256_file(artifact_path / "candidate_freeze.json")
         == result["candidate_freeze_sha256"],
+        "validation_authorization": sha256_file(
+            artifact_path / "factor_validation_authorization.json"
+        )
+        == result["factor_validation_authorization_sha256"],
         "evaluation_freeze": sha256_file(artifact_path / "evaluation_freeze.json")
         == result["evaluation_freeze_sha256"],
         "factor_validation": sha256_file(
             artifact_path / "factor_validation_comparison.json"
         )
         == result["factor_validation_comparison_sha256"],
+        "factor_validation_reference": sha256_file(
+            artifact_path / "factor_validation_reference.json"
+        )
+        == result["factor_validation_reference_sha256"],
+        "factor_validation_candidate": sha256_file(
+            artifact_path / "factor_validation_candidate.json"
+        )
+        == result["factor_validation_candidate_sha256"],
+        "factor_validation_paired_sand": sha256_file(
+            artifact_path / "factor_validation_paired_sand.json"
+        )
+        == result["factor_validation_paired_sand_sha256"],
         "historical_regression": sha256_file(
             artifact_path / "historical_v2_validation_regression.json"
         )
@@ -3559,6 +3942,9 @@ def verify_factor_conditioned_intervention_result(
                 "fresh_validation_training_use",
             )
         ),
+        "single_validation_open": result["factor_validation_open_count"] == 1,
+        "single_candidate_family": result["candidate_families_trained"] == 1
+        and result["seeds_trained"] == 3,
     }
     if not all(checks.values()):
         raise RuntimeError("factor-conditioned intervention verification failed")

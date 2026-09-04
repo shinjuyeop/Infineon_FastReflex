@@ -1,0 +1,97 @@
+schema_version: 1
+
+experiment:
+  id: HAZARD_BOUNDARY_FAILURE_AUDIT
+  milestone: FACTOR_CONDITIONED_DATA_INTERVENTION_FAILURE_AUDIT
+  date: 2026-09-04
+  timezone: Asia/Seoul
+  scientific_base_commit: f32f6056f23ba05ed447fff7771ee63f789be7b6
+  source_commit: 2fd2478a252caec3fe4f8012696fef723086c761
+  config_path: configs/experiment/20260904_hazard_boundary_failure_audit.yaml
+  mode: saved_and_train_only
+  intervention_training: prohibited
+
+evidence_boundary:
+  allowed:
+    - saved_factor_validation_results
+    - Unified_TRAIN
+    - V2_TRAIN
+    - FACTOR_TRAIN
+    - reference_v2_checkpoints
+    - failed_candidate_round_checkpoints
+  forbidden:
+    - consumed_FACTOR_VALIDATION_payload
+    - Generalization_VALIDATION
+    - historical_Generalization_HOLDOUT
+    - old_Sand_Discovery_payload
+    - old_Sand_Confirmation_payload
+    - calibration_pilots
+
+previous_training:
+  config_path: configs/experiment/20260904_sand_factor_conditioned_model_training.yaml
+  config_sha256: 10b723270478b87fae9854cbf5a165386e8317d2dadef9a36f846c13d7218a22
+  artifacts_path: artifacts/runs/20260904_sand_factor_conditioned_model_training
+  evaluation_freeze_path: artifacts/runs/20260904_sand_factor_conditioned_model_training/evaluation_freeze.json
+  hnm_provenance_path: artifacts/runs/20260904_sand_factor_conditioned_model_training/hnm_provenance.json
+
+historical_holdout:
+  guard_path: artifacts/runs/20260902_model_v2_generalization_holdout_one_shot_evaluation/holdout_access_guard.json
+  guard_sha256: 0913da8a583cab7834590d669ba9c8d470485b8129fe81f538aba6c461613154
+  guard: 1
+  scientific_open_count: 1
+  payload_access: prohibited
+
+protected_artifacts:
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/training_result.json, sha256: 4cfc440830107e5e268c8f66ae21bd55294bcf43fbc31ea41364a6313887ca92}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/evaluation_freeze.json, sha256: 1691babdc4b75af8e3bba8fba09c1e98d3116729f2f0a70a42f02163e1cfacd5}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/candidate_freeze.json, sha256: 27314d6d097c7daa3a2da66be1d017c4097787e276412670837046c9296029d6}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/training_record.json, sha256: 875103f37a437d9373f2dfb8748aef247b5c68ed79f72e801de350e59913a84f}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/hnm_provenance.json, sha256: d345e61194d1d102be443f0f2e39bf8e8e965048e89075ecb464ccadfe5b6c0d}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/factor_validation_reference.json, sha256: c3626071dc688b62dc670021316a32e4795386e44f395acfe6b8e491d9cdeafa}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/factor_validation_candidate.json, sha256: 480f5e7d0d3b07e37f149801faa77cea3be0597f37c0eb311a3825520dfab43e}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/factor_validation_comparison.json, sha256: e70edbf3ccd91af4d25406080503a56814bdd39e53f40b4d97c5d46068923dc7}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/factor_validation_paired_sand.json, sha256: 6f94e71018cae9974570ae96fafbb430e92cce1c76238f08fa36a862114a79f5}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/historical_v2_validation_regression.json, sha256: 0da1dd8c9e56790f0cd6cea4c3102c667150326d3f16ad3aa4ac16f46052a869}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/final_intervention_decision.json, sha256: 8a5f07e6e01c32e745262271b49d975d4fcc7790953c6886e2de3925d6ef5fbd}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round0_seed20260828.pt, sha256: dc1d5d9c7bd36f8e02724b06105c4e376ad376946da0627e434d0a84317d2984}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round0_seed20260829.pt, sha256: ecab6e14b75a4ba18197a1d136892cd30bc1ebf0796216153611670a62fc2a03}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round0_seed20260830.pt, sha256: 047af3c3918d516de2e0073bc32e30df2716db4af8f2c8fccdb179e09b043f65}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round1_seed20260828.pt, sha256: 8de36e939871aa57df0d2d9aa17b2272ad185f41e0d3393890a2ca9b58d91c30}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round1_seed20260829.pt, sha256: 4b8cdffa464346f96e2044306953a9e56ab2ecd14e3279afdedcf4cf71097f7b}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round1_seed20260830.pt, sha256: 087805eb230e981b49fa7c9219a63e50a77ef7d23bd3e149cc14f591badd7053}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round2_seed20260828.pt, sha256: d059c14cec44e544f394e99292e121b1c4d8e6853d1ab5ac6a30ecad26baa2e6}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round2_seed20260829.pt, sha256: 51c40ba21a7a350a59620d74609a2a8d7394b261504c3c153c1a183b9ca234a9}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round2_seed20260830.pt, sha256: db3e21ef1e391e9599346adeed4298e0c28919bec4f73ed9975b6f0df3e2930a}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round3_seed20260828.pt, sha256: 58df8b1ceb4bd4ab9a3343506eefc83b49d2d98dd614250229b589def061b8ec}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round3_seed20260829.pt, sha256: c990b3f95a009e53ab878302192ba8b20e0971268900786413502c23584fe47e}
+  - {path: artifacts/runs/20260904_sand_factor_conditioned_model_training/checkpoints/model_v2_factor_conditioned_gru_history20_round3_seed20260830.pt, sha256: f5b1a9be27f1a5b84ef706b9da33227c90d434c2aac152fc1365cb876aea3837}
+
+representation_probe:
+  protocol: deterministic_stratified_run_level_five_fold_fixed_ridge
+  folds: 5
+  ridge: 1.0
+  diagnostic_only: true
+  candidate_promotion_use: false
+
+root_cause_thresholds:
+  adequate_probe_balanced_accuracy: 0.80
+  material_probe_head_gap: 0.15
+  material_support_drop: 0.15
+  support_preservation_rate: 0.90
+  temporal_separation_threshold: 0.75
+
+decision:
+  primary_root_cause_count: 1
+  freeze_before_intervention_training: true
+  architecture_comparator_default: prohibited
+  sensor_expansion: prohibited
+
+artifacts:
+  path: artifacts/runs/20260904_hazard_boundary_failure_audit
+
+counters:
+  historical_holdout_payload_reads: 0
+  consumed_factor_validation_new_inference: 0
+  generalization_validation_inference: 0
+  new_simulations: 0
+  optimizer_steps: 0

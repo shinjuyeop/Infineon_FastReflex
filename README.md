@@ -10,6 +10,13 @@ Boundary-resolution status: `HAZARD_BOUNDARY_FAILURE_AUDIT_COMPLETE; TRAINING_OB
 
 Latest milestone status: `HAZARD_BOUNDARY_RESOLUTION_STOPPED_AT_PHYSICAL_GATE; BOUNDARY_RESOLUTION_INVALID`.
 
+Deployment QAT status: `DEPLOYMENT_AWARE_QAT_TRAIN_ACCEPTANCE_FAIL`. The one
+predeclared three-seed derivative completed 9,135 TRAIN-only optimizer steps,
+but failed member/ensemble maximum-error, material-improvement, and
+threshold/persistence parity gates. Candidate freeze, development/golden
+evaluation, and handoff export are therefore zero. See
+[`reports/20260904_deployment_aware_qat.md`](reports/20260904_deployment_aware_qat.md).
+
 The TRAIN-only failure audit localized the prior Sand/Support trade-off to `TRAINING_OBJECTIVE_SAMPLING_TENSION`: the failed GRU retained simple hidden-space separation while the frozen decision head and within-class objective mass did not protect ordinary and delayed Support. A single domain-balanced loss intervention was frozen, but it was not trained. The new independent 120-run model-blind boundary corpus completed once with no replacement, backfill, rerun, or model inference, then failed 8/19 physical gates: only 102/120 runs were eligible, strict Sand was 43/60, invalid runs were 14, and Slip/Dual contamination was 4. The corpus is sealed as failed physical evidence, validation open count is 0, candidate/seed/optimizer/HNM counts are all 0, and final generalization remains `NOT_ESTABLISHED`. The only next milestone is `HAZARD_BOUNDARY_VALIDATION_PHYSICAL_REDESIGN`; details are in [`reports/20260904_hazard_boundary_resolution.md`](reports/20260904_hazard_boundary_resolution.md).
 
 Exact frozen V2 engineering reference handoff는 [`artifacts/releases/model_v2_anchor_refined_gru20_20260902`](artifacts/releases/model_v2_anchor_refined_gru20_20260902)에 있다. 이 bundle은 세 checkpoint, normalizer, runtime contract, scientific verdict provenance와 layered golden vector를 고정한다. 이는 `DEPLOYMENT_ENGINEERING_REFERENCE_MODEL`이며 release model, real-robot support 또는 scientific support를 의미하지 않는다.

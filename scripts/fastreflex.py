@@ -25,6 +25,7 @@ MODEL_V2_GENERATION_ID = "MODEL_V2_DATASET_GENERATION"
 MODEL_V2_TRAINING_ID = "MODEL_V2_DATA_ONLY_TRAINING"
 MODEL_V2_REBALANCED_TRAINING_ID = "MODEL_V2_EXTRACTION_REBALANCED_TRAINING"
 MODEL_V2_ANCHOR_REFINED_TRAINING_ID = "MODEL_V2_ANCHOR_REFINED_TRAINING"
+DEPLOYMENT_AWARE_QAT_ID = "DEPLOYMENT_AWARE_QAT"
 MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_ID = (
     "MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION"
 )
@@ -57,6 +58,7 @@ SUPPORTED_EXPERIMENT_IDS = frozenset(
         MODEL_V2_TRAINING_ID,
         MODEL_V2_REBALANCED_TRAINING_ID,
         MODEL_V2_ANCHOR_REFINED_TRAINING_ID,
+        DEPLOYMENT_AWARE_QAT_ID,
         MODEL_V2_GENERALIZATION_DEVELOPMENT_EVALUATION_ID,
         MODEL_V2_FINAL_CANDIDATE_HOLDOUT_READINESS_REVIEW_ID,
         MODEL_V2_GENERALIZATION_HOLDOUT_ONE_SHOT_EVALUATION_ID,
@@ -386,6 +388,17 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
 def _train(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     experiment_id = _require_supported(args.config)
+    if experiment_id == DEPLOYMENT_AWARE_QAT_ID:
+        from fastreflex.training.qat import run_deployment_aware_qat
+
+        result = run_deployment_aware_qat(
+            REPOSITORY_ROOT,
+            args.config.resolve(),
+            dry_run=bool(args.dry_run),
+            progress=lambda message: print(message, file=sys.stderr, flush=True),
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
     if experiment_id in {
         SAND_FACTOR_CONDITIONED_DATA_INTERVENTION_ID,
         SAND_FACTOR_CONDITIONED_MODEL_TRAINING_ID,

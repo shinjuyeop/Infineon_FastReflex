@@ -1,0 +1,141 @@
+schema_version: 1
+
+experiment:
+  id: HAZARD_BOUNDARY_RESOLUTION
+  milestone: HAZARD_BOUNDARY_RESOLUTION
+  date: 2026-09-04
+  timezone: Asia/Seoul
+  scientific_base_commit: f32f6056f23ba05ed447fff7771ee63f789be7b6
+  diagnosis_source_commit: 2fd2478a252caec3fe4f8012696fef723086c761
+  generation_source_commit: fdb6beae67b7bd39bd5e293de2433fa4a93a02dc
+  config_path: configs/experiment/20260904_hazard_boundary_resolution.yaml
+
+historical_status:
+  final_v2: MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED
+  whole_simulation: SIMULATION_GENERALIZATION_EVIDENCE_NOT_SUPPORTED
+  support: SUPPORT_SIMULATION_GENERALIZATION_SUPPORTED
+  failed_candidate_id: model_v2_factor_conditioned_gru20_20260904
+  failed_candidate_role: FROZEN_FAILED_DEVELOPMENT_EVIDENCE
+  rewrite_prohibited: true
+
+failure_audit:
+  config: {path: configs/experiment/20260904_hazard_boundary_failure_audit.yaml, sha256: 9bf0d42abd7da13a30c3c40d8cdebc4c569363ee5180e7f082eb5f21bde460a2}
+  diagnostic_split: {path: artifacts/runs/20260904_hazard_boundary_failure_audit/diagnostic_split.json, sha256: 868718ea51d2094c60dfc69805691522ee9a012dfa228d77389658e9f259bf5c}
+  optimization_pressure: {path: artifacts/runs/20260904_hazard_boundary_failure_audit/optimization_pressure.json, sha256: ec5f286c8a2f19ea950aebfc2a05187a3efce61a4b79be8dfc813ee2f04543db}
+  checkpoint_diagnostics: {path: artifacts/runs/20260904_hazard_boundary_failure_audit/checkpoint_diagnostics.json, sha256: 3c28137f7a542a902cb4fc1e1bdf693a1295cf3903c30fe8a7fd19c4dececcc7}
+  representation_analysis: {path: artifacts/runs/20260904_hazard_boundary_failure_audit/representation_analysis.json, sha256: df7d2523f4a485273e6088723420baa032166d179ec93ab0c60cdaa539e9a3bb}
+  root_cause_decision: {path: artifacts/runs/20260904_hazard_boundary_failure_audit/root_cause_decision.json, sha256: f28fc2232d5527fe324b5106c11746de0eab2245a8e774e107ee016212c93730}
+  primary_root_cause: TRAINING_OBJECTIVE_SAMPLING_TENSION
+  frozen_before_intervention: true
+
+selected_intervention:
+  track: A
+  id: within_class_domain_balanced_loss_mass
+  status: FROZEN_NOT_TRAINED_PHYSICAL_VALIDATION_GATE_FAILED
+  coherence: one_loss_weighting_change_only
+  architecture: {family: gru, input_shape: [20, 80], hidden_size: 32, layers: 1, parameters: 11010}
+  sensors: [PELVIS_IMU6]
+  features: {dimension: 80, schema_sha256: fe5b6c1c5eca8207a01c62e156f1fe843f95f0c5001d179a12c4b2b16ddf8adb}
+  normalizer: {policy: reuse_exact_v2, sha256: e0d796e8840e0cd38bc7d0ed222b668187a8a661748cf8506d4141657f88e92a}
+  threshold: 0.99
+  persistence_ms: 5
+  seeds: [20260828, 20260829, 20260830]
+  training_sources: [Unified_TRAIN, V2_TRAIN, FACTOR_TRAIN]
+  loss:
+    class_mass: {negative: 0.5, positive: 0.5}
+    positive_domain_mass: {slip: 0.16666666666666666, ordinary_support: 0.16666666666666666, delayed_support: 0.16666666666666666}
+    negative_domain_mass: {fresh_sand: 0.125, fresh_support_pre_i1: 0.125, historical_benign: 0.125, historical_hazard_precursor: 0.125}
+    endpoint_weight_rule: class_mass_divided_by_domain_count_then_domain_endpoint_count
+  sampler: deterministic_uniform_endpoint_shuffle_unchanged
+  hnm: exact_three_round_train_only_unchanged
+  optimizer: {name: Adam, learning_rate: 0.001, weight_decay: 0.0}
+  stopping_rule: frozen_train_only_monitor_validation_loss
+  architecture_comparator: none
+  hyperparameter_sweep: false
+  training_authorized: false
+  reason_not_trained: fresh_validation_physical_gates_failed
+
+fresh_validation:
+  design_config: {path: configs/experiment/20260904_hazard_boundary_validation_generation.yaml, sha256: e56bbfaea3541fbc36ad1d4656f9cd10996012a6b85d4daa6a36dfb3f721ea39}
+  dataset_id: hazard_boundary_resolution_validation_20260904
+  split: BOUNDARY_RESOLUTION_VALIDATION
+  planned_runs: 120
+  composition: {mild_sand: 48, moderate_sand: 12, ordinary_support: 42, delayed_support: 18}
+  design_matrix_sha256: 78d0ad6d3bc5c2232da0b499db25f3153758f367c2c0208aaedfef4ddb746f74
+  design_signature_sha256: e9da061898ec99c76d98e4d13e81b836862db6e8628e3a0b4ce2e1774896d9e1
+  pre_simulation_freeze: {path: data/raw/hazard_boundary_resolution_validation_20260904/pre_simulation_freeze.json, sha256: 73853f819fa3d6311381cd5a8bfc2e419aeedd28101d071bf90b88e5f35fb2a2}
+  manifest: {path: data/raw/hazard_boundary_resolution_validation_20260904/manifest.json, sha256: 3b1a35049e79ecd90399d4bac8092a24d5053b1c26bd6144854c77a492914934}
+  physical_audit: {path: data/raw/hazard_boundary_resolution_validation_20260904/physical_audit.json, sha256: e52f7c827597d4b42547a90e1689d2e350a78c13c3832d793027a2645adc320c}
+  validation_seal: {path: data/raw/hazard_boundary_resolution_validation_20260904/validation_seal.json, sha256: 290cfac37ea283881137175240b2a6acf04ce04f15f1c01c8b8446c1f4d8e507}
+  dataset_freeze: {path: data/raw/hazard_boundary_resolution_validation_20260904/dataset_freeze.json, sha256: 2092a4a8ce3a39ce954d573a4da25efa11ddf348e59e4b827287de02c274ba5d, semantic_sha256: ecddb3b01728eaf97a4b5a937df426adbcfa631ec1ff3c4139bb9ef0c09dfc09}
+  npz_aggregate_sha256: c89accf0fd86a3a700d79ef56c0825caeb5f2947b6141fea70d7fb34ae2a7898
+  completed_runs: 120
+  objective_valid: 102
+  strict_sand: 43
+  mild_sand: 36
+  moderate_sand: 7
+  ordinary_support: 42
+  delayed_support: 17
+  physical_gates: {passed: 11, failed: 8, total: 19}
+  exact_historical_overlap: 0
+  forbidden_near_overlap: 0
+  run_id_reuse: 0
+  cross_role_overlap: 0
+  adaptive_backfill: 0
+  replacement: 0
+  rerun: 0
+  model_inference: 0
+  status: SEALED_FAILED_PHYSICAL_EVIDENCE
+
+predeclared_candidate_gates:
+  status: FROZEN_UNUSED
+  fresh_validation:
+    sand_specificity_min: 0.95
+    sand_adverse_rate_max: 0.10
+    ordinary_support_recall_min: 0.95
+    delayed_support_recall_min: 0.90
+    total_support_recall_min: 0.95
+    right_support_recall_min: 0.90
+    each_source_speed_sand_specificity_min: 0.90
+    each_source_speed_support_recall_min: 0.90
+  historical_v2_validation_regression:
+    overall_hazard_recall_min: 0.90
+    support_recall_min: 0.95
+    delayed_support_recall_min: 0.95
+    right_support_recall_min: 0.90
+    specificity_min: 0.95
+    slip_recall_drop_max: 0.03
+
+execution_stop:
+  primary_scientific_outcome: BOUNDARY_RESOLUTION_INVALID
+  cause: fresh_boundary_validation_failed_predeclared_physical_gates
+  candidate_families_trained: 0
+  candidate_freezes: 0
+  fresh_validation_open_count: 0
+  validation_authorization_created: false
+  fresh_validation_model_inference: 0
+  historical_v2_validation_regression_inference: 0
+  no_post_validation_retraining: true
+  development_candidate: none
+  final_generalization: NOT_ESTABLISHED
+  next_milestone: HAZARD_BOUNDARY_VALIDATION_PHYSICAL_REDESIGN
+
+counters:
+  historical_holdout_reads: 0
+  historical_holdout_inference: 0
+  historical_holdout_feature_reconstruction: 0
+  historical_holdout_visualization: 0
+  consumed_factor_validation_new_inference: 0
+  generalization_validation_inference: 0
+  new_validation_simulations: 120
+  new_training_simulations: 0
+  candidate_families_trained: 0
+  seeds_trained: 0
+  optimizer_steps: 0
+  hnm_rounds: 0
+  threshold_searches: 0
+  persistence_searches: 0
+  seed_searches: 0
+  unplanned_architecture_searches: 0
+  sensor_fusion_experiments: 0
+  qat_training: 0

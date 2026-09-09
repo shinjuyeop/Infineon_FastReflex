@@ -15,10 +15,11 @@ Unitree G1 MuJoCo 환경에서 낙상 위험을 조기에 감지하는 Hazard Re
 | Model V2 generalization | `NOT_SUPPORTED` | one-shot Generalization HOLDOUT의 primary gate 실패 |
 | Factor-conditioned intervention | `NOT_EFFECTIVE` | Sand 오경보는 줄었지만 Support 검출이 크게 저하됨 |
 | 최신 boundary-resolution cycle | `INVALID` | 새 validation corpus가 물리 gate를 통과하지 못해 모델을 학습하지 않음 |
-| Deployment | engineering reference only | E84 연계용 Float reference이며 release model이나 real-robot 검증 결과가 아님 |
+| Deployment | engineering reference only | E84에서 Hazard+Terrain INT8/U55 함께 실행·혼합 replay 검증 완료. 연구 Float reference의 비출시 배포 시험이며 real-robot 검증은 아님 |
+| Walking-stability 30 ms pilot | `NOT_ACHIEVED` | 새 파생 라벨·재학습 후 29/33 교란 ≤30 ms, 목표 미달. 물리 8 run 재현 완료. 새 MLP E84 CPU 시험에서 Sand 5/7/3 ms 확인. 해당 CPU 시험의 최종 검증은 중단됨. 현재 보드는 별도 Hazard+Terrain INT8/U55 구성 |
 | Deployment-aware QAT | `TRAIN_ACCEPTANCE_FAIL` | 3-seed QAT은 완료했지만 TRAIN-only robustness gate 실패로 candidate/handoff 없음 |
 
-가장 최근 cycle에서는 독립적인 model-blind 120-run validation corpus를 한 번
+기존 boundary-resolution cycle에서는 독립적인 model-blind 120-run validation corpus를 한 번
 생성했다. 그 결과 objective-eligible 102/120, strict Sand 43/60, invalid 14,
 Slip/Dual contamination 4로 19개 물리 gate 중 8개를 실패했다. Protocol에 따라
 candidate 학습, optimizer step, HNM, validation inference는 모두 0으로 유지했다.
@@ -26,6 +27,12 @@ candidate 학습, optimizer step, HNM, validation inference는 모두 0으로 �
 따라서 다음 단계는 모델이나 threshold 변경이 아니라
 `HAZARD_BOUNDARY_VALIDATION_PHYSICAL_REDESIGN`이다. 실패한 corpus를 수정하거나
 재사용하지 않고, 새로운 물리 validation matrix를 model-blind하게 설계해야 한다.
+
+추가 [Sink 라벨·몸체 반응 진단](reports/20260907_sink_hazard_outcome_audit.md)에서는
+Support 라벨과 실제 자세 악화·회복이 일대일로 대응하지 않고, 일부 `fall` 기록이
+몸체 붕괴가 아닌 nonfoot-contact censor임을 대표 재현으로 확인했다. 새 물리
+matrix 설계 시 위험 target과 접촉/낙상 정의도 검토해야 하며, 기존 라벨·모델
+판정은 변경하지 않았다.
 
 이 scientific work와 별개로 frozen Float engineering reference를 대상으로 한
 [deployment-aware QAT protocol](configs/experiment/20260904_deployment_aware_qat.yaml)을
@@ -38,6 +45,12 @@ Scientific boundary의 상세 근거는
 [latest boundary-resolution report](reports/20260904_hazard_boundary_resolution.md),
 deployment engineering 결과는
 [deployment-aware QAT report](reports/20260904_deployment_aware_qat.md)에 있다.
+
+별도 사용자 승인 [보행 교란 30 ms 파일럿](reports/20260908_walking_stability_latency_pilot.md)은
+기존 원본·모델을 보존하고 파생 라벨로 GRU/MLP를 학습했다. 고정 간격 학습의
+시간 위상 누락을 수정했지만, 새 평가 29/33 교란만 30 ms 안에 검출했고 음성
+구간 오경보 18회가 남아 목표 미달이다. 새 모델은 E84에 배포하지 않았다.
+이 라벨은 임시 몸통 교란 기준이며 보행 안정성 정답으로 검증된 것은 아니다.
 
 ## Reviewer Guide
 
@@ -141,6 +154,12 @@ Frozen Terrain candidate 검증:
 python scripts/fastreflex.py evaluate \
   --config configs/experiment/20260828_terrain_rebuild_sensor_ablation.yaml
 ```
+
+E84 live 연결은 simulator의 `sample_observer` hook을 사용하며, 통신과 보드
+판정 HUD 연결은 별도 E84 저장소의 `hil/host/replay.py --mode simulation`이
+담당한다. 실시간 물리 계산을 진행하며 보드 응답을 기다리는 초기 경로로,
+설정 재생 속도보다 느려질 수 있다. 현재 E84의 Terrain·Hazard 추론를
+함께 표시하며, 지형 인식 시간과 보행 교란 대비 경보 시간을 간결하게 표시한다. [연결 계약](docs/simulation.md#live-external-sensor-consumer)을 참고한다.
 
 대표 TRAIN/VALIDATION run 시각화:
 

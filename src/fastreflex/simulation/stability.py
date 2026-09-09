@@ -511,3 +511,55 @@ def format_runtime_status(
         value = event_times_us.get(name)
         lines.append(f"{name:<20}{'N/A' if value is None else value}")
     return "\n".join(lines)
+
+
+class WalkingPerturbation:
+    """Diagnostic exceedance of a matched normal run, not a danger label."""
+
+    def __init__(self, tilt_limit, angular_speed_limit, persistence=20, start_sample=1000):
+        if persistence <= 0 or start_sample < 0:
+            raise ValueError('invalid perturbation timing')
+        self.tilt_limit = float(tilt_limit)
+        self.angular_speed_limit = float(angular_speed_limit)
+        if not np.all(np.isfinite([self.tilt_limit, self.angular_speed_limit])):
+            raise ValueError('invalid normal reference envelope')
+        self.persistence, self.start_sample = persistence, start_sample
+        self.count = 0
+        self.onset = None
+        self.confirmed_at = None
+        self.active = False
+        self.records = []
+
+    def observe(self, sample, tilt, angular_speed):
+        outside = sample >= self.start_sample and (
+            tilt > self.tilt_limit or angular_speed > self.angular_speed_limit)
+        self.count = self.count + 1 if outside else 0
+        self.active = self.count >= self.persistence
+        if self.active and self.onset is None:
+            self.onset = sample - self.persistence + 1
+            self.confirmed_at = sample
+        self.records.append(dict(sample=sample, tilt_rad=tilt,
+            angular_speed_rad_s=angular_speed, outside=bool(outside), active=self.active))
+
+
+def calibrate_walking_perturbation(config, contract):
+    """Model-blind in-memory normal control, using the same policy/speed/duration."""
+    from dataclasses import replace
+    import hashlib
+    from .g1 import run_simulation
+    control = replace(config, headless=True, terrain=config.source_terrain,
+                      slip_pattern='uniform', sink_pattern='uniform',
+                      sink_support_pattern='balanced_soft')
+    baseline = run_simulation(control)
+    if baseline.metadata['first_fall_sample'] is not None:
+        raise ValueError('normal reference control was censored; calibration rejected')
+    start = int(contract['baseline_start_sample'])
+    tilt = baseline.diagnostics.pelvis_tilt_rad[start:]
+    speed = np.linalg.norm(baseline.diagnostics.pelvis_angular_velocity_rad_s[start:], axis=1)
+    diagnostic = WalkingPerturbation(float(np.max(tilt)), float(np.max(speed)),
+                                    int(contract['persistence_samples']), start)
+    provenance = dict(terrain=control.terrain, speed_mps=control.command_speed_mps,
+        duration_s=control.duration_s, policy_sha256=hashlib.sha256(control.policy_path.read_bytes()).hexdigest(),
+        imu_sha256=hashlib.sha256(baseline.runtime.pelvis_imu.tobytes()).hexdigest(),
+        first_fall_sample=None, calibration_start_sample=start)
+    return diagnostic, provenance

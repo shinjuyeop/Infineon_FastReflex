@@ -497,3 +497,42 @@ Simulation 종료 후 JSON summary를 stdout에 출력하며 파일이나 datase
 - `viewer`, `terminated_by_viewer`: viewer mode 여부와 window가 duration 전에 닫혔는지 여부
 
 Slip/physical-sink count를 양발 합계로 해석할 때는 하나의 timestamp에서 양쪽 foot이 모두 active하면 simulation의 `actual_samples`보다 커질 수 있다. Physical-sink sample count는 contact episode와 validity의 영향을 받으므로 severity score가 아니다. Viewer를 일찍 닫은 경우 `actual_samples`는 요청값보다 작지만, 수집한 구간의 timestamp가 연속이면 `dropped_samples`는 0이다.
+
+## Live external sensor consumer
+
+`run_simulation(..., sample_observer=callback)` calls
+`callback(sample_index, timestamp_us, pelvis_imu6_copy)` once per 1 kHz sample.
+The optional `sensor_observer(sample_index, timestamp_us, fsr8_copy,
+exact_contact_copy, first_fall_sample)` provides observed FSR/contact after each
+sample. Copies prevent consumers from mutating stored traces. Exceptions abort;
+blocking consumers slow wall time without changing physics time or skipping
+samples. Transport and all firmware live in `Infineon_FastReflex_E84`.
+
+`evaluation/terrain.py` owns `StreamingTerrain`, the canonical causal left-foot
+50 ms event scheduler. It can use either the original PC predictor or a supplied
+predictor callback. The E84 runner supplies a callback that sends raw FSR windows
+to E84 for INT8 Terrain inference on U55, alongside Hazard on the same NPU.
+CM55 normalizes raw FSR and averages the three member probabilities. Exact
+contact schedules and checks eligibility but never enters the model tensor.
+Completed runs require exact update indices, host INT8 class agreement and
+probabilities within 1/256 against the checksum-verified deployment INT8
+reference. Differences against the original Float replay are reported separately;
+all stored sensor parity checks remain exact. Deployment source, calibration
+provenance and board evidence live only in `Infineon_FastReflex_E84`.
+
+`motion_observer(sample_index, pelvis_tilt_rad, angular_speed_rad_s)` receives
+current full-state diagnostics for `WalkingPerturbation`. Its model-blind
+calibration runs the same policy/speed/duration on uniform source terrain.
+The diagnostic contract defines a 1 s startup exclusion, post-startup maximum
+normal tilt/angular-speed envelopes, and 20 consecutive exceedances of either
+signal. Confirmation backdates onset to the start of that sequence. This is
+not a new hazard label or an established danger threshold. First Hazard alert
+minus diagnostic onset is shown as a signed simulation-time difference, with
+BEFORE for preceding alerts and pending when observations are unavailable.
+
+`overlay_font=2` selects large MuJoCo text. `viewer_decorator` adds a display-only
+status marker to the isolated render scene: cyan=no alert yet, red=current
+alert, amber=earlier alert. The compact E84 HUD contains estimated terrain,
+Hazard state/history and the two detection timers. It omits processing counters
+and confidence values; full timing/provenance remain in the generated JSON.
+No colored marker changes physics, model inputs or LED decisions.

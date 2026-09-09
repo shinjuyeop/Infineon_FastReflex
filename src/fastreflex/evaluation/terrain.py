@@ -307,3 +307,55 @@ def refine_hazard_cause(reflex_required: bool, terrain_state: int) -> str:
     if int(terrain_state) == SAND:
         return "SUPPORT_RISK"
     return "GENERIC_DISTURBANCE"
+
+
+class StreamingTerrain:
+    """Causal left-foot advisory inference using the canonical event eligibility."""
+
+    def __init__(self, run: HazardRun, models, mean, std, predictor=None):
+        self.run, self.models, self.mean, self.std = run, models, mean, std
+        self.predictor = predictor
+        self.timestamps = []
+        self.contacts = []
+        self.fsr = []
+        self.pending = set()
+        self.predictions = []
+        self.state = UNKNOWN
+        self.states = []
+
+    def observe(self, sample, timestamp_us, fsr, contact, fall_sample):
+        import time
+
+        if sample != len(self.timestamps):
+            raise ValueError('Terrain samples must be consecutive')
+        contact = np.asarray(contact, dtype=bool)
+        previous = self.contacts[-1] if self.contacts else np.zeros((2, 4), dtype=bool)
+        if np.any(contact[0] & ~previous[0]):
+            self.pending.add(sample + 50)
+        self.timestamps.append(timestamp_us)
+        self.contacts.append(contact.copy())
+        self.fsr.append(np.asarray(fsr, dtype=np.float32).copy())
+        if sample in self.pending:
+            self.pending.remove(sample)
+            rows = build_touchdown_event_rows(
+                self.run.run_id, self.run.split, self.run.source_terrain,
+                self.run.target_terrain, np.asarray(self.timestamps),
+                np.asarray(self.contacts), fall_sample, False, False)
+            for row in rows:
+                touchdown = int(row['touchdown_sample'])
+                if (row['foot'] != 'left' or touchdown + 50 != sample or
+                    not row['window_50ms_valid'] or
+                    (fall_sample is not None and sample >= fall_sample)):
+                    continue
+                started = time.perf_counter()
+                window = terrain_fsr4_window(np.asarray(self.fsr), touchdown, 'left')
+                prediction, probabilities = (self.predictor(window, sample)
+                    if self.predictor is not None else predict_terrain_window(
+                        window, self.models, self.mean, self.std))
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                self.state = TERRAIN_PREDICTION_TO_STATE[TERRAIN_CLASS_NAMES[prediction]]
+                self.predictions.append(dict(sample=sample, touchdown_sample=touchdown,
+                    state=self.state, label=TERRAIN_CLASS_NAMES[prediction],
+                    probabilities=probabilities.tolist(), processing_ms=elapsed_ms,
+                    observation_ms=50))
+        self.states.append(self.state)

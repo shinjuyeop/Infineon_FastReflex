@@ -199,3 +199,43 @@ The follow-up audit uses saved checkpoints and TRAIN sources only. Its diagnosti
 The frozen cause is `TRAINING_OBJECTIVE_SAMPLING_TENSION`. One Track-A hypothesis preserves the exact GRU32/80D/20 ms model, normalizer, seeds, Adam settings, threshold, persistence, shuffling, and three HNM rounds while balancing fixed class mass across positive and negative physical domains. There is no hyperparameter sweep or architecture comparator. The intervention is a predeclared hypothesis, not a trained candidate.
 
 Before any candidate training, the separate 120-run boundary-validation design freezes all identities, physical-yield gates, overlap gates, and model-blindness counters. Generation is exactly one fixed-order pass. Failure of any physical gate requires immediate stop before authorization, model inference, V2_VALIDATION replay, training, candidate freeze, or adaptive repair. The generated corpus failed 8/19 gates and was sealed with open count 0, so candidate families, seeds, optimizer steps, HNM rounds, and model comparisons all remain zero. The cycle verdict is `BOUNDARY_RESOLUTION_INVALID`; final generalization remains `NOT_ESTABLISHED`, and the sole next milestone is `HAZARD_BOUNDARY_VALIDATION_PHYSICAL_REDESIGN`.
+
+## Initial walking perturbation diagnostic
+
+`20260908_walking_perturbation_diagnostic.yaml` is a model-output-blind motion
+reference contract, not a relabeling/training experiment. A matched uniform
+source-terrain control sets maximum tilt and angular-speed envelopes after
+sample 1000; a 20-sample exceedance of either confirms onset at sequence start.
+The same control is calibration evidence, not an independent specificity test.
+First-alert minus onset is descriptive (including negative deltas); no onset
+or alert is reported as missing, never as zero latency. Preserve unchanged
+frozen labels/weights and report normal-control alerts, missed detections and
+pre-onset alerts without choosing thresholds to improve model results.
+
+## Walking-stability latency learning pilot
+
+User-authorized small-data relabeling/training is isolated in the 20260908
+walking-stability latency and phase-coverage experiment configs. Roles are
+16 TRAIN / 8 DEVELOPMENT / 8 PILOT_TEST runs; threshold/family/epoch selection
+uses DEVELOPMENT only, with candidate hashes frozen before PILOT_TEST inference.
+The first test c20/m20 is not reused for the phase-coverage model test c21/m21.
+These are historical, closely parameterized development scenarios, not fresh
+generalization HOLDOUT. The onset deadline is inclusive 30 samples; an already
+active premature alarm is not a hit. Report misses, negative-region alarm
+onsets and lingering false time. Both executed pilots failed their frozen
+latency-plus-false-alarm gates and do not authorize replacement of the board model.
+
+### 보행 안정성 E84 30 ms 측정 구분
+
+물리적 비정상 onset부터 해당 입력 흐름에 대한 E84의 새 경보 확정까지를 대상으로
+한다. 시뮬레이션 sample timestamp 차이와 실제 경과 시간을 별도 보고한다.
+onset 이전부터 켜진 경보는 새 30 ms 검출로 인정하지 않는다. episode 종료 뒤
+경보 역시 해당 사건의 검출로 세지 않는다. 기존 모델의 결과와 새 라벨 모델의
+결과는 명시적으로 구분한다.
+
+호스트 callback 진입, 요청 시작, 응답 수신의 monotonic 시각으로 판정 시각의
+범위를 기록할 수 있다. 이는 callback 진입부터의 범위이며 물리 step 내부에서
+데이터가 생성되기까지의 시간을 포함하지 않는다. 요청 시작은 판정 시각의 하한,
+응답 수신은 상한이다. 보드와 호스트 시계 동기화 또는 공통 하드웨어 계측 없이
+왕복시간에서 임의 시간을 빼서 정확한 보드 확정 시각이라고 보고하지 않는다.
+느린 재생의 sample-time 30 ms를 실제 경과 30 ms라고 표현하지 않는다.

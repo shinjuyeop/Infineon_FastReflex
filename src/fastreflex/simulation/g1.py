@@ -486,7 +486,7 @@ def _pace_viewer(
 
 
 def _update_viewer_overlay(
-    viewer: Any, overlay: ViewerOverlay, sample: int
+    viewer: Any, overlay: ViewerOverlay, sample: int, font: int = 0
 ) -> None:
     """Update text on the isolated render viewer without touching physics."""
     if not hasattr(viewer, "set_texts"):
@@ -495,13 +495,13 @@ def _update_viewer_overlay(
     viewer.set_texts(
         [
             (
-                mujoco.mjtFontScale.mjFONTSCALE_100,
+                font,
                 mujoco.mjtGridPos.mjGRID_TOPLEFT,
                 model_text,
                 "",
             ),
             (
-                mujoco.mjtFontScale.mjFONTSCALE_100,
+                font,
                 mujoco.mjtGridPos.mjGRID_TOPRIGHT,
                 diagnostic_text,
                 "",
@@ -670,9 +670,18 @@ def run_simulation(
     capture_render_trace: bool = False,
     viewer_overlay: ViewerOverlay | None = None,
     playback_speed: float = 1.0,
+    sample_observer: Callable[[int, int, np.ndarray], None] | None = None,
+    sensor_observer: Callable[[int, int, np.ndarray, np.ndarray, int | None], None] | None = None,
+    overlay_font: int = 0,
+    viewer_decorator: Callable[[Any, np.ndarray], None] | None = None,
+    motion_observer: Callable[[int, float, float], None] | None = None,
 ) -> SimulationResult:
     """Run one smoke trace entirely in memory; no dataset or output is written."""
     config.validate()
+    if sensor_observer is not None and not observe_fsr:
+        raise ValueError("sensor observer requires FSR capture")
+    if overlay_font not in (0, 1, 2):
+        raise ValueError("overlay font must be NORMAL (0), SHADOW (1) or BIG (2)")
     if not np.isfinite(playback_speed) or playback_speed <= 0.0:
         raise ValueError("viewer playback speed must be positive and finite")
     if config.headless and viewer_overlay is not None:
@@ -787,7 +796,7 @@ def run_simulation(
         next_viewer_sync_s = 0.0
         if viewer is not None:
             if viewer_overlay is not None:
-                _update_viewer_overlay(viewer, viewer_overlay, 0)
+                _update_viewer_overlay(viewer, viewer_overlay, 0, overlay_font)
             viewer.sync(state_only=True)
             next_viewer_sync_s = VIEWER_SYNC_PERIOD_S
 
@@ -814,7 +823,10 @@ def run_simulation(
                             viewer,
                             viewer_overlay,
                             viewer_sample,
+                            overlay_font,
                         )
+                    if viewer_decorator is not None:
+                        viewer_decorator(viewer, data.qpos[:3].copy())
                     viewer.sync(state_only=True)
                     next_viewer_sync_s += VIEWER_SYNC_PERIOD_S
                 _pace_viewer(float(data.time), wall_start_s, playback_speed)
@@ -850,8 +862,14 @@ def run_simulation(
                 pelvis_velocity,
                 0,
             )
+            if motion_observer is not None:
+                motion_observer(len(timestamp_us),
+                    float(np.arccos(np.clip(data.xmat[pelvis_id, 8], -1.0, 1.0))),
+                    float(np.linalg.norm(pelvis_velocity[:3])))
             timestamp_us.append(int(round(float(data.time) * 1_000_000.0)))
             imu.append(read_pelvis_imu(model, data))
+            if sample_observer is not None:
+                sample_observer(len(timestamp_us) - 1, timestamp_us[-1], imu[-1].copy())
             if observe_fsr:
                 foot_fsr.append(read_virtual_fsr(model, data, ground_geom_ids))
             if observe_foot_imu:
@@ -894,6 +912,10 @@ def run_simulation(
                 controller_action.append(controller.action.copy())
                 policy_updated.append(updated)
                 pelvis_pose.append(data.qpos[:7].copy())
+            if sensor_observer is not None:
+                sensor_observer(len(timestamp_us) - 1, timestamp_us[-1],
+                                foot_fsr[-1].copy(), exact_terrain_contact[-1].copy(),
+                                first_fall_sample)
             if capture_render_trace:
                 render_integration_state.append(
                     _capture_integration_state(model, data)

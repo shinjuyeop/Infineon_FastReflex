@@ -1,0 +1,13 @@
+schema_version: 1
+role: diagnostic_only_not_hazard_labels
+baseline: matched_source_terrain_control
+baseline_speed: same_as_selected_run
+baseline_duration: same_as_selected_run
+baseline_start_sample: 1000
+persistence_samples: 20
+signals: [pelvis_tilt_rad, pelvis_angular_speed_rad_s]
+threshold: maximum_of_matched_normal_run
+combination: either_signal_exceeds_its_baseline_maximum
+onset: first_sample_of_confirmed_consecutive_exceedance
+model_output_used_for_threshold_selection: false
+relabel_existing_data: false

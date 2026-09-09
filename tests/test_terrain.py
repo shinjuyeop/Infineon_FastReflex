@@ -20,6 +20,8 @@ from fastreflex.dataset.terrain import (
 )
 from fastreflex.evaluation.terrain import (
     ICE,
+    StreamingTerrain,
+    replay_terrain_arrays,
     SAND,
     load_frozen_terrain_candidate,
     predict_terrain_window,
@@ -82,6 +84,32 @@ def _run(samples: int = 100) -> HazardRun:
 
 
 class TerrainTest(unittest.TestCase):
+    def test_streaming_matches_causal_replay_including_censor(self):
+        from dataclasses import replace
+        for fall in (None, 130):
+            run = replace(_run(160), censor_sample=160 if fall is None else fall,
+                          fall_sample_diagnostic=fall)
+            contact = np.zeros((160, 2, 4), dtype=bool)
+            contact[:60, 0, 0] = True
+            contact[80:, 0, 2] = True
+            contact[10:70, 1, 3] = True  # right foot is never classified
+            fsr = np.ones((160, 8), dtype=np.float32)
+            models = [_FixedModel(2)] * 3
+            mean, std = np.zeros(4), np.ones(4)
+            stream = StreamingTerrain(run, models, mean, std)
+            for i in range(160):
+                stream.observe(i, i * 1000, fsr[i], contact[i],
+                               fall if fall is not None and i >= fall else None)
+                if i < 50:
+                    self.assertEqual(stream.predictions, [])
+            expected = replay_terrain_arrays(run.timestamp_us, contact, fsr,
+                                             run, models, mean, std)
+            np.testing.assert_array_equal(stream.states, expected.state)
+            np.testing.assert_array_equal([r['sample'] for r in stream.predictions],
+                                          expected.update_samples)
+            np.testing.assert_allclose([r['probabilities'] for r in stream.predictions],
+                                       expected.prediction_probabilities, atol=0, rtol=0)
+
     def test_fsr4_window_is_exactly_touchdown_through_49ms(self) -> None:
         fsr = np.arange(100 * 8, dtype=np.float32).reshape(100, 8)
         left = terrain_fsr4_window(fsr, 10, "left")

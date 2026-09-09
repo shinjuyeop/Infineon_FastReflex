@@ -52,6 +52,7 @@ SAND_FACTOR_CONDITIONED_CONTROLS_RECALIBRATED_GENERATION_ID = (
 )
 SUPPORTED_EXPERIMENT_IDS = frozenset(
     (
+        "WALKING_STABILITY_LATENCY_PILOT",
         HAZARD_EXPERIMENT_ID,
         TERRAIN_EXPERIMENT_ID,
         MODEL_V2_GENERATION_ID,
@@ -432,6 +433,12 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
 def _train(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     experiment_id = _require_supported(args.config)
+    if experiment_id == "WALKING_STABILITY_LATENCY_PILOT":
+        if args.dry_run:
+            raise ValueError("pilot requires explicit full execution; dry-run is not supported")
+        from fastreflex.training.stability import run_stability_pilot
+        result = run_stability_pilot(REPOSITORY_ROOT, args.config.resolve())
+        return 0 if result['pilot_test']['passed'] else 2
     if experiment_id == DEPLOYMENT_AWARE_QAT_ID:
         from fastreflex.training.qat import run_deployment_aware_qat
 
@@ -503,6 +510,11 @@ def _train(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
 def _evaluate(args: argparse.Namespace) -> int:
     experiment_id = _require_supported(args.config)
+    if experiment_id == "WALKING_STABILITY_LATENCY_PILOT":
+        from fastreflex.evaluation.stability import verify_stability_pilot
+        result = verify_stability_pilot(REPOSITORY_ROOT, args.config.resolve())
+        print(json.dumps(result, indent=2))
+        return 0 if result['pilot_test']['passed'] else 2
     if experiment_id == HAZARD_BOUNDARY_FAILURE_AUDIT_ID:
         from fastreflex.training.hazard import run_boundary_failure_audit
 

@@ -186,3 +186,15 @@ After all candidate checkpoints were frozen, the study-specific authorization co
 All 120 simulations ran once in frozen order. The immutable result contains 43 strict benign, 59 Support, 3 Slip, 1 Dual Hazard, and 14 invalid runs; objective-valid yield is 102/120. Ordinary Support passed at 42/42 and delayed Support reached its minimum at 17/18, but strict Sand, mild/moderate Sand, invalid-count, Slip/Dual, source-speed, and factor-manifold gates failed. The physical-signature uniqueness ratio was 102/120 (`.85`) and passed its gate.
 
 The dataset is frozen as `SEALED_FAILED_PHYSICAL_EVIDENCE`. It is not a candidate-selection or model-comparison corpus, and its payload has never been authorized or opened for inference. Replacement, adaptive backfill, rerun, and partial promotion are prohibited. A future `HAZARD_BOUNDARY_VALIDATION_PHYSICAL_REDESIGN` may inspect the saved physical ledger without model access and must create a wholly new independent matrix rather than repair this one.
+
+## Walking stability derived pilot
+
+The two 20260908 walking-stability experiments create separate, ignored derived
+corpora from explicitly listed Unified TRAIN/VALIDATION runs. Original labels
+and files are unchanged. A TRAIN-normal-only maximum tilt/angular-speed envelope
+and 20-sample confirmation define provisional body-perturbation episodes; startup,
+post-censor and unresolved trailing exceedances are excluded. This is not a
+validated definition of dangerous walking instability. Manifests record dataset
+identity, creation time, source commit/dirty status, code/config/source-file and
+derived-file hashes, limits and role-disjoint run IDs. Historical HOLDOUT and
+sealed boundary datasets are not used. See the pilot report for limitations.

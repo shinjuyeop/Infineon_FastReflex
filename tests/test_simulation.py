@@ -637,6 +637,31 @@ class SupportDiagnosticsTest(unittest.TestCase):
 
 class SimulationRuntimeParityTest(unittest.TestCase):
     @unittest.skipUnless(LOCAL_POLICY.is_file(), "local verified policy is absent")
+    def test_sample_observer_is_ordered_and_cannot_mutate_trace(self) -> None:
+        config = replace(load_simulation_config(SIMULATOR_CONFIG),
+                         duration_s=0.05, policy_path=LOCAL_POLICY, headless=True)
+        observed = []
+
+        def observe(sample, timestamp_us, imu):
+            observed.append((sample, timestamp_us, imu.copy()))
+            imu[:] = np.nan
+
+        sensor_rows = []
+
+        def sensors(sample, timestamp_us, fsr, contact, fall):
+            sensor_rows.append((sample, timestamp_us, fsr.copy(), contact.copy()))
+            fsr[:] = np.nan
+            contact[:] = False
+
+        result = run_simulation(config, sample_observer=observe, sensor_observer=sensors)
+        np.testing.assert_array_equal([r[2] for r in sensor_rows], result.runtime.foot_fsr)
+        np.testing.assert_array_equal([r[3] for r in sensor_rows], result.exact_terrain_contact)
+        self.assertEqual([row[0] for row in observed], list(range(50)))
+        np.testing.assert_array_equal([row[1] for row in observed], result.runtime.timestamp_us)
+        np.testing.assert_array_equal([row[2] for row in observed], result.runtime.pelvis_imu)
+        self.assertTrue(np.all(np.isfinite(result.runtime.pelvis_imu)))
+
+    @unittest.skipUnless(LOCAL_POLICY.is_file(), "local verified policy is absent")
     def test_deformable_support_runtime_and_viewer_physics_parity(self) -> None:
         base = load_simulation_config(SIMULATOR_CONFIG)
         config = replace(
@@ -1501,3 +1526,18 @@ class WalkingIntegrationTest(unittest.TestCase):
             partial_result.metadata["expected_samples"],
         )
         self.assertEqual(partial_result.metadata["dropped_samples"], 0)
+
+
+class WalkingPerturbationTest(unittest.TestCase):
+    def test_normal_transient_and_confirmed_onset(self):
+        from fastreflex.simulation.stability import WalkingPerturbation
+        detector = WalkingPerturbation(.1, 1, persistence=3, start_sample=2)
+        for i, (tilt, speed) in enumerate([(1, 2),(.1,1),(.11,0),(.1,1),(.1,1.1),(.1,1.2)]):
+            detector.observe(i, tilt, speed)
+        self.assertIsNone(detector.onset)
+        detector.observe(6, .1, 1.1)
+        self.assertEqual(detector.onset, 4)
+        self.assertEqual(detector.confirmed_at, 6)
+        detector.observe(7, .1, 1)
+        self.assertFalse(detector.active)
+        self.assertEqual(detector.onset, 4)

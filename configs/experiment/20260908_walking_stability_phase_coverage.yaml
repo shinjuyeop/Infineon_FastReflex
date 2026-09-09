@@ -1,0 +1,67 @@
+experiment:
+  id: WALKING_STABILITY_LATENCY_PILOT
+schema_version: 1
+dataset_config: configs/dataset/hazard.yaml
+model_configs:
+- configs/model/gru.yaml
+- configs/model/mlp.yaml
+output: artifacts/runs/walking_stability_phase_coverage_20260908
+label:
+  role: provisional_body_perturbation_not_validated_stability_truth
+  baseline: train_hard_ground_only
+  baseline_start_sample: 1000
+  threshold: pooled_maximum_normal_tilt_and_angular_speed
+  persistence_samples: 20
+  exclude_post_censor: true
+  onset: first_sample_of_confirmed_exceedance
+  recovery: first_sample_back_inside_normal_envelope
+  preserve_original_labels: true
+split:
+  groups:
+  - ice_h
+  - sand_h
+  - sand_b
+  - hard_n
+  train_suffixes:
+  - c03
+  - c10
+  - m03
+  - m10
+  development_suffixes:
+  - c15
+  - m15
+  pilot_test_suffixes:
+  - c21
+  - m21
+  note: run_disjoint_for_this_new_model_only_historical_development_not_fresh_holdout
+training:
+  seed: 17
+  families:
+  - gru
+  - mlp
+  window_samples: 20
+  stride_samples: 3
+  onset_dense_samples: 60
+  batch_size: 128
+  max_epochs: 25
+  patience: 5
+  learning_rate: 0.001
+  selection_metric: validation_loss
+  sensor: pelvis_imu6_causal_80d
+  endpoint_sampling: seeded_uniform_without_replacement
+operating_point:
+  thresholds:
+  - 0.5
+  - 0.7
+  - 0.9
+  - 0.95
+  - 0.99
+  persistence_samples: 5
+  selection: development_only_false_alert_then_30ms_recall
+acceptance:
+  deadline_ms: 30
+  episode_recall_within_deadline: 0.9
+  false_alerts_per_minute_max: 1.0
+  normal_run_false_alerts_max: 0
+dataset_id: walking_stability_phase_coverage_20260908
+reuse_physical_from: artifacts/runs/walking_stability_latency_pilot_20260908

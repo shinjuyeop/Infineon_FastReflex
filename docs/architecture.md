@@ -205,3 +205,36 @@ The factor-conditioned candidate improved fresh strict-Sand specificity from 44/
 The audit freezes `TRAINING_OBJECTIVE_SAMPLING_TENSION` as the primary cause. Both GRUs retained perfect linear and nearest-neighbor separation on their final hidden states, while the fixed operating head lost Support and the prior inverse-frequency objective left Slip with 59.8% of positive-class loss mass. Longer history, LSTM, new features, and sensor fusion are therefore not part of the selected response. The only frozen candidate hypothesis is a within-class domain-balanced loss change on the same Pelvis-IMU6, causal 80D, GRU32, `.99`/5 ms contract.
 
 `dataset/sand_factor_conditioned.py` owns the independent `hazard_boundary_resolution_validation_20260904` expander, historical/near/cross-role contamination checks, one-pass model-blind generator, physical audit, immutable dataset freeze, and validation seal. Its 120 runs completed once, but 8/19 physical gates failed. The corpus is `SEALED_FAILED_PHYSICAL_EVIDENCE`; there is no validation authorization, payload open, model inference, optimizer step, HNM round, or candidate freeze. The runtime and E84 engineering-reference interfaces remain unchanged. The next work boundary is model-blind physical redesign, not training or architecture expansion.
+
+The simulator offers an optional read-only per-sample observer for live sensor
+consumers. It passes a copy of each 1 kHz pelvis IMU sample and its index/time;
+it contains no transport or board code. E84's live HIL runner owns serial
+requests, board-result overlays, pacing, and post-run stored-trace parity.
+
+The live sensor observer also exposes copied FSR/contact samples to canonical
+`StreamingTerrain`. Terrain is a left-foot FSR4 advisory ensemble. In the live bridge,
+Terrain and Hazard INT8 inference both run on E84 U55 through sequential calls;
+CM55 owns normalization, IO quantization and ensemble averaging. The host only
+schedules eligible windows using simulator contact truth and validates results. Exact geometry controls causal event
+eligibility and reference timing, never model features or Hazard gating.
+
+The motion observer exposes current pelvis tilt/angular speed for an initial
+model-blind perturbation diagnostic. The matched source-ground control shares
+policy, commanded speed and duration with the selected run. Its post-startup
+maximum envelopes and 20-sample persistence define diagnostic onset only;
+physical Hazard labels, weights and decision thresholds remain unchanged.
+The contract is `configs/experiment/20260908_walking_perturbation_diagnostic.yaml`.
+
+The provisional stability pilot uses `dataset/stability.py` for derived labels,
+`training/stability.py` for orchestration over the existing generic trainer and
+causal IMU features, and `evaluation/stability.py` for episode latency/false
+alarms and saved-artifact verification. No full-state diagnostics enter model
+features. Checkpoints stay separate from frozen Hazard/Terrain candidates.
+
+### Walking-stability trial deployment boundary
+
+The frozen `walking_stability_phase_coverage_20260908` MLP has an explicitly
+requested non-release E84 CPU trial. Deployment conversion, generated Float32
+weights, firmware and HIL results live only in the sibling E84 repository.
+Research labels, normalizer, model and failed pilot acceptance remain unchanged.
+This is deployment validation, not adoption of a new validated stability definition.

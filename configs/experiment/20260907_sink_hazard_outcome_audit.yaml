@@ -1,0 +1,58 @@
+schema_version: 1
+experiment:
+  id: sink_hazard_outcome_audit
+  date: 2026-09-07
+  purpose: compare physical sink labels with independent robot outcome diagnostics
+  source_commit: 62ae1c42fe4bcfdd57006d114d2539ed19c2f4ac
+source:
+  simulator_config: configs/simulator/g1.yaml
+  dataset_config: configs/dataset/hazard.yaml
+  policy_path: artifacts/external/unitree_g1/g1_velocity_policy.onnx
+  historical_config: configs/experiment/20260827_sink_deformable_support_proxy_sanity.yaml
+  historical_results: artifacts/runs/20260827_sink_deformable_support_proxy_sanity/results.json
+  boundary_manifest: data/raw/hazard_boundary_resolution_validation_20260904/manifest.json
+selection:
+  historical_ids:
+    - concrete_s015
+    - concrete_s025
+    - balanced_moderate_left_s025
+    - balanced_moderate_right_s025
+    - moderate_localized_right_s025
+    - moderate_lateral_left_s025
+    - mild_medial_left_s025
+    - severe_lateral_left_s015
+  boundary_ids:
+    - hbv_sml_c_025_03
+    - hbv_dsp_c_020_01
+  rationale: fixed purposive cases from saved labels, falls, absent old_t2, and mechanical recovery; not a representative performance sample
+split:
+  role: diagnostic_reproduction_only
+  original_membership_preserved: true
+  holdout_or_confirmation_payloads: false
+training:
+  enabled: false
+  model_config: null
+  optimizer_steps: 0
+seed: null
+simulation:
+  deterministic: true
+  physics_timestep_s: 0.0005
+  sensor_rate_hz: 1000
+  historical_duration_s: 8.0
+  boundary_duration_s: 9.0
+diagnostics:
+  normalization: none
+  window_ms: 500
+  precontact_reference_ms: 1000
+  final_observation_ms: 1000
+  metrics: [pelvis_tilt_deg, pelvis_height_m, pelvis_forward_velocity_m_s, raw_margin_of_stability_m, loaded_contact]
+  new_binary_risk_threshold: null
+  mechanical_recovery_is_robot_recovery: false
+  historical_parity: compare saved event and fall clocks; boundary compare original IMU and physical arrays
+  contact_censor_followup:
+    run_id: hbv_sml_c_025_03
+    reason: first fall is nonfoot contact despite small posture change; identify contact pair
+    method: one additional read-only contact diagnostic reproduction without changing physics or fall return value
+output:
+  path: artifacts/runs/20260907_sink_hazard_outcome_audit
+  report: reports/20260907_sink_hazard_outcome_audit.md

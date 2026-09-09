@@ -239,3 +239,10 @@ onset 이전부터 켜진 경보는 새 30 ms 검출로 인정하지 않는다. 
 응답 수신은 상한이다. 보드와 호스트 시계 동기화 또는 공통 하드웨어 계측 없이
 왕복시간에서 임의 시간을 빼서 정확한 보드 확정 시각이라고 보고하지 않는다.
 느린 재생의 sample-time 30 ms를 실제 경과 30 ms라고 표현하지 않는다.
+
+The phase-coverage pilot recorded 29/33 episodes within 30 simulation samples
+and 18 negative-region alert onsets, so its combined gate remains failed.
+The subsequent eight-run physical replay did not establish a replacement label.
+The separately requested E84 CPU trial is engineering parity evidence only;
+its incomplete final flash/normal validation and the later default dual-U55
+validation do not reopen PILOT_TEST or change research acceptance.

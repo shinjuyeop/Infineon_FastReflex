@@ -531,8 +531,10 @@ minus diagnostic onset is shown as a signed simulation-time difference, with
 BEFORE for preceding alerts and pending when observations are unavailable.
 
 `overlay_font=2` selects large MuJoCo text. `viewer_decorator` adds a display-only
-status marker to the isolated render scene: cyan=no alert yet, red=current
-alert, amber=earlier alert. The compact E84 HUD contains estimated terrain,
+status marker to the isolated render scene. The E84 decorator latches red after
+an alert and returns to cyan only on a valid clear Hazard result plus a fresh
+CONCRETE/MARBLE update, with no recorded fall. Stale estimates cannot clear it;
+there is no amber state. Cyan is a display state, not a stability verdict. The compact E84 HUD contains estimated terrain,
 Hazard state/history and the two detection timers. It omits processing counters
 and confidence values; full timing/provenance remain in the generated JSON.
 No colored marker changes physics, model inputs or LED decisions.

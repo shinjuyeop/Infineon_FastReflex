@@ -198,3 +198,9 @@ validated definition of dangerous walking instability. Manifests record dataset
 identity, creation time, source commit/dirty status, code/config/source-file and
 derived-file hashes, limits and role-disjoint run IDs. Historical HOLDOUT and
 sealed boundary datasets are not used. See the pilot report for limitations.
+
+The follow-up audit reproduced eight DEVELOPMENT runs with exact original
+sensor parity and examined foot support/deformation traces. Body perturbation
+and support-loss diagnostics did not identify the same episodes; no replacement
+physical label definition was adopted. Derived labels and both frozen pilot
+results remain unchanged. See the [pilot report](../reports/20260908_walking_stability_latency_pilot.md).

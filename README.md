@@ -5,6 +5,8 @@ Unitree G1 MuJoCo 환경에서 낙상 위험을 조기에 감지하는 Hazard Re
 
 ## Current Status
 
+문서 확인일: 2026-09-10 (Asia/Seoul). 저장된 실험·배포 기록과 현재 소스를 기준으로 정리했다.
+
 현재 결론은 **기존 제한 조건에서는 동작하지만, 새로운 물리 조건으로의 일반화는
 아직 입증되지 않았다**는 것이다.
 
@@ -16,7 +18,7 @@ Unitree G1 MuJoCo 환경에서 낙상 위험을 조기에 감지하는 Hazard Re
 | Factor-conditioned intervention | `NOT_EFFECTIVE` | Sand 오경보는 줄었지만 Support 검출이 크게 저하됨 |
 | 최신 boundary-resolution cycle | `INVALID` | 새 validation corpus가 물리 gate를 통과하지 못해 모델을 학습하지 않음 |
 | Deployment | engineering reference only | E84에서 Hazard+Terrain INT8/U55 함께 실행·혼합 replay 검증 완료. 연구 Float reference의 비출시 배포 시험이며 real-robot 검증은 아님 |
-| Walking-stability 30 ms pilot | `NOT_ACHIEVED` | 새 파생 라벨·재학습 후 29/33 교란 ≤30 ms, 목표 미달. 물리 8 run 재현 완료. 새 MLP E84 CPU 시험에서 Sand 5/7/3 ms 확인. 해당 CPU 시험의 최종 검증은 중단됨. 현재 보드는 별도 Hazard+Terrain INT8/U55 구성 |
+| Walking-stability 30 ms pilot | `NOT_ACHIEVED` | 새 파생 라벨·재학습 후 29/33 교란 ≤30 ms, 목표 미달. 물리 8 run 재현 완료. 새 MLP E84 CPU 시험에서 Sand 5/7/3 ms 확인. 해당 CPU 시험의 최종 검증은 중단됨. 마지막 검증 기록은 별도 Hazard+Terrain INT8/U55 구성 |
 | Deployment-aware QAT | `TRAIN_ACCEPTANCE_FAIL` | 3-seed QAT은 완료했지만 TRAIN-only robustness gate 실패로 candidate/handoff 없음 |
 
 기존 boundary-resolution cycle에서는 독립적인 model-blind 120-run validation corpus를 한 번
@@ -49,7 +51,9 @@ deployment engineering 결과는
 별도 사용자 승인 [보행 교란 30 ms 파일럿](reports/20260908_walking_stability_latency_pilot.md)은
 기존 원본·모델을 보존하고 파생 라벨로 GRU/MLP를 학습했다. 고정 간격 학습의
 시간 위상 누락을 수정했지만, 새 평가 29/33 교란만 30 ms 안에 검출했고 음성
-구간 오경보 18회가 남아 목표 미달이다. 새 모델은 E84에 배포하지 않았다.
+구간 오경보 18회가 남아 목표 미달이다. 이후 동결 MLP의 별도 E84 CPU 시험에서
+Sand parity를 확인했지만 최종 플래시·정상 run 검증은 USB 오류로 미완료다.
+현재 기본 배포 경로는 Hazard+Terrain INT8/U55이며, CPU 파일럿 결과와 구분한다.
 이 라벨은 임시 몸통 교란 기준이며 보행 안정성 정답으로 검증된 것은 아니다.
 
 ## Reviewer Guide
@@ -57,11 +61,11 @@ deployment engineering 결과는
 처음 검토할 때는 아래 순서만 보면 현재 판단 근거를 빠르게 파악할 수 있다.
 
 1. 이 README: 현재 결론, 범위, 다음 단계
-2. [Latest result](reports/20260904_hazard_boundary_resolution.md): 최근 실패 원인과
-   physical-gate stop
-3. [Architecture](docs/architecture.md): runtime sensor, model, advisory 관계
-4. [Dataset contract](docs/dataset.md): label, split, provenance, HOLDOUT 경계
-5. [Experiment protocol](docs/experiment_protocol.md): 재학습·평가·중단 조건
+2. [보행 안정성 파일럿](reports/20260908_walking_stability_latency_pilot.md): 30 ms gate 실패, 물리 재검증, 별도 CPU 시험
+3. [Boundary validation](reports/20260904_hazard_boundary_resolution.md): 물리 gate 실패와 중단 근거
+4. [Architecture](docs/architecture.md): runtime sensor, model, advisory 관계
+5. [Dataset contract](docs/dataset.md): label, split, provenance, HOLDOUT 경계
+6. [Experiment protocol](docs/experiment_protocol.md): 재학습·평가·중단 조건
 
 검토가 필요한 핵심 질문은 다음 네 가지다.
 
@@ -158,7 +162,7 @@ python scripts/fastreflex.py evaluate \
 E84 live 연결은 simulator의 `sample_observer` hook을 사용하며, 통신과 보드
 판정 HUD 연결은 별도 E84 저장소의 `hil/host/replay.py --mode simulation`이
 담당한다. 실시간 물리 계산을 진행하며 보드 응답을 기다리는 초기 경로로,
-설정 재생 속도보다 느려질 수 있다. 현재 E84의 Terrain·Hazard 추론를
+설정 재생 속도보다 느려질 수 있다. 현재 E84의 Terrain·Hazard 추론을
 함께 표시하며, 지형 인식 시간과 보행 교란 대비 경보 시간을 간결하게 표시한다. [연결 계약](docs/simulation.md#live-external-sensor-consumer)을 참고한다.
 
 대표 TRAIN/VALIDATION run 시각화:
@@ -219,3 +223,11 @@ Canonical current-state 문서는
 [architecture](docs/architecture.md),
 [dataset](docs/dataset.md),
 [experiment protocol](docs/experiment_protocol.md)이다.
+
+## Verification status
+
+[테스트 안내](tests/README.md)의 전체 suite는 2026-09-09에 126개 통과, 1개 건너뜀,
+9개 setup 오류였다. 오류는 변경된 `src/fastreflex/evaluation/terrain.py`와 저장된
+Generalization HOLDOUT 보호 체크섬의 불일치다. 현재 전체 suite는 통과 상태가 아니다.
+과거 평가를 재실행하거나 동결 checksum을 바꾸는 대신 해당 실행의 source provenance를
+기준으로 검증 경로를 검토해야 한다.

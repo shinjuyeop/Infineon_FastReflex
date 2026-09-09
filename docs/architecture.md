@@ -238,3 +238,10 @@ requested non-release E84 CPU trial. Deployment conversion, generated Float32
 weights, firmware and HIL results live only in the sibling E84 repository.
 Research labels, normalizer, model and failed pilot acceptance remain unchanged.
 This is deployment validation, not adoption of a new validated stability definition.
+
+The latest recorded default E84 image uses Hazard + Terrain INT8 ensembles
+sequentially on U55. The separate CPU MLP trial passed one Sand parity run but
+did not complete final-image and normal-run verification. Its historical result
+does not validate the current optional profile: current E84 source also skips
+Terrain initialization in CPU mode. Deployment state is maintained in the
+[E84 README](https://github.com/shinjuyeop/Infineon_FastReflex_E84/blob/main/README.md).

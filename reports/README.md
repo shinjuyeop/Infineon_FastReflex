@@ -24,10 +24,16 @@ Deployment handoff만 검토할 때는
 두 보고서는 engineering reference를 다루며 scientific generalization이나
 real-robot 성능을 주장하지 않는다.
 
-현재
-[deployment-aware QAT](../configs/experiment/20260904_deployment_aware_qat.yaml)은
-protocol과 implementation만 준비된 상태다. 아직 reviewed result report가 없으며
-scientific lineage와 분리된 engineering work로 취급한다.
+[Deployment-aware QAT 결과](20260904_deployment_aware_qat.md)는
+`DEPLOYMENT_AWARE_QAT_TRAIN_ACCEPTANCE_FAIL`이다. 세 seed 학습은 완료했지만
+TRAIN-only gate를 통과하지 못해 candidate freeze와 E84 handoff 전에 중단했다.
+Scientific lineage와 분리된 engineering 결과다.
+
+후속 진단은 [Sink 라벨·몸체 반응](20260907_sink_hazard_outcome_audit.md)과
+[보행 안정성 파일럿](20260908_walking_stability_latency_pilot.md)에서 확인한다.
+파일럿은 29/33 사건의 sample-time 30 ms 검출과 음성 구간 경보 18회를 기록해
+전체 gate에 실패했다. 후속 물리 8 run 재현과 별도 E84 CPU 시험은 이 판정을
+바꾸지 않는다. 현재 기본 배포 구성은 E84 저장소 README와 dual U55 보고서가 기준이다.
 
 ## How to Read the History
 

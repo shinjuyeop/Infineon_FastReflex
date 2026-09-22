@@ -1,0 +1,4 @@
+# Keep GitHub language statistics focused on project code.
+src/fastreflex/simulation/assets/** linguist-vendored
+artifacts/releases/** linguist-generated
+docs/assets/*.png binary

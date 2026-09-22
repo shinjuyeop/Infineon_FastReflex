@@ -1,5 +1,7 @@
 # Experiment Reports
 
+[프로젝트 홈](../README.md) · [현재 설계 문서](../docs/README.md)
+
 이 directory는 bounded dataset·experiment별 결과와 provenance를 보존한다.
 현재 상태와 설계 계약은 각각 repository
 [README](../README.md)와 `docs/`의 canonical 문서가 기준이다.
@@ -144,12 +146,14 @@ Scientific lineage와 분리된 engineering 결과다.
 - [Controls-recalibrated generation](20260904_sand_factor_conditioned_development_controls_recalibrated_generation.md)
 - [Factor-conditioned model training](20260904_sand_factor_conditioned_model_training.md)
 - [Hazard boundary-resolution cycle](20260904_hazard_boundary_resolution.md)
+- [Deployment-aware QAT](20260904_deployment_aware_qat.md)
 
 ### 2026-09-07 — Hazard scenario suitability review
 
 - [Hazard scenario suitability review](20260907_hazard_scenario_suitability_review.md): 전체 Hazard 시나리오 계보, 물리 라벨·일반화 한계, 이관 corpus 적합성과 개선 우선순위.
 - [Sink hazard outcome audit](20260907_sink_hazard_outcome_audit.md): Sink 라벨과 몸체 악화·회복을 대표 재현으로 대조하고 contact censor와 낙상을 구분.
 
-- [보행 교란 진단과 E84 통합 첫 확인](20260908_walking_perturbation_diagnostic.md): 라벨 변경 없이 정상 대조 기준과 E84 경보 시점을 비교한 초기 진단.
+### 2026-09-08 — Walking perturbation and latency pilot
 
+- [보행 교란 진단과 E84 통합 첫 확인](20260908_walking_perturbation_diagnostic.md): 라벨 변경 없이 정상 대조 기준과 E84 경보 시점을 비교한 초기 진단.
 - [보행 교란 30 ms 학습 파일럿](20260908_walking_stability_latency_pilot.md): 재라벨링·두 차례 학습 완료, 전체 30 ms/오경보 gate 미달.

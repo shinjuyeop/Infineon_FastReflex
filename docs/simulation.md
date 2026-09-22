@@ -1,16 +1,19 @@
 # MuJoCo Simulation
 
+[프로젝트 홈](../README.md) · [문서 안내](README.md) · [화면 출처](assets/README.md)
+
 이 문서는 Unitree G1 MuJoCo baseline을 headless 또는 interactive viewer로 실행하는 canonical guide다. 두 mode는 같은 controller, physics, sensor와 physical-label loop를 사용하며 viewer는 rendering과 wall-clock pacing만 담당한다.
 
 ## 준비
 
 ### 최초 1회 설치
 
-사용할 Python environment를 활성화한 뒤 아래 block 전체를 붙여 넣는다.
+저장소를 clone한 뒤 **저장소 루트**에서 실행한다. 아래 명령은 Linux/macOS shell 기준이다.
 
 ```bash
-cd /d/shin/Infineon_FastReflex
-python -m pip install -e .
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[test]"
 ```
 
 필수 dependency는 `numpy`, `mujoco`, `onnxruntime`, `PyYAML`이다. Viewer는 공식 `mujoco` Python package의 GUI를 사용하므로 별도 GUI framework가 필요하지 않지만, viewer mode에는 사용 가능한 X11/Wayland display가 필요하다. macOS의 passive viewer는 일반 `python` 대신 `mjpython scripts/fastreflex.py ...`로 실행해야 한다.
@@ -19,18 +22,17 @@ Walking policy ONNX는 third-party binary provenance 경계를 지키기 위해 
 
 ### 새 terminal에서 실행 전
 
-권장 local 위치에 policy를 준비했다면 아래 block 전체를 붙여 넣는다. 이 absolute path는 local documentation example이며 source code나 committed YAML의 default가 아니다. 마지막 명령이 파일 정보를 출력하면 준비가 끝난 것이다.
+권장 local 위치에 policy를 준비했다면 저장소 루트에서 아래 block을 실행한다. 개인 PC의 absolute path를 고정하지 않고 현재 checkout에서 경로를 계산한다. 마지막 명령이 파일 정보를 출력하면 준비가 끝난 것이다.
 
 ```bash
-cd /d/shin/Infineon_FastReflex
-export FASTREFLEX_G1_POLICY=/d/shin/Infineon_FastReflex/artifacts/external/unitree_g1/g1_velocity_policy.onnx
+source .venv/bin/activate
+export FASTREFLEX_G1_POLICY="$PWD/artifacts/external/unitree_g1/g1_velocity_policy.onnx"
 ls -lh "$FASTREFLEX_G1_POLICY"
 ```
 
 환경 변수를 사용하지 않으려면 `--policy`를 포함한 전체 명령을 실행한다.
 
 ```bash
-cd /d/shin/Infineon_FastReflex
 python scripts/fastreflex.py simulate \
   --terrain concrete \
   --speed 0.15 \
@@ -40,6 +42,10 @@ python scripts/fastreflex.py simulate \
 ```
 
 Baseline은 policy SHA-256과 `[1,98]` input, `[1,29]` output을 실행 전에 검증한다.
+
+임의의 G1 policy로 대체할 수 없다. 검증된 digest는
+[`TESTED_POLICY_SHA256`](../src/fastreflex/simulation/g1.py), 모델·mesh의 출처와
+walking policy 배포 경계는 [asset provenance](../src/fastreflex/simulation/assets/unitree_g1/NOTICE.md)에 있다.
 
 ## 기본 구조
 
@@ -215,6 +221,10 @@ python scripts/fastreflex.py simulate \
 환경 변수를 설정하지 않았다면 각 명령 끝에 `--policy artifacts/external/unitree_g1/g1_velocity_policy.onnx`를 추가한다. Viewer를 사용할 수 없는 환경에서는 display 확인 방법과 `--headless` 대안을 포함한 명확한 error를 출력한다.
 
 ## Visualizing supported Hazard/Terrain decisions
+
+필수 로컬 입력은 원본 Unified TRAIN/VALIDATION dataset, frozen Hazard/Terrain
+checkpoint, 검증된 walking policy다. Git clone만으로 이 ignored artifact들이
+생성되지는 않는다. 처음 설치한 환경은 위의 기본 `simulate` 경로부터 확인한다.
 
 ### Purpose
 

@@ -1,5 +1,7 @@
 # Tests
 
+[Project overview](../README.md) · [Documentation](../docs/README.md)
+
 The suite is organized by current responsibility rather than by every completed
 research milestone.
 
@@ -34,8 +36,10 @@ plugins installed in the local environment.
 
 ## Recorded verification state
 
-The 2026-09-09 run at `f35c41d` produced 126 passed, 1 skipped and 9 setup
-errors. All nine errors came from `test_holdout.py`: the current
+The 2026-09-22 documentation review reran the full suite against unchanged
+implementation code from `434a407`: **126 passed, 1 skipped, 9 setup errors**
+in 68.13 s. This reproduces the previously recorded 2026-09-09 result.
+All nine errors came from `test_holdout.py`: the current
 `src/fastreflex/evaluation/terrain.py` hash differs from the protected historical
 source hash. The fixture substitutes historical CLI provenance only, so it
 still rejects this Terrain source change. The full suite is not green.
@@ -45,3 +49,14 @@ verification against its recorded source identity rather than replacing protecte
 hashes or rerunning HOLDOUT to accommodate current code. Tests also depend on
 local ignored datasets/checkpoints and the verified walking policy where used;
 a fresh clone does not supply these artifacts.
+
+The same review ran the documented 2 s Concrete headless simulation with the
+verified local policy: **2,000 expected / 2,000 actual samples, zero drops**.
+This is a simulator smoke check, not another model or HOLDOUT evaluation.
+
+`compileall` and the Python wheel build (`pip wheel --no-deps --no-build-isolation`)
+passed. GitHub's Markdown renderer accepted the README; local document links and
+anchors were checked. `ruff check src scripts tests` still reports seven existing
+`E702` style violations in the stability pilot source/test. No runtime source,
+frozen contract, model or historical report was changed by the documentation
+cleanup; lint is not reported as passing.

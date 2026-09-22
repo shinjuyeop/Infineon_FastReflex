@@ -1,5 +1,7 @@
 # Dataset Contract
 
+[Project overview](../README.md) · [Documentation](README.md) · [Experiment reports](../reports/README.md)
+
 ## 1. Current unified Hazard corpus
 
 The current dataset identity is `unified_hazard_reflex_20260829`. Its 256 predeclared runs contain four equally sized physical groups.

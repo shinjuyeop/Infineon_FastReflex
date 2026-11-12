@@ -1,12 +1,12 @@
-# FastReflex · Humanoid Hazard Detection
+# FastReflex · Humanoid Hazard Detection Research
 
-**Unitree G1의 보행 중 미끄러짐과 지지면 변형을 감지하고, 지형 정보로 위험 원인을 설명하는 연구 프로젝트입니다.**
+**Unitree G1의 보행 중 미끄러짐과 지지면 변형을 감지하고, 지형 정보를 함께 제공하는 연구 프로젝트입니다.**
 
-MuJoCo에서 센서 데이터를 생성하고, IMU 기반 위험 감지 모델과 발바닥 압력 기반 지형 분류 모델을 학습·평가합니다. 동결한 모델을 실제 PSoC Edge E84에서 실행하는 작업은 [FastReflex E84](https://github.com/shinjuyeop/Infineon_FastReflex_E84)로 이어집니다.
+MuJoCo에서 센서 데이터를 생성하고, IMU 기반 위험 감지 모델과 발바닥 압력 기반 지형 분류 모델을 학습·평가합니다. 핵심 질문은 제한된 센서로 위험을 구분할 수 있는지, 그리고 그 판단이 새로운 물리 조건에서도 유효한지입니다. 검토·동결한 engineering reference 모델의 변환과 실보드 실행은 [FastReflex E84](https://github.com/shinjuyeop/Infineon_FastReflex_E84)에서 검증합니다.
 
 `Python` · `MuJoCo` · `PyTorch` · `Unitree G1` · `IMU / FSR`
 
-[빠른 시작](#quick-start) · [현재 결과](#current-status) · [문서 안내](docs/README.md) · [실험 보고서](reports/README.md) · [E84 배포](https://github.com/shinjuyeop/Infineon_FastReflex_E84)
+[설계 판단](#engineering-decisions) · [현재 결과](#current-status) · [빠른 시작](#quick-start) · [문서 안내](docs/README.md) · [실험 보고서](reports/README.md) · [E84 배포](https://github.com/shinjuyeop/Infineon_FastReflex_E84)
 
 ## Simulation Preview
 
@@ -36,9 +36,20 @@ flowchart LR
 
 Hazard는 3개 모델의 평균 확률이 `0.99` 이상인 상태가 5 ms 지속될 때 발생합니다. Terrain 결과는 Hazard를 발생시키거나 지연하지 않습니다. 물리 정답·낙상 상태는 평가용이며 Hazard 모델 입력에 포함하지 않습니다. [설계와 센서 계약](docs/architecture.md)
 
+## Engineering Decisions
+
+| 문제 | 접근과 확인한 내용 |
+|---|---|
+| 위험 감지와 지형 분류의 책임 | Hazard는 IMU만으로 판단하고 Terrain은 설명용 정보로 분리했습니다. 지형 분류의 지연·오류가 위험 경보를 바꾸지 않는 구조입니다. [설계](docs/architecture.md) |
+| 온라인 처리와 데이터 누출 | 현재·과거 샘플만 쓰는 causal 전처리, run 단위 split, TRAIN 전용 정규화와 동결 HOLDOUT 평가를 적용했습니다. [평가 규칙](docs/experiment_protocol.md) |
+| 정상 조건 개선과 위험 검출의 상충 | 같은 GRU 구조에서 데이터 구성을 바꾸자 fresh validation의 정상 Sand 판별은 **44/46 → 46/46**, Support 검출은 **16/18 → 8/18**로 바뀌었습니다. 이 후보는 개선 모델로 채택하지 않았습니다. [분석](reports/20260904_hazard_boundary_resolution.md) |
+| 위험 정답과 검출 시점의 적절성 | 일부 Slip 실패는 무반응이 아닌 허용 시간 밖의 경보였습니다. Support 라벨과 실제 몸체 악화도 일대일로 대응하지 않아, 물리 이벤트·학습 라벨·검출 인정 시간을 구분해 검토합니다. [시점 분석](reports/20260902_model_v2_holdout_failure_interpretation.md) · [라벨 진단](reports/20260907_sink_hazard_outcome_audit.md) |
+
+이 결과를 바탕으로 위험의 정의와 경계 조건을 재검토합니다. 기존 동결 평가의 점수와 판정은 아래에 유지합니다.
+
 ## Current Status
 
-**기존 제한된 시나리오에서는 baseline을 검증했고, 새로운 물리 조건으로의 일반화는 아직 입증하지 못했습니다.** 아래는 저장된 연구·보드 기록의 요약입니다. 문서·로컬 검증 확인일: 2026-09-22 (Asia/Seoul).
+**기존 제한된 시나리오에서는 baseline을 검증했고, 새로운 물리 조건으로의 일반화는 아직 입증하지 못했습니다.** 아래는 저장된 연구·보드 기록의 요약입니다. 로컬 실행 검증 기록: 2026-09-22 (Asia/Seoul).
 
 | 항목 | 결과 | 근거 |
 |---|---|---|
@@ -52,6 +63,8 @@ Hazard는 3개 모델의 평균 확률이 `0.99` 이상인 상태가 5 ms 지속
 | E84 이관 | Hazard + Terrain INT8/U55 실행·replay 검증 기록 있음, **non-release engineering reference** | [E84 현재 상태](https://github.com/shinjuyeop/Infineon_FastReflex_E84#current-status) |
 
 다음 연구 단계는 `HAZARD_BOUNDARY_VALIDATION_PHYSICAL_REDESIGN`입니다. 새 물리 validation matrix를 모델 출력에 의존하지 않고 설계해야 합니다. [Sink 진단](reports/20260907_sink_hazard_outcome_audit.md)에서 확인한 Support 라벨·몸체 악화의 불일치와 접촉 censor의 의미도 함께 검토합니다. 현재 결과는 실물 로봇의 낙상 방지나 회복 성능을 입증하지 않습니다.
+
+E84로 이관한 Hazard 기준은 동결한 `model_v2_anchor_refined_gru20_20260902`입니다. 이후의 factor-conditioned 후보와 QAT 후보는 이 기준을 대체하지 않았습니다. [Research → E84 이관 계약](https://github.com/shinjuyeop/Infineon_FastReflex_E84/blob/main/reports/reference_model_handoff.md)
 
 ## Quick Start
 

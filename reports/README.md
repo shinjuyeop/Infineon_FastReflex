@@ -6,6 +6,11 @@
 현재 상태와 설계 계약은 각각 repository
 [README](../README.md)와 `docs/`의 canonical 문서가 기준이다.
 
+일부 보고서의 `data/raw/`·`artifacts/runs/` 링크는 Git에서 제외된 로컬
+산출물을 가리키므로 GitHub나 새 clone에서는 열리지 않는다. 공개된 판단은
+보고서의 요약·설정·checksum으로 확인하며, 원시 자료를 재현할 때는 해당
+실험의 로컬 artifact가 필요하다. [데이터 경계](../data/README.md)
+
 ## Recommended Review Path
 
 전체 이력을 순서대로 읽을 필요는 없다. 현재 판단을 검토할 때는 아래 보고서부터

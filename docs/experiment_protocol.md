@@ -55,6 +55,25 @@ An alert before the earliest acceptable physical boundary is premature. A later 
 
 Current regression tests cover feature/schema parity, normalized tensor parity, `[20,80]` ordering, frozen probability/onset parity on a VALIDATION run, persistence boundary, physical labels and Terrain independence.
 
+### Label, decision, and scoring boundaries
+
+These are separate contracts, even when described informally as "labeling":
+
+| Boundary | What it determines | Current definition |
+|---|---|---|
+| Physical label | Which physical event is the target | Established Slip or Support, from simulator-only reference clocks; see [dataset labels](dataset.md#6-physical-labels) |
+| Training intervals | Which input-window endpoints teach positive or negative examples | Frozen positive intervals, precursor exclusions and censor rules in section 3; the target clocks are not model inputs |
+| Runtime decision | When model output asserts a new reflex | Ensemble probability `>=0.99` for five consecutive samples |
+| Evaluation window | Whether that reflex counts as a timely detection | Slip -30/+40 ms; Support from I1, when present, through established Support +50 ms |
+
+A response outside the scoring window can fail even when the model produces an
+alert. The saved [HOLDOUT interpretation](../reports/20260902_model_v2_holdout_failure_interpretation.md)
+distinguishes early Ice-precursor responses, a +42 ms late Slip response and
+benign Sand false alerts. Broadening a scoring window can change a reported
+score without changing the model; changing training labels is a different
+experiment. These observations do not revise the frozen labels, scores or
+generalization verdict.
+
 ## 5. Generalization final-candidate and HOLDOUT protocol
 
 The exact `model_v2_anchor_refined_gru20_20260902` ensemble is frozen under the role `final_generalization_candidate`. The role is an alias to the existing normalizer and three checkpoints; it does not duplicate or mutate artifacts. Generalization VALIDATION remains development evidence with historical primary verdict `GENERALIZATION_PRIMARY_GATES_FAIL` because Slip recall is 11/12, below the frozen 95% gate. The separate interpretation is `GENERALIZATION_DEVELOPMENT_SUPPORTED_WITH_ICE_TIMING_TENSION`; the sole primary failure is a sustained response inside the already-frozen loaded-Ice `[0.030,0.050) m` precursor, not a genuine detector miss.
@@ -127,6 +146,11 @@ PyTorch GRU QAT is not substituted because it would not demonstrate parity to
 the static E84 lowering. Passing Research emulation is only a handoff condition;
 actual TFLite full-INT8 conversion and Vela acceptance remain exclusively E84
 authority and require a new deployment revalidation.
+
+The executed trial trained all three seeds but failed the TRAIN-only acceptance
+gates. It stopped before candidate freeze, development/golden evaluation and
+handoff export. There is no accepted QAT replacement for the frozen Float
+reference. [Recorded result](../reports/20260904_deployment_aware_qat.md)
 
 ## 11. Redesigned Sand generalization protocol
 

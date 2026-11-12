@@ -246,11 +246,13 @@ Interactive viewer는 canonical physics를 다시 실행하지 않는다. 선택
 
 ### Basic command
 
-Canonical policy가 `artifacts/external/unitree_g1/g1_velocity_policy.onnx`에 있으면 다음 명령만 실행하면 된다.
+필요한 dataset·frozen checkpoint가 있고 canonical policy가 `artifacts/external/unitree_g1/g1_velocity_policy.onnx`에 있으면, 아래 VALIDATION Ice run을 재생할 수 있다.
 
 ```bash
-python scripts/fastreflex.py visualize --run-id <RUN_ID>
+python scripts/fastreflex.py visualize --run-id uhr_ice_h_c20
 ```
+
+다른 장면은 `uhr_ice_h_c20`을 재생할 TRAIN/VALIDATION run ID로 바꾼다.
 
 다른 위치에 같은 verified policy가 있다면 `FASTREFLEX_G1_POLICY` 또는 `--policy`를 사용한다. 재생 속도는 `--speed 0.5`, `--speed 1.0`, `--speed 2.0` 중 하나이며 기본값은 near-real-time `1.0`이다. 기본 `--mode analysis`는 상세 확률, threshold, physical diagnostic, event timing과 timeline을 표시한다. 발표용 `--mode demo`는 run/time, playback, Hazard, current/history Reflex, Terrain, advisory cause와 physical reference만 간결하게 표시한다. `--show-debug`는 analysis HUD에 tensor provenance와 parity 설명을 추가한다.
 

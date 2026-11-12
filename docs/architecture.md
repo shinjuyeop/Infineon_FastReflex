@@ -29,7 +29,7 @@ simulation/g1.py
 
 frozen Float engineering reference
   -> training/qat.py
-  -> deployment-only engineering derivative
+  -> TRAIN acceptance failed; no QAT handoff
 
 simulation/{g1,sensors,terrain}.py
   -> dataset/terrain.py
@@ -157,12 +157,13 @@ The ordinary simulation viewer copies physics state into a render-only model. Vi
 
 This repository ends at reviewed Float research artifacts and their contracts. The exact frozen V2 engineering reference is exported at `artifacts/releases/model_v2_anchor_refined_gru20_20260902`. The canonical `export` command verifies every source checksum, copies only the three selected Round-3 checkpoints and normalizer, and derives layered golden outputs from one non-protected `V2_VALIDATION` slice. It never trains, selects, tunes, opens Generalization HOLDOUT, or overwrites an existing release.
 
-`training/qat.py` is a separately predeclared deployment-only engineering path
-over that frozen Float reference. It may use only the authorized TRAIN-derived
-sources in `20260904_deployment_aware_qat.yaml`; it does not reopen scientific
-validation/HOLDOUT evidence or change the immutable generalization verdict. Research
-emulation does not establish TFLite full-INT8, Vela, target-runtime, real-robot, or
-safety support.
+`training/qat.py` owns the separately predeclared deployment-aware QAT trial
+over that frozen Float reference. All three seeds were trained using only the
+TRAIN-derived sources in `20260904_deployment_aware_qat.yaml`, but the trial
+failed TRAIN acceptance and stopped before candidate freeze, development/golden
+evaluation or handoff. The E84 reference remains the original frozen Float
+model. Scientific validation/HOLDOUT evidence and the generalization verdict
+are unchanged. [QAT result](../reports/20260904_deployment_aware_qat.md)
 
 The bundle labels the candidate `DEPLOYMENT_ENGINEERING_REFERENCE_MODEL` and preserves `MODEL_V2_GENERALIZATION_HOLDOUT_NOT_SUPPORTED` plus `SIMULATION_GENERALIZATION_EVIDENCE_NOT_SUPPORTED`. Its canonical deployment Float execution is one independent `[1,20,80] float32` window per invocation with a new zero hidden state. The original batch-121 M1 golden remains historical evidence; a separate batch-1 golden and `float_numerical_contract.json` define layer-specific continuous tolerances and require exact threshold, persistence, and final decisions. Research also owns a deterministic M3 calibration handoff: five runtime-uniform endpoints from every exact effective-TRAIN run plus valid physical precursor, Slip and Support anchors, deduplicated into 2,597 windows. The calibration manifest records every run/file checksum and prohibits model-output or quantization-result selection; clipping policy, quantization, Vela, E84 firmware integration, HIL, target latency and Recovery belong to the deployment repository. The handoff does not imply a supported research, real-robot, production, or safety release.
 
@@ -176,7 +177,7 @@ MoS/Stability, direct NORMAL/SLIP/SINK classification, event-centric detectors, 
 
 `dataset/sand_mild_calibration.py` owns the later mild-only physical ledger, deterministic expansion/validation, one-pass generation, model-blind physical audit, dataset freeze, and Confirmation sealing for the recalibrated matrix. Its geometry check treats start, width, exit, and topology jointly; it rejects the predeclared Concrete/.25 right topology and fails closed on historical or cross-split contamination. It loads no model, and its Confirmation loader rejects sealed records before NPZ access.
 
-`dataset/sand_factor_conditioned.py` owns the separate fresh intervention matrix, TRAIN/VALIDATION identity freeze, historical and cross-split contamination rejection, actual-physics eligibility, model-blind generation, and failed-attempt dataset freeze. Its redesign expander accepts the legacy shared profile families and explicit source-speed profile maps, allowing a pre-frozen physical correction without a new runner or a change to historical configs. `evaluation/sand_factor_conditioned.py` defines the comparison surface that would have been available only after candidate freeze. The physical-generation gate failed before training, so that evaluator has not consumed a fresh payload and no candidate entered the runtime architecture.
+`dataset/sand_factor_conditioned.py` owns the separate fresh intervention matrix, TRAIN/VALIDATION identity freeze, historical and cross-split contamination rejection, actual-physics eligibility, model-blind generation, and failed-attempt dataset freeze. Its redesign expander accepts the legacy shared profile families and explicit source-speed profile maps, allowing a pre-frozen physical correction without a new runner or a change to historical configs. `evaluation/sand_factor_conditioned.py` owns the post-freeze comparison. The initial 162-run attempt failed physical generation before training or evaluation; the later controls-recalibrated corpus reached training and consumed its validation once, as described in section 10. Neither attempt replaced the runtime candidate.
 
 `evaluation/sand.py` owns the corresponding Discovery-only run-balanced Pelvis/FSR/oracle analysis, metadata localization, and exact frozen-V2 replay. It uses one model-independent anchor per run, verifies every frozen dataset/model hash before analysis, rejects Confirmation before payload access, and refuses a second Discovery replay after the result artifact exists. FSR and privileged oracle vectors remain diagnostics and never enter the Hazard runtime model.
 
